@@ -1,0 +1,111 @@
+.auth-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: $bg;
+  padding: 1.5rem;
+
+  .auth-container {
+    width: 100%;
+    max-width: 24rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: bold;
+      text-align: center;
+      color: $accent-prime;
+    }
+
+    .email-input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 2px solid rgba($accent-prime, 0.2);
+      border-radius: 0.75rem;
+      outline: none;
+      transition: border-color 0.2s;
+
+      &:focus {
+        border-color: $accent-prime;
+      }
+    }
+
+    .words-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+
+      .word-input {
+        padding: 0.5rem;
+        text-align: center;
+        border-bottom: 2px solid rgba($accent-prime, 0.3);
+        outline: none;
+        transition: border-color 0.2s;
+
+        &:focus {
+          border-color: $accent-prime;
+        }
+
+        &:disabled {
+          background: #f1f5f9;
+        }
+      }
+    }
+
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 0.5rem;
+
+      .toggle-visibility {
+        color: #94a3b8;
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+
+      .refresh-words {
+        color: $accent-prime;
+        background: none;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+      }
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 0.75rem;
+      background: $accent-prime;
+      color: white;
+      border: none;
+      border-radius: 1rem;
+      font-weight: 600;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background: scale-color($accent-prime, $lightness: -10%);
+      }
+    }
+
+    .switch-mode {
+      width: 100%;
+      color: $accent-prime;
+      background: none;
+      border: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+  }
+}
