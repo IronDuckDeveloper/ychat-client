@@ -8,27 +8,26 @@ import { yamux } from '@chainsafe/libp2p-yamux'
 import { identify } from '@libp2p/identify'
 import { privateKeyFromRaw } from '@libp2p/crypto/keys'
 import { generateKeyPair } from '@libp2p/crypto/keys'
-// import { floodsub } from '@libp2p/floodsub'
 import { bootstrap } from '@libp2p/bootstrap'
 import { peerIdFromString } from '@libp2p/peer-id'
 import { multiaddr } from '@multiformats/multiaddr';
-import type { Multiaddr } from '@multiformats/multiaddr';
 import { gossipsub } from '@chainsafe/libp2p-gossipsub'
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery'
 
 const BROWSER_KEY_HEX = 'browser-private-key-raw-hex'
 
-const relayAddrs = [
-    '/ip4/62.109.15.216/tcp/15002/ws/p2p/12D3KooWJRcBbBUGG796f1vbNrXwUhKHuL4D96quu2oPMSU4krob',
-    '/ip4/38.180.0.13/tcp/15002/ws/p2p/12D3KooWEAwRLAupFG9CDjedaLAvYAsNdpbh74N41ATzEJSnHvgs'
-]
+import peersConfig from './known-peers.json'; // Путь к твоему файлу
 
-// Обязательно добавляем /p2p/PeerID в конец
-const addr1: Multiaddr = multiaddr('/ip4/38.180.0.13/tcp/15002/ws/p2p/12D3KooWEAwRLAupFG9CDjedaLAvYAsNdpbh74N41ATzEJSnHvgs');
-const addr2: Multiaddr = multiaddr('/ip4/62.109.15.216/tcp/15002/ws/p2p/12D3KooWJRcBbBUGG796f1vbNrXwUhKHuL4D96quu2oPMSU4krob');
+// Формируем список для bootstrap (просто массив полных multiaddr с ID)
+const bootstrapList = peersConfig.relays.map(
+  (r) => `${r.address}/p2p/${r.peerId}`
+);
 
-const id_addr1 = '12D3KooWEAwRLAupFG9CDjedaLAvYAsNdpbh74N41ATzEJSnHvgs';
-const id_addr2 = '12D3KooWJRcBbBUGG796f1vbNrXwUhKHuL4D96quu2oPMSU4krob';
+// Формируем список для directPeers (массив объектов {id, addrs})
+const directPeersList = peersConfig.relays.map((r) => ({
+  id: peerIdFromString(r.peerId),
+  addrs: [multiaddr(r.address)]
+}));
 
 const topicDiscovery = '_peer-discovery._p2p._pubsub';
 
@@ -92,7 +91,7 @@ export async function createBrowserHelia() {
         listenOnly: false
       }),
       bootstrap({
-        list: relayAddrs // Добавляем серверы в список начальной загрузки
+        list: bootstrapList // Добавляем серверы в список начальной загрузки
       })
     ],
       transports: [
@@ -120,16 +119,8 @@ export async function createBrowserHelia() {
             Dhi: 5,
             Dscore: 1,
             heartbeatInterval: 1000,
-              directPeers: [
-                {
-                 id: peerIdFromString(id_addr1), // ID Сервера 1
-                  addrs: [addr1 as any],
-                },
-                  {
-                  id: peerIdFromString(id_addr2), // ID Сервера 2
-                    addrs: [addr2 as any]
-                }
-              ],
+            // Принудительное соединение между твоими серверами-реле
+              directPeers: directPeersList,
            // ✅ Отключение скоринга (браузеры не должны пессимизироваться)
             scoreThresholds: {
               gossipThreshold: -Infinity,
@@ -149,7 +140,7 @@ export async function createBrowserHelia() {
     })
 
     // После создания ноды, но до её старта
-relayAddrs.forEach(addr => {
+bootstrapList.forEach(addr => {
   // Извлекаем PeerId из строки адреса
   const peerIdStr = addr.split('/p2p/')[1]
   if (peerIdStr) {
@@ -169,7 +160,7 @@ relayAddrs.forEach(addr => {
   // 1. Получаем список тех, с кем мы УЖЕ соединены прямо сейчас
   const connectedPeers = libp2p.getPeers().map(p => p.toString());
 
-  for (const addrStr of relayAddrs) {
+  for (const addrStr of bootstrapList) {
     const parts = addrStr.split('/p2p/');
     const peerIdStr = parts[1];
 
