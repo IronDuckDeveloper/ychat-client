@@ -5,6 +5,11 @@ import { pipe } from 'it-pipe'
 
 let heliaInstance: Helia | null = null
 
+const PEER_SYNC_REQUEST_TOPIC = 'peers:sync:request'
+const PEER_SYNC_RESPONSE_TOPIC_BASE = 'peers:sync:response:'
+// 3 часа в миллисекундах (3 * 60 * 60 * 1000)
+const SYNC_INTERVAL_MS = 10800000
+
 export const useIPFS = () => {
   const [isReady, setIsReady] = useState<boolean>(false)
   const [nodeId, setNodeId] = useState<string | null>(null)
@@ -24,6 +29,9 @@ export const useIPFS = () => {
 
         const libp2p = helia.libp2p
         const pubsub = libp2p.services.pubsub as any
+
+        // Чтобы клиент мог слушать запросы
+        await pubsub.subscribe(PEER_SYNC_REQUEST_TOPIC)
 
         heliaInstance = helia
         setNodeId(libp2p.peerId.toString())
@@ -92,9 +100,9 @@ const notifyPeer = async (peerId: any) => {
     // await stream.send(data);
 
     await pipe(
-  [data],  // Источник данных (массив или генератор)
-  stream   // Куда отправляем (наш стрим)
-)
+      [data],  // Источник данных (массив или генератор)
+      stream   // Куда отправляем (наш стрим)
+    )
     
     console.log(`🚀 [Protocol] Анонс ${roomName} отправлен пиру ${peerId.toString().slice(-6)}`);
     
@@ -112,6 +120,10 @@ const notifyPeer = async (peerId: any) => {
   const onConnect = (evt: any) => {
     const peerId = evt.detail
     console.log(`🤝 Новое соединение: ${peerId.toString().slice(-6)}. Отправляю анонс...`)
+    // Даем пару секунд, чтобы протоколы (Identify/Gossipsub) успели обменяться рукопожатиями
+  setTimeout(async () => {
+    await checkAndSyncRelays(helia)
+  }, 2000)
     notifyPeer(peerId)
   }
   libp2p.addEventListener('peer:connect', onConnect)
@@ -149,4 +161,73 @@ const notifyPeer = async (peerId: any) => {
       pubsub.unsubscribe(roomName)
     }
   }
+
+  async function requestRelaysSync(helia: Helia) {
+  const node = helia.libp2p as any
+  const pubsub = node.services.pubsub
+  const myPeerId = node.peerId.toString()
+  const responseTopic = `${PEER_SYNC_RESPONSE_TOPIC_BASE}${myPeerId}`
+
+  return new Promise(async (resolve) => {
+    const onResponse = async (evt: any) => {
+      const msg = evt.detail || evt
+      if (msg.topic !== responseTopic) return
+
+      try {
+        const payload = JSON.parse(new TextDecoder().decode(msg.data))
+        if (payload?.relays) {
+          // Сохраняем полученный список и текущее время в localStorage
+          localStorage.setItem('known_relays', JSON.stringify(payload.relays))
+          localStorage.setItem('last_peer_sync', Date.now().toString())
+          
+          console.log(`📥 [PEER-SYNC] Получено и сохранено релеев: ${payload.relays.length}`)
+          
+          // Отписываемся, так как ответ получен
+          pubsub.removeEventListener('message', onResponse)
+          await pubsub.unsubscribe(responseTopic)
+          resolve(true)
+        }
+      } catch (e) {
+        console.error('Ошибка парсинга списка релеев:', e)
+      }
+    }
+
+    // Подписываемся на персональный топик для ответа
+    await pubsub.subscribe(responseTopic)
+    pubsub.addEventListener('message', onResponse)
+
+    // Отправляем запрос в общий канал
+    const reqPayload = JSON.stringify({ from: myPeerId })
+    console.log('📢 [PEER-SYNC] Запрашиваю список узлов у сети...')
+    await pubsub.publish(PEER_SYNC_REQUEST_TOPIC, new TextEncoder().encode(reqPayload))
+
+  // Таймаут на случай, если никто не ответит (например, 5 секунд)
+  setTimeout(() => {
+    pubsub.removeEventListener('message', onResponse)
+      // Просто вызываем без catch, так как это может быть не Promise
+      try {
+        pubsub.unsubscribe(responseTopic)
+      } catch (e) {
+        console.warn('Ошибка при отписке по таймауту:', e)
+      }
+    resolve(false)
+    }, 5000)
+  })
+}
+
+  async function checkAndSyncRelays(helia: Helia) {
+  const lastSync = localStorage.getItem('last_peer_sync')
+  const now = Date.now()
+
+  // Если данных нет, или прошло больше 3 часов (SYNC_INTERVAL_MS)
+  if (!lastSync || (now - parseInt(lastSync, 10)) > SYNC_INTERVAL_MS) {
+    console.log('🔄 [SYNC] Кэш устарел или пуст. Начинаем синхронизацию...')
+    await requestRelaysSync(helia)
+  } else {
+    // Высчитываем, сколько осталось до следующего обновления (для логов)
+    const remainingMs = SYNC_INTERVAL_MS - (now - parseInt(lastSync, 10))
+    const remainingMinutes = Math.round(remainingMs / 1000 / 60)
+    console.log(`⏳ [SYNC] Кэш релеев актуален. Следующее обновление через ~${remainingMinutes} мин.`)
+  }
+}
 }
