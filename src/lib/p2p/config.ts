@@ -21,8 +21,18 @@ export const CONFIG = {
   }
 };
 
-// Валидируем и собираем bootstrapList
-export const bootstrapList: string[] = (peersConfig.relays || [])
+// Простая функция случайной сортировки (алгоритм Фишера-Йетса)
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Валидируем и собираем bootstrapList. Берем ВСЕ валидные
+const allBootstraps: string[] = (peersConfig.relays || [])
   .map((r) => {
     const fullAddr = `${r.address}/p2p/${r.peerId}`;
     try {
@@ -42,6 +52,9 @@ export const bootstrapList: string[] = (peersConfig.relays || [])
     }
   })
   .filter((addr): addr is string => addr !== null);
+
+  // Для браузера берем только случайные 3 релея, чтобы не перегружать коннекшны
+export const bootstrapList: string[] = shuffleArray(allBootstraps).slice(0, 5);
 
 // Валидируем и собираем directPeersList
 export const directPeersList: any[] = (peersConfig.relays || [])
