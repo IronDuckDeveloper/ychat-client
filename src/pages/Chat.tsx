@@ -3,8 +3,8 @@ import { ArrowLeft, Settings, Send, Paperclip } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIPFS } from '../hooks/useIPFS';
 import '../styles/chat.scss';
+import type { ChatMessage, MessageType } from '../lib/p2p/roomService';
 
-type MessageType = 'sent' | 'received' | 'system';
 
 const NodeStatus = ({
   nodeId,
@@ -30,13 +30,7 @@ const Chat = () => {
   const { contactName } = useParams();
   const navigate = useNavigate();
   const { isReady, nodeId, error, joinRoom } = useIPFS();
-  const [messages, setMessages] = useState<
-    {
-      id: string;
-      text: string;
-      type: MessageType;
-    }[]
-  >([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [roomHandle, setRoomHandle] = useState<{
     sendMessage: (message: string) => Promise<void>;
@@ -52,19 +46,21 @@ useEffect(() => {
 
   const subscribe = async () => {
     // Вызываем joinRoom и передаем callback
-    const handle = await joinRoom(roomName, (message: string) => {
-      // Игнорируем технические системные сообщения прогрева, если они прилетают
-      if (message.startsWith('System:')) return; 
+const handle = await joinRoom(roomName, (message: ChatMessage) => {
+  // 1. Проверяем, что message — это объект, и безопасно смотрим на текст
+  if (message?.text?.startsWith('System:')) return; 
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `received-${Date.now()}-${prev.length}`,
-          text: message,
-          type: 'received',
-        },
-      ]);
-    });
+  setMessages((prev) => {
+    // 2. Защита от дубликатов: если сообщение с таким ID (hash из OrbitDB) 
+    // уже есть в стейте, просто возвращаем массив без изменений.
+    if (prev.some((m) => m.id === message.id)) {
+      return prev;
+    }
+
+    // 3. Добавляем новое валидное сообщение (оно уже содержит нужный type: 'sent' или 'received')
+    return [...prev, message];
+  });
+});
 
     activeHandle = handle;
     setRoomHandle(handle);
@@ -73,6 +69,7 @@ useEffect(() => {
       ...prev,
       {
         id: `system-${Date.now()}-${prev.length}`,
+        whoSent: 'system',
         text: `Подключено к комнате: ${roomName}`,
         type: 'system',
       },
@@ -99,14 +96,6 @@ useEffect(() => {
 
     try {
       await roomHandle.sendMessage(text);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `sent-${Date.now()}-${prev.length}`,
-          text,
-          type: 'sent',
-        },
-      ]);
       setDraft('');
     } catch (err) {
       console.error('Ошибка отправки сообщения:', err);
@@ -114,6 +103,7 @@ useEffect(() => {
         ...prev,
         {
           id: `system-error-${Date.now()}-${prev.length}`,
+          whoSent: 'system',
           text: 'Не удалось отправить сообщение. Повторите попытку.',
           type: 'system',
         },

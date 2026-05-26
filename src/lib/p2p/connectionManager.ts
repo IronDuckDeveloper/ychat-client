@@ -51,7 +51,7 @@ export function startKeepAliveLoop(libp2p: Libp2p): () => void {
           console.log(`📡 [Dial] Попытка ${currentRetry + 1}: Стучимся к ${peerIdStr.slice(-6)}...`);
           await libp2p.dial(multiaddr(addrStr), { signal: AbortSignal.timeout(5000) });
           
-          await new Promise((r) => setTimeout(r, 500)); // Даем время на Identify
+          await new Promise((r) => setTimeout(r, 1000)); // Даем время на Identify
 
           if (libp2p.getPeers().some((p: any) => p.toString() === peerIdStr)) {
             console.log(`✅ [Success] Узел ${peerIdStr.slice(-6)} подтвержден в сети`);

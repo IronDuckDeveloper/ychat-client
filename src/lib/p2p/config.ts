@@ -12,12 +12,16 @@ export interface RelayConfig {
 export const CONFIG = {
   BROWSER_KEY_HEX: 'browser-private-key-raw-hex',
   TOPIC_DISCOVERY: '_peer-discovery._p2p._pubsub',
+  // ORBITDB_DIR: 'ychat_browser_orbitdb',
+  ORBITDB_BLOCKS_DIR: './data/blocks.level',
+  DATA_DIR: './data',
   MAX_RETRIES: 5,
   SYNC_INTERVAL_MS: 10800000, // 3 часа
   TOPICS: {
     ANNOUNCE: 'rooms:announce',
     PEER_SYNC_REQUEST: 'peers:sync:request',
-    PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:'
+    PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:',
+    ARCHIVIST: 'system-archivist' // Для запросов на хранение баз
   }
 };
 
@@ -57,16 +61,14 @@ const allBootstraps: string[] = (peersConfig.relays || [])
 export const bootstrapList: string[] = shuffleArray(allBootstraps).slice(0, 5);
 
 // Валидируем и собираем directPeersList
-export const directPeersList: any[] = (peersConfig.relays || [])
-  .map((r) => {
-    try {
-      // Проверяем оба компонента
-      const id = peerIdFromString(r.peerId);
-      const maddr = multiaddr(r.address);
-      
-      return { id, addrs: [maddr] };
-    } catch (e) {
-      return null; // Ошибку мы уже залогировали выше
-    }
-  })
-  .filter((p): p is { id: any; addrs: any[] } => p !== null);
+export const directPeersList: any[] = shuffleArray(
+  (peersConfig.relays || [])
+    .map((r) => {
+      try {
+        const id = peerIdFromString(r.peerId);
+        const maddr = multiaddr(r.address);
+        return { id, addrs: [maddr] };
+      } catch (e) { return null; }
+    })
+    .filter((p): p is { id: any; addrs: any[] } => p !== null)
+).slice(0, 5);
