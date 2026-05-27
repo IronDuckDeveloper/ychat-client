@@ -1,8 +1,8 @@
-import { pipe } from 'it-pipe';
 import type { Helia } from 'helia';
 import type { Libp2p, PeerId } from '@libp2p/interface';
 import { createOrbitDB, OrbitDBAccessController, Identities } from '@orbitdb/core'; // Импортируем OrbitDB!
 import { CONFIG } from './config';
+import { notifyArchivist } from './connectionManager';
 
 export type MessageType = 'sent' | 'received' | 'system';
 
@@ -42,22 +42,6 @@ async function getOrbitDB(helia: Helia) {
   });
 
   return orbitdbInstance;
-}
-
-// Функция отправки адреса нашей базы данных на сервер-Архивариус
-async function notifyArchivist(libp2p: Libp2p, peerId: PeerId, dbAddress: string): Promise<void> {
-  try {
-  
-    const stream = await libp2p.dialProtocol(peerId, '/p2p-relay/v1/announce');
-    
-    // Передаем JSON с адресом базы данных, который так ждет твой сервер!
-    const data = new TextEncoder().encode(JSON.stringify({ address: dbAddress }));
-    await pipe([data], stream);
-    
-    console.log(`📡 [Protocol] Адрес базы данных ${dbAddress} отправлен Архивариусу ${peerId.toString().slice(-6)}`);
-  } catch (err: any) {
-    console.error('❌ Ошибка отправки анонса Архивариусу:', err.message);
-  }
 }
 
 export async function joinRoom(
@@ -102,9 +86,6 @@ try {
   
   console.log(`🏠 [OrbitDB] База открыта локально. Адрес: ${dbAddress}`);
 
-// Получаем твой ID 
-  const myIdentityId = db.identity.id;
-  const myIdentityHash = orbitdbInstance.identity.hash;
 
   // 3. СРАЗУ ЧИТАЕМ ИСТОРИЮ ИЗ INDEXEDDB (Решает проблему пропажи сообщений при F5)
 try {
