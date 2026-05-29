@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
+import type { UIEvent } from 'react'; // 🔥 Исправлено: отдельный импорт для типа
 import { ArrowLeft, Settings, Send, Paperclip } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIPFS } from '../hooks/useIPFS';
@@ -19,7 +20,6 @@ const NodeStatus = ({
   isRoomConnected: boolean;
   error: string | null;
 }) => {
-  // Вычисляем текстовый статус для пользователя
   const getStatusText = () => {
     if (!isReady) return '⏳ Запуск узла...';
     if (!roomHandle) return '⏳ Открытие базы данных...';
@@ -41,22 +41,25 @@ const NodeStatus = ({
 const Chat = () => {
   const { contactName } = useParams();
   const navigate = useNavigate();
-  const { isReady, nodeId, error, joinRoom, helia } = useIPFS(); // Достаем helia из хука
+  const { isReady, nodeId, error, joinRoom, helia } = useIPFS();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUp = useRef(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   
   const [roomHandle, setRoomHandle] = useState<{
     sendMessage: (message: string) => Promise<void>;
     leaveRoom: () => void;
     pingRoom?: () => void; 
+    dbAddress?: string;
+    loadMoreHistory: () => Promise<void>;
+    hasMoreHistory: () => boolean;
   } | null>(null);
 
-  // 🔥 НОВЫЙ СТЕЙТ: Флаг того, что мост Gossipsub с релеем реально построен
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
 
   const roomName = contactName ?? 'global-chat';
-
-  // 🔥 Полная готовность = Нода готова + База открыта + Сеть склеилась
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
 
   useEffect(() => {
@@ -65,10 +68,8 @@ const Chat = () => {
     let activeHandle: any = null;
 
     const subscribe = async () => {
-      // Принудительно сбрасываем коннект при смене комнаты
       setIsRoomConnected(false); 
       
-      // 1. Сначала открываем локальную базу данных (вызываем joinRoom из хука)
       const roomActions = await joinRoom(roomName, (message: ChatMessage) => {
         if (message?.text?.startsWith('System:')) return; 
 
@@ -80,19 +81,17 @@ const Chat = () => {
 
       activeHandle = roomActions;
 
-      // 2. 🔥 Ждем пиров в ТОЧНОМ топике базы данных OrbitDB
       const libp2p = (helia as any)?.libp2p || (window as any).helia?.libp2p;
       if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {
         const pubsub = libp2p.services.pubsub;
         
         let attempts = 0;
         while (attempts < 50) {
-          // Ищем подписчиков именно по точному адресу БД (например, /orbitdb/zdpuB2eq...)
           const subscribers = pubsub.getSubscribers(roomActions.dbAddress);
           
           if (subscribers && subscribers.length > 0) {
             console.log(`📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`);
-            break; // Выходим из цикла мгновенно!
+            break; 
           }
           
           await new Promise((resolve) => setTimeout(resolve, 300));
@@ -100,7 +99,6 @@ const Chat = () => {
         }
       }
 
-      // 3. Только ТЕПЕРЬ фиксируем полную готовность комнаты
       setRoomHandle(roomActions);
       setIsRoomConnected(true);
     };
@@ -118,7 +116,6 @@ const Chat = () => {
     };
   }, [isReady, roomName, joinRoom, helia]);
 
-  // HEARTBEAT (Пинг сервера для удержания комнаты)
   useEffect(() => {
     if (!roomHandle || !roomHandle.pingRoom) return;
 
@@ -141,9 +138,50 @@ const Chat = () => {
     };
   }, [roomHandle]); 
 
+  // 🔥 Скролл подкачка сообщений
+  const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    
+    // 🔥 НОВОЕ: Вычисляем, насколько юзер отдалился от низа. 
+    // Если больше чем на 50px — значит, он пошел читать историю.
+    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    isUserScrolledUp.current = distanceFromBottom > 50;
+
+    // Старая логика пагинации
+    if (target.scrollTop === 0 && roomHandle?.hasMoreHistory() && !isLoadingMore) {
+      setIsLoadingMore(true);
+      
+      const previousScrollHeight = target.scrollHeight;
+      await roomHandle.loadMoreHistory();
+
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = 
+            messagesContainerRef.current.scrollHeight - previousScrollHeight;
+        }
+        setIsLoadingMore(false);
+      });
+    }
+  };
+
+// Автоматический скролл вниз
+  useEffect(() => {
+    if (!messagesContainerRef.current) return;
+
+    // Скроллим вниз ТОЛЬКО если:
+    // 1. Мы не грузим старую историю (!isLoadingMore)
+    // 2. Юзер сейчас НЕ читает историю где-то наверху (!isUserScrolledUp.current)
+    if (!isLoadingMore && !isUserScrolledUp.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
   const handleSendMessage = async () => {
     const text = draft.trim();
     if (!text || !roomHandle) return;
+
+    // 🔥 Сбрасываем флаг, чтобы при отправке своего сообщения нас точно кинуло вниз
+    isUserScrolledUp.current = false;
 
     try {
       await roomHandle.sendMessage(text);
@@ -162,7 +200,6 @@ const Chat = () => {
     }
   };
 
-  // Динамический плейсхолдер инпута для прозрачности логов
   const getInputPlaceholder = () => {
     if (!isReady) return 'Ожидание запуска узла...';
     if (!roomHandle) return 'Открытие базы данных комнаты...';
@@ -192,7 +229,12 @@ const Chat = () => {
         error={error} 
       />
 
-      <div className="chat-messages">
+      <div className="chat-messages"
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+      >
+        {isLoadingMore && <div className="message system">Загрузка старых сообщений...</div>}
+        
         {messages.map((message) => (
           <div
             key={message.id}
@@ -201,7 +243,7 @@ const Chat = () => {
             {message.text}
           </div>
         ))}
-        {!messages.length && (
+        {!messages.length && !isLoadingMore && (
           <div className="message system">Ожидание сообщений в комнате...</div>
         )}
       </div>

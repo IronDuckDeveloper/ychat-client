@@ -21,6 +21,8 @@ export interface RoomActions { // или type RoomActions = {
   leaveRoom: () => void;
   pingRoom?: () => void;
   dbAddress: string;
+  loadMoreHistory: () => Promise<void>;
+  hasMoreHistory: () => boolean;
 }
 
 // Храним синглтон инстанса OrbitDB, чтобы не создавать его заново при смене комнат
@@ -57,6 +59,40 @@ export async function joinRoom(
   relayManagerInstance?: RelayManager
 ): Promise<RoomActions> {
   const libp2p = (helia as any).libp2p as unknown as Libp2p;
+
+let oldestHash: string | null = null; // Хэш (CID) самого старого загруженного сообщения
+let hasMore = true; // Флаг, остались ли еще сообщения в базе
+
+// Функция для загрузки порции истории // limit: -1 = все записи
+const loadHistoryChunk = async (limit: number, beforeHash: string | null = null) => {
+  const options: any = { limit };
+  if (beforeHash) {
+    options.lt = beforeHash; // 'lt' = less than (загрузить то, что было ДО этого хэша)
+  }
+
+  const chunk: any[] = [];
+  // OrbitDB iterator выдает сообщения от старых к новым (в рамках лимита)
+  for await (const record of db.iterator(options)) {
+    chunk.push(record);
+  }
+
+  if (chunk.length < limit) {
+    hasMore = false; // Если пришло меньше, чем просили — значит мы дошли до самого начала чата
+  }
+
+  if (chunk.length > 0) {
+    // Запоминаем хэш ПЕРВОГО (самого старого) сообщения в этой пачке,
+    // чтобы в следующий раз начать загрузку до него
+    oldestHash = chunk[0].hash; 
+    
+    // Отправляем сообщения в React
+    for (const record of chunk) {
+      if (record?.payload?.value?.text) {
+        onMessage(record.payload.value);
+      }
+    }
+  }
+};
   
   // 1. Получаем инстанс OrbitDB
   const orbitdb = await getOrbitDB(helia);
@@ -79,15 +115,8 @@ export async function joinRoom(
 console.log('Тип контроллера доступа:', db.access.type);
 console.log('Мой Identity ID:', db.identity.id);
 
-try {
-  for await (const record of db.iterator({ limit: -1 })) {  // limit: -1 = все записи
-    if (record?.payload?.value?.text) {
-      onMessage(record.payload.value.text);
-    }
-  }
-} catch (e) {
-  console.warn('Не удалось прочитать историю (это нормально при первой комнате):', e);
-}
+// 1. ПЕРВИЧНАЯ ЗАГРУЗКА (только последние 50 сообщений)
+await loadHistoryChunk(CONFIG.CHUNK_SIZE);
 
   const dbAddress = db.address.toString();
   
@@ -195,7 +224,15 @@ try {
         relayManagerInstance.announceRoom(db.address.toString());
       }
   },
-    dbAddress: db.address.toString()
+    dbAddress: db.address.toString(),
+  
+  // ОТДАЕМ РУЧКИ В REACT
+  loadMoreHistory: async () => {
+    if (hasMore) {
+      await loadHistoryChunk(CONFIG.CHUNK_SIZE, oldestHash);
+    }
+  },
+  hasMoreHistory: () => hasMore
   };
 }
 
