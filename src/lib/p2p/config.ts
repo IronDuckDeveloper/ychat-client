@@ -15,9 +15,13 @@ export const CONFIG = {
   MAX_RETRIES: 5,
   RELAY_POOL_SIZE: 5,
   SYNC_INTERVAL_MS: 10800000, // 3 часа
+  INACTIVITY_TIMEOUT_MS: 10 * 60 * 1000,
+
   TOPICS: {
     ANNOUNCE: '/p2p-relay/v1/announce',
     PEER_SYNC_REQUEST: 'peers:sync:request',
     PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:',
+    PEER_SYNC_REQUEST_TOPIC: 'peers:sync:request'
+
   }
 };

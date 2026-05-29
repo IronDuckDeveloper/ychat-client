@@ -45,6 +45,48 @@ export class RelayManager {
     });
   }
 
+  /**
+ * Проверить, принадлежит ли Peer ID к нашему пулу надежности
+ */
+  public isRelay(peerId: string): boolean {
+  return this.relayPool.some(r => r.peerId === peerId);
+}
+
+  /**
+   * 📡 ОТПРАВКА АНОНСА КОМНАТЫ НА АКТИВНЫЙ РЕЛЕЙ (Heartbeat)
+   */
+  public async announceRoom(roomAddress: string): Promise<void> {
+    if (!this.libp2p) {
+      console.warn('⚠️ [RelayManager] Сбой анонса: libp2p еще не инициализирован.');
+      return;
+    }
+
+    const currentRelay = this.relayPool[this.currentIdx];
+    if (!currentRelay) {
+      console.warn('⚠️ [RelayManager] Сбой анонса: нет активного релея в пуле.');
+      return;
+    }
+
+    try {
+      // Строим multiaddr текущего релея
+      const targetTarget = multiaddr(`${currentRelay.address}/p2p/${currentRelay.peerId}`);
+      
+      // Открываем прямой стрим к релею по протоколу анонсов
+      const stream = await this.libp2p.dialProtocol(targetTarget, '/p2p-relay/v1/announce');
+      
+      // Динамически импортируем pipe, чтобы не было проблем с типами ESM
+      const { pipe } = await import('it-pipe');
+      const encodedAddress = new TextEncoder().encode(roomAddress);
+      
+      // Пушим адрес в стрим
+      await pipe([encodedAddress], stream);
+      
+      console.log(`💓 [Heartbeat] Анонсирована комната ${roomAddress.slice(-12)} на релей ${currentRelay.name}`);
+    } catch (err: any) {
+      console.error(`❌ [RelayManager] Ошибка отправки анонса на ${currentRelay.name}:`, err.message);
+    }
+  }
+
   // Функция экстренного переключения на запасной релей
   private async switchToNextRelay(onRelayChanged?: (newRelay: RelayConfig) => void) {
     if (this.isSwitching || !this.libp2p) return;

@@ -3,21 +3,33 @@ import { ArrowLeft, Settings, Send, Paperclip } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIPFS } from '../hooks/useIPFS';
 import '../styles/chat.scss';
-import type { ChatMessage, MessageType } from '../lib/p2p/roomService';
-
+import type { ChatMessage } from '../lib/p2p/roomService';
+import { CONFIG } from '../lib/p2p/config';
 
 const NodeStatus = ({
   nodeId,
   isReady,
+  roomHandle,
+  isRoomConnected,
   error,
 }: {
   nodeId: string | null;
   isReady: boolean;
+  roomHandle: any;
+  isRoomConnected: boolean;
   error: string | null;
 }) => {
+  // Вычисляем текстовый статус для пользователя
+  const getStatusText = () => {
+    if (!isReady) return '⏳ Запуск узла...';
+    if (!roomHandle) return '⏳ Открытие базы данных...';
+    if (!isRoomConnected) return '⏳ Сетевой коннект (Grafting)...';
+    return '✅ Онлайн';
+  };
+
   return (
     <div className="ipfs-status-card">
-      <p>Статус: {isReady ? '✅ Онлайн' : '⏳ Запуск...'}</p>
+      <p>Статус: {getStatusText()}</p>
       <p className="ipfs-node-id">
         Мой ID: <strong>{nodeId || 'получение...'}</strong>
       </p>
@@ -29,70 +41,109 @@ const NodeStatus = ({
 const Chat = () => {
   const { contactName } = useParams();
   const navigate = useNavigate();
-  const { isReady, nodeId, error, joinRoom } = useIPFS();
+  const { isReady, nodeId, error, joinRoom, helia } = useIPFS(); // Достаем helia из хука
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  
   const [roomHandle, setRoomHandle] = useState<{
     sendMessage: (message: string) => Promise<void>;
     leaveRoom: () => void;
+    pingRoom?: () => void; 
   } | null>(null);
+
+  // 🔥 НОВЫЙ СТЕЙТ: Флаг того, что мост Gossipsub с релеем реально построен
+  const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
 
   const roomName = contactName ?? 'global-chat';
 
-useEffect(() => {
-  if (!isReady || !joinRoom) return;
+  // 🔥 Полная готовность = Нода готова + База открыта + Сеть склеилась
+  const isRoomReady = isReady && !!roomHandle && isRoomConnected;
 
-  let activeHandle: any = null;
+  useEffect(() => {
+    if (!isReady || !joinRoom) return;
 
-  const subscribe = async () => {
-    // Вызываем joinRoom и передаем callback
-const handle = await joinRoom(roomName, (message: ChatMessage) => {
-  // 1. Проверяем, что message — это объект, и безопасно смотрим на текст
-  if (message?.text?.startsWith('System:')) return; 
+    let activeHandle: any = null;
 
-  setMessages((prev) => {
-    // 2. Защита от дубликатов: если сообщение с таким ID (hash из OrbitDB) 
-    // уже есть в стейте, просто возвращаем массив без изменений.
-    if (prev.some((m) => m.id === message.id)) {
-      return prev;
-    }
+    const subscribe = async () => {
+      // Принудительно сбрасываем коннект при смене комнаты
+      setIsRoomConnected(false); 
+      
+      // 1. Сначала открываем локальную базу данных (вызываем joinRoom из хука)
+      const roomActions = await joinRoom(roomName, (message: ChatMessage) => {
+        if (message?.text?.startsWith('System:')) return; 
 
-    // 3. Добавляем новое валидное сообщение (оно уже содержит нужный type: 'sent' или 'received')
-    return [...prev, message];
-  });
-});
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === message.id)) return prev;
+          return [...prev, message];
+        });
+      });
 
-    activeHandle = handle;
-    setRoomHandle(handle);
+      activeHandle = roomActions;
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `system-${Date.now()}-${prev.length}`,
-        whoSent: 'system',
-        text: `Подключено к комнате: ${roomName}`,
-        type: 'system',
-      },
-    ]);
-  };
+      // 2. 🔥 Ждем пиров в ТОЧНОМ топике базы данных OrbitDB
+      const libp2p = (helia as any)?.libp2p || (window as any).helia?.libp2p;
+      if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {
+        const pubsub = libp2p.services.pubsub;
+        
+        let attempts = 0;
+        while (attempts < 50) {
+          // Ищем подписчиков именно по точному адресу БД (например, /orbitdb/zdpuB2eq...)
+          const subscribers = pubsub.getSubscribers(roomActions.dbAddress);
+          
+          if (subscribers && subscribers.length > 0) {
+            console.log(`📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`);
+            break; // Выходим из цикла мгновенно!
+          }
+          
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          attempts++;
+        }
+      }
 
-  subscribe().catch((err) => {
-    console.error('Failed to join room:', err);
-  });
+      // 3. Только ТЕПЕРЬ фиксируем полную готовность комнаты
+      setRoomHandle(roomActions);
+      setIsRoomConnected(true);
+    };
 
-  return () => {
-    if (activeHandle) {
-      activeHandle.leaveRoom();
-    }
-    setRoomHandle(null);
-  };
-}, [isReady, roomName, joinRoom]);
+    subscribe().catch((err) => {
+      console.error('Failed to join room:', err);
+    });
+
+    return () => {
+      if (activeHandle) {
+        activeHandle.leaveRoom();
+      }
+      setRoomHandle(null);
+      setIsRoomConnected(false);
+    };
+  }, [isReady, roomName, joinRoom, helia]);
+
+  // HEARTBEAT (Пинг сервера для удержания комнаты)
+  useEffect(() => {
+    if (!roomHandle || !roomHandle.pingRoom) return;
+
+    const pingRelay = () => {
+      roomHandle.pingRoom!();
+    };
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        pingRelay();
+      }
+    }, CONFIG.INACTIVITY_TIMEOUT_MS);
+
+    const handleFocus = () => pingRelay();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [roomHandle]); 
 
   const handleSendMessage = async () => {
     const text = draft.trim();
-    if (!text || !roomHandle) {
-      return;
-    }
+    if (!text || !roomHandle) return;
 
     try {
       await roomHandle.sendMessage(text);
@@ -111,15 +162,19 @@ const handle = await joinRoom(roomName, (message: ChatMessage) => {
     }
   };
 
+  // Динамический плейсхолдер инпута для прозрачности логов
+  const getInputPlaceholder = () => {
+    if (!isReady) return 'Ожидание запуска узла...';
+    if (!roomHandle) return 'Открытие базы данных комнаты...';
+    if (!isRoomConnected) return 'Поиск пиров и склейка сети...';
+    return 'Напишите сообщение...';
+  };
+
   return (
     <div className="chat-container">
       <div className="chat-header">
         <div className="header-left">
-          <button
-            className="back-button"
-            aria-label="Back"
-            onClick={() => navigate('/contacts')}
-          >
+          <button className="back-button" aria-label="Back" onClick={() => navigate('/contacts')}>
             <ArrowLeft size={24} className="back-icon" />
           </button>
           <div className="contact-name">{contactName || 'IPFS Chat'}</div>
@@ -129,7 +184,13 @@ const handle = await joinRoom(roomName, (message: ChatMessage) => {
         </button>
       </div>
 
-      <NodeStatus nodeId={nodeId} isReady={isReady} error={error} />
+      <NodeStatus 
+        nodeId={nodeId} 
+        isReady={isReady} 
+        roomHandle={roomHandle}
+        isRoomConnected={isRoomConnected} 
+        error={error} 
+      />
 
       <div className="chat-messages">
         {messages.map((message) => (
@@ -147,23 +208,21 @@ const handle = await joinRoom(roomName, (message: ChatMessage) => {
 
       <div className="chat-input-area">
         <div className="input-container">
-          <button className="attachment-button" aria-label="Attach file">
+          <button className="attachment-button" aria-label="Attach file" disabled={!isRoomReady}>
             <Paperclip size={20} className="attachment-icon" />
           </button>
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={
-              isReady ? 'Напишите сообщение...' : 'Ожидание запуска узла...'
-            }
-            disabled={!isReady}
+            placeholder={getInputPlaceholder()}
+            disabled={!isRoomReady}
           />
         </div>
         <button
           className="send-button"
           aria-label="Send message"
           onClick={handleSendMessage}
-          disabled={!isReady || !draft.trim()}
+          disabled={!isRoomReady || !draft.trim()}
         >
           <Send size={20} />
         </button>

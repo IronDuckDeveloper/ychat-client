@@ -24,16 +24,15 @@ import { notifyArchivist } from './connectionManager';
 // Храним промис инициализации, чтобы избежать race condition в React
 let initializationPromise: Promise<any> | null = null;
 
+// Создаем менеджер (передаем туда твой сырой JSON с релеями)
+export const relayManager = new RelayManager(peersConfig.relays, CONFIG.RELAY_POOL_SIZE);
+
 export function createBrowserHelia(): Promise<any> {
   // Если нода уже создается или создана — возвращаем существующий промис
   if (initializationPromise) return initializationPromise;
 
   // Оборачиваем всю асинхронную логику в промис
-  initializationPromise = (async () => {
-
-    // Создаем менеджер (передаем туда твой сырой JSON с релеями)
-    const relayManager = new RelayManager(peersConfig.relays, CONFIG.RELAY_POOL_SIZE);
-    
+  initializationPromise = (async () => {    
     // Достаем или генерируем PeerID (зависит от твоей реализации crypto.ts)
     const privateKey = await getOrCreatePrivateKey();
     const peerId = await peerIdFromKeys(privateKey.public.bytes, privateKey.bytes);

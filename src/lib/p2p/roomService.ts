@@ -3,6 +3,9 @@ import type { Libp2p, PeerId } from '@libp2p/interface';
 import { createOrbitDB, OrbitDBAccessController, Identities } from '@orbitdb/core'; // Импортируем OrbitDB!
 import { CONFIG } from './config';
 import { notifyArchivist } from './connectionManager';
+import { RelayManager } from './RelayManager';
+import { relayManager } from './heliaClient.js';
+
 
 export type MessageType = 'sent' | 'received' | 'system';
 
@@ -13,9 +16,11 @@ export interface ChatMessage {
   type: MessageType;
 }
 
-export interface RoomActions {
-  sendMessage: (text: string) => Promise<void>;
+export interface RoomActions { // или type RoomActions = {
+  sendMessage: (message: string) => Promise<void>;
   leaveRoom: () => void;
+  pingRoom?: () => void;
+  dbAddress: string;
 }
 
 // Храним синглтон инстанса OrbitDB, чтобы не создавать его заново при смене комнат
@@ -44,10 +49,12 @@ async function getOrbitDB(helia: Helia) {
   return orbitdbInstance;
 }
 
+
 export async function joinRoom(
   helia: Helia, 
   roomName: string, 
-  onMessage: (message: ChatMessage) => void
+  onMessage: (message: ChatMessage) => void,
+  relayManagerInstance?: RelayManager
 ): Promise<RoomActions> {
   const libp2p = (helia as any).libp2p as unknown as Libp2p;
   
@@ -144,7 +151,15 @@ try {
     
     setTimeout(() => checkAndSyncRelays(helia), 2000);
     // Передаем именно dbAddress, а не имя комнаты!
-    notifyArchivist(libp2p, peerId, dbAddress);
+    const isRelay = relayManager.isRelay(peerId.toString());
+
+    if (isRelay) {
+      console.log(`🤝 Новое соединение с Архивариусом: ${peerId}. Отправляем адрес...`);
+      notifyArchivist(libp2p, peerId, dbAddress);
+      } else {
+      // Просто игнорируем, это обычный пользователь (браузер)
+      console.log(`🤝 Подключен обычный пир: ${peerId}`);
+    }
   };
 
   libp2p.addEventListener('peer:connect', onConnect);
@@ -171,7 +186,16 @@ try {
       libp2p.removeEventListener('peer:connect', onConnect);
       db.events.off('update', onDbUpdate);
       db.close().catch((e: any) => console.warn('Ошибка закрытия базы при выходе:', e));
-    }
+    },
+    pingRoom: () => {
+    // Вызываем то же самое, что мы вызываем при первом коннекте,
+    // чтобы передать адрес базы данных на сервер
+  if (relayManagerInstance && db) {
+        // Берем строковый адрес базы OrbitDB и скармливаем менеджеру релеев
+        relayManagerInstance.announceRoom(db.address.toString());
+      }
+  },
+    dbAddress: db.address.toString()
   };
 }
 

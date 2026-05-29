@@ -3,13 +3,12 @@ import type { Helia } from 'helia';
 import { createBrowserHelia } from '../lib/p2p/heliaClient';
 import { joinRoom as joinOrbitRoom } from '../lib/p2p/roomService'; 
 import type { ChatMessage, RoomActions } from '../lib/p2p/roomService';
+import { CONFIG } from '../lib/p2p/config';
 
 
 // Фиксируем глобальный инстанс, чтобы он не пересоздавался при ререндерах React
 let heliaInstance: Helia | null = null;
 let heliaInitPromise: Promise<Helia> | null = null;
-
-const PEER_SYNC_REQUEST_TOPIC = 'peers:sync:request';
 
 export const useIPFS = () => {
   const [isReady, setIsReady] = useState<boolean>(false);
@@ -51,7 +50,7 @@ export const useIPFS = () => {
         }
 
         // Подписываем клиента на входящие запросы синхронизации релеев
-        await pubsub.subscribe(PEER_SYNC_REQUEST_TOPIC);
+        await pubsub.subscribe(CONFIG.TOPICS.PEER_SYNC_REQUEST_TOPIC);
 
        // 3. Обновляем стейт React только один раз, если компонент жив
         if (isMounted) {
