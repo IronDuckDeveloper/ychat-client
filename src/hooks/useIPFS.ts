@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Helia } from 'helia';
-import { createBrowserHelia } from '../lib/p2p/heliaClient';
-import { joinRoom as joinOrbitRoom } from '../lib/p2p/roomService'; 
-import type { ChatMessage, RoomActions } from '../lib/p2p/roomService';
+import { createBrowserHelia } from '../lib/p2p/networking/heliaClient';
+import { joinRoom as joinOrbitRoom } from '../lib/p2p/services/roomService';
+import type { ChatMessage, RoomActions } from '../lib/p2p/services/roomService';
 import { CONFIG } from '../lib/p2p/config';
-
 
 // Фиксируем глобальный инстанс, чтобы он не пересоздавался при ререндерах React
 let heliaInstance: Helia | null = null;
@@ -21,7 +20,6 @@ export const useIPFS = () => {
 
     const init = async () => {
       try {
-
         // 1. Если инициализация ЕЩЕ НЕ НАЧИНАЛАСЬ ни разу в приложении
         if (!heliaInitPromise) {
           heliaInitPromise = createBrowserHelia()
@@ -52,7 +50,7 @@ export const useIPFS = () => {
         // Подписываем клиента на входящие запросы синхронизации релеев
         await pubsub.subscribe(CONFIG.TOPICS.PEER_SYNC_REQUEST_TOPIC);
 
-       // 3. Обновляем стейт React только один раз, если компонент жив
+        // 3. Обновляем стейт React только один раз, если компонент жив
         if (isMounted) {
           setNodeId(libp2p.peerId.toString());
           setIsReady(true);
@@ -64,13 +62,12 @@ export const useIPFS = () => {
             const allPeers = libp2p.getPeers();
             const pubsubPeers = pubsub.getPeers();
             const topics = pubsub.getTopics();
-            
+
             console.log(
-              `📊 Network: Peers=${allPeers.length} | PubSub=${pubsubPeers.length} | Topics=${JSON.stringify(topics)}`
+              `📊 Network: Peers=${allPeers.length} | PubSub=${pubsubPeers.length} | Topics=${JSON.stringify(topics)}`,
             );
           }
         }, 5000);
-
       } catch (err: any) {
         console.error('Ошибка инициализации Helia:', err);
         if (isMounted) {
@@ -90,13 +87,16 @@ export const useIPFS = () => {
 
   // Перенаправляем вызов на правильную функцию из roomService.ts
   const joinRoomCallback = useCallback(
-    async (roomName: string, onMessage: (message: ChatMessage) => void): Promise<RoomActions> => {
+    async (
+      roomName: string,
+      onMessage: (message: ChatMessage) => void,
+    ): Promise<RoomActions> => {
       if (!heliaInstance) {
         throw new Error('Helia node is not ready yet');
       }
       return await joinOrbitRoom(heliaInstance, roomName, onMessage);
     },
-    []
+    [],
   );
 
   return {
@@ -104,6 +104,6 @@ export const useIPFS = () => {
     isReady,
     nodeId,
     error,
-    joinRoom: joinRoomCallback
+    joinRoom: joinRoomCallback,
   };
 };

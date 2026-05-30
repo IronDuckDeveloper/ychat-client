@@ -4,8 +4,8 @@ import { ArrowLeft, Settings, Send, Paperclip } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useIPFS } from '../hooks/useIPFS';
 import '../styles/chat.scss';
-import type { ChatMessage } from '../lib/p2p/roomService';
-import { CONFIG } from '../lib/p2p/config';
+import type { ChatMessage } from '../lib/p2p/services/roomService.ts';
+import { CONFIG } from '../lib/p2p/config.ts';
 
 const NodeStatus = ({
   nodeId,
@@ -47,11 +47,11 @@ const Chat = () => {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  
+
   const [roomHandle, setRoomHandle] = useState<{
     sendMessage: (message: string) => Promise<void>;
     leaveRoom: () => void;
-    pingRoom?: () => void; 
+    pingRoom?: () => void;
     dbAddress?: string;
     loadMoreHistory: () => Promise<void>;
     hasMoreHistory: () => boolean;
@@ -68,10 +68,10 @@ const Chat = () => {
     let activeHandle: any = null;
 
     const subscribe = async () => {
-      setIsRoomConnected(false); 
-      
+      setIsRoomConnected(false);
+
       const roomActions = await joinRoom(roomName, (message: ChatMessage) => {
-        if (message?.text?.startsWith('System:')) return; 
+        if (message?.text?.startsWith('System:')) return;
 
         setMessages((prev) => {
           if (prev.some((m) => m.id === message.id)) return prev;
@@ -84,16 +84,18 @@ const Chat = () => {
       const libp2p = (helia as any)?.libp2p || (window as any).helia?.libp2p;
       if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {
         const pubsub = libp2p.services.pubsub;
-        
+
         let attempts = 0;
         while (attempts < 50) {
           const subscribers = pubsub.getSubscribers(roomActions.dbAddress);
-          
+
           if (subscribers && subscribers.length > 0) {
-            console.log(`📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`);
-            break; 
+            console.log(
+              `📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`,
+            );
+            break;
           }
-          
+
           await new Promise((resolve) => setTimeout(resolve, 300));
           attempts++;
         }
@@ -136,27 +138,32 @@ const Chat = () => {
       clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [roomHandle]); 
+  }, [roomHandle]);
 
   // 🔥 Скролл подкачка сообщений
   const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
-    
-    // 🔥 НОВОЕ: Вычисляем, насколько юзер отдалился от низа. 
+
+    // 🔥 НОВОЕ: Вычисляем, насколько юзер отдалился от низа.
     // Если больше чем на 50px — значит, он пошел читать историю.
-    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    const distanceFromBottom =
+      target.scrollHeight - target.scrollTop - target.clientHeight;
     isUserScrolledUp.current = distanceFromBottom > 50;
 
     // Старая логика пагинации
-    if (target.scrollTop === 0 && roomHandle?.hasMoreHistory() && !isLoadingMore) {
+    if (
+      target.scrollTop === 0 &&
+      roomHandle?.hasMoreHistory() &&
+      !isLoadingMore
+    ) {
       setIsLoadingMore(true);
-      
+
       const previousScrollHeight = target.scrollHeight;
       await roomHandle.loadMoreHistory();
 
       requestAnimationFrame(() => {
         if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = 
+          messagesContainerRef.current.scrollTop =
             messagesContainerRef.current.scrollHeight - previousScrollHeight;
         }
         setIsLoadingMore(false);
@@ -164,7 +171,7 @@ const Chat = () => {
     }
   };
 
-// Автоматический скролл вниз
+  // Автоматический скролл вниз
   useEffect(() => {
     if (!messagesContainerRef.current) return;
 
@@ -172,7 +179,8 @@ const Chat = () => {
     // 1. Мы не грузим старую историю (!isLoadingMore)
     // 2. Юзер сейчас НЕ читает историю где-то наверху (!isUserScrolledUp.current)
     if (!isLoadingMore && !isUserScrolledUp.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      messagesContainerRef.current.scrollTop =
+        messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
@@ -208,37 +216,41 @@ const Chat = () => {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-  // 1. Проверяем, нажали ли Enter
-  if (event.key === 'Enter') {
-    // 2. Если зажат Shift, ничего не делаем (пусть textarea делает перенос по умолчанию)
-    if (event.shiftKey) {
-      return;
+    // 1. Проверяем, нажали ли Enter
+    if (event.key === 'Enter') {
+      // 2. Если зажат Shift, ничего не делаем (пусть textarea делает перенос по умолчанию)
+      if (event.shiftKey) {
+        return;
+      }
+
+      // 3. Если Shift НЕ зажат, отменяем стандартное поведение (перенос строки) и отправляем сообщение
+      event.preventDefault();
+      handleSendMessage(); // Твоя функция отправки сообщения
     }
+  };
 
-    // 3. Если Shift НЕ зажат, отменяем стандартное поведение (перенос строки) и отправляем сообщение
-    event.preventDefault();
-    handleSendMessage(); // Твоя функция отправки сообщения
-  }
-};
+  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const textarea = event.target;
 
-const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-  const textarea = event.target;
-  
-  // 1. Сбрасываем высоту
-  textarea.style.height = '20px'; 
-  
-  // 2. Рассчитываем новую высоту
-  const newHeight = Math.min(textarea.scrollHeight, 60);
-  textarea.style.height = `${newHeight}px`;
-  
-  setDraft(textarea.value);
-};
+    // 1. Сбрасываем высоту
+    textarea.style.height = '20px';
+
+    // 2. Рассчитываем новую высоту
+    const newHeight = Math.min(textarea.scrollHeight, 60);
+    textarea.style.height = `${newHeight}px`;
+
+    setDraft(textarea.value);
+  };
 
   return (
     <div className="chat-container">
       <div className="chat-header">
         <div className="header-left">
-          <button className="back-button" aria-label="Back" onClick={() => navigate('/contacts')}>
+          <button
+            className="back-button"
+            aria-label="Back"
+            onClick={() => navigate('/contacts')}
+          >
             <ArrowLeft size={24} className="back-icon" />
           </button>
           <div className="contact-name">{contactName || 'IPFS Chat'}</div>
@@ -257,12 +269,15 @@ const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
          // Временный статус для отладки сетевого состояния. Потом можно убрать или превратить в иконку в шапке.
       /> */}
 
-      <div className="chat-messages"
+      <div
+        className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
       >
-        {isLoadingMore && <div className="message system">Загрузка старых сообщений...</div>}
-        
+        {isLoadingMore && (
+          <div className="message system">Загрузка старых сообщений...</div>
+        )}
+
         {messages.map((message) => (
           <div
             key={message.id}
@@ -278,16 +293,20 @@ const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
 
       <div className="chat-input-area">
         <div className="input-container">
-          <button className="attachment-button" aria-label="Attach file" disabled={!isRoomReady}>
+          <button
+            className="attachment-button"
+            aria-label="Attach file"
+            disabled={!isRoomReady}
+          >
             <Paperclip size={20} className="attachment-icon" />
           </button>
-        <textarea
-          value={draft}
-          onChange={handleInput}
-          onKeyDown={handleKeyDown}
-          placeholder={getInputPlaceholder()}
-          disabled={!isRoomReady}
-        />
+          <textarea
+            value={draft}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder={getInputPlaceholder()}
+            disabled={!isRoomReady}
+          />
         </div>
         <button
           className="send-button"

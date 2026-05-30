@@ -1,7 +1,8 @@
 import { generateKeyPairFromSeed } from '@libp2p/crypto/keys';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
-import { CONFIG } from './config';
+import { CONFIG } from '../config.ts';
+import * as bip39 from 'bip39';
 
 const STORAGE_KEY = 'browser-private-key';
 const SEED_LENGTH = 32;
@@ -9,10 +10,10 @@ const SEED_LENGTH = 32;
 // 1. НОВАЯ ФУНКЦИЯ: Вызывается из Auth.tsx при успешном Входе/Регистрации
 export async function saveSeedFromAuth(seed: Uint8Array) {
   if (seed.length !== SEED_LENGTH) throw new Error('Invalid seed length');
-  
+
   // Очищаем старые базы OrbitDB/Helia, так как заходит (или регистрируется) новый профиль
   await clearHeliaDatastore();
-  
+
   // Сохраняем seed в localStorage
   localStorage.setItem(STORAGE_KEY, uint8ArrayToString(seed, 'base64'));
   console.log('💾 Seed из мнемоники успешно сохранен в хранилище');
@@ -24,15 +25,15 @@ export async function getPrivateKey() {
   const stored = localStorage.getItem(STORAGE_KEY);
 
   if (!stored) {
-    // Если ключа нет, значит пользователь не авторизован. 
+    // Если ключа нет, значит пользователь не авторизован.
     // Helia не должна запускаться, нужно редиректить на /auth
-    throw new Error('NO_KEY_FOUND'); 
+    throw new Error('NO_KEY_FOUND');
   }
 
   try {
     const seed = uint8ArrayFromString(stored, 'base64');
     if (seed.length !== SEED_LENGTH) throw new Error('Invalid seed length');
-    
+
     console.log('✅ Seed успешно прочитан из хранилища');
     // Эта функция из твоего кода идеально создает Ed25519 ключи
     return await generateKeyPairFromSeed('Ed25519', seed);
@@ -47,14 +48,14 @@ export async function getPrivateKey() {
 export function clearHeliaDatastore(): Promise<void> {
   return new Promise((resolve, reject) => {
     console.warn('🧹 Очистка старой базы Helia из-за смены ключа...');
-    
+
     const req1 = indexedDB.deleteDatabase(CONFIG.DATA_DIR);
     const req2 = indexedDB.deleteDatabase(CONFIG.ORBITDB_BLOCKS_DIR);
 
     let completed = 0;
     const checkDone = () => {
       completed++;
-      if (completed === 2) resolve(); 
+      if (completed === 2) resolve();
     };
 
     req1.onsuccess = checkDone;
@@ -69,4 +70,29 @@ export function clearHeliaDatastore(): Promise<void> {
       reject(new Error('Failed to delete blockstore'));
     };
   });
+}
+
+// Генерирует массив из 12 слов
+export function generateNewMnemonic(): string[] {
+  const mnemonic = bip39.generateMnemonic(128);
+  return mnemonic.split(' ');
+}
+
+// Проверяет, валидна ли фраза
+export function isValidMnemonic(wordsArray: string[]): boolean {
+  const mnemonicString = wordsArray.join(' ').trim();
+  return bip39.validateMnemonic(mnemonicString);
+}
+
+// Превращает массив слов в 32-байтный сид для Ed25519
+export async function getSeedFromMnemonic(wordsArray: string[]): Promise<Uint8Array> {
+  const mnemonicString = wordsArray.join(' ').trim();
+  const seedBuffer = await bip39.mnemonicToSeed(mnemonicString);
+  const seed64 = new Uint8Array(seedBuffer);
+  return seed64.slice(0, 32); // Возвращаем 32 байта
+}
+
+// Проверяет, авторизован ли уже пользователь в этом браузере
+export function isAuthenticated(): boolean {
+  return !!localStorage.getItem(STORAGE_KEY);
 }
