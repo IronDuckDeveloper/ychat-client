@@ -12,7 +12,7 @@ const ContactList = () => {
           <div className="avatar">
             <User size={24} />
           </div>
-          <span className="font-bold">Egor Lachimov</span>
+          <span className="username">Egor Lachimov</span>
         </div>
         <button className="settings-button" aria-label="Settings">
           <Settings size={24} className="settings-icon" />

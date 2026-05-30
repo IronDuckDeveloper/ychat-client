@@ -207,6 +207,33 @@ const Chat = () => {
     return 'Напишите сообщение...';
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  // 1. Проверяем, нажали ли Enter
+  if (event.key === 'Enter') {
+    // 2. Если зажат Shift, ничего не делаем (пусть textarea делает перенос по умолчанию)
+    if (event.shiftKey) {
+      return;
+    }
+
+    // 3. Если Shift НЕ зажат, отменяем стандартное поведение (перенос строки) и отправляем сообщение
+    event.preventDefault();
+    handleSendMessage(); // Твоя функция отправки сообщения
+  }
+};
+
+const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const textarea = event.target;
+  
+  // 1. Сбрасываем высоту
+  textarea.style.height = '20px'; 
+  
+  // 2. Рассчитываем новую высоту
+  const newHeight = Math.min(textarea.scrollHeight, 60);
+  textarea.style.height = `${newHeight}px`;
+  
+  setDraft(textarea.value);
+};
+
   return (
     <div className="chat-container">
       <div className="chat-header">
@@ -221,13 +248,14 @@ const Chat = () => {
         </button>
       </div>
 
-      <NodeStatus 
+      {/* <NodeStatus 
         nodeId={nodeId} 
         isReady={isReady} 
         roomHandle={roomHandle}
         isRoomConnected={isRoomConnected} 
         error={error} 
-      />
+         // Временный статус для отладки сетевого состояния. Потом можно убрать или превратить в иконку в шапке.
+      /> */}
 
       <div className="chat-messages"
         ref={messagesContainerRef}
@@ -253,12 +281,13 @@ const Chat = () => {
           <button className="attachment-button" aria-label="Attach file" disabled={!isRoomReady}>
             <Paperclip size={20} className="attachment-icon" />
           </button>
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={getInputPlaceholder()}
-            disabled={!isRoomReady}
-          />
+        <textarea
+          value={draft}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
+          placeholder={getInputPlaceholder()}
+          disabled={!isRoomReady}
+        />
         </div>
         <button
           className="send-button"

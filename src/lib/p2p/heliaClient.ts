@@ -10,7 +10,7 @@ import { gossipsub } from '@chainsafe/libp2p-gossipsub';
 import { pubsubPeerDiscovery } from '@libp2p/pubsub-peer-discovery';
 import { LevelBlockstore } from 'blockstore-level'; // Точно так же, как на сервере!
 import { LevelDatastore } from 'datastore-level';
-import { getOrCreatePrivateKey } from './crypto';
+import { getPrivateKey } from './crypto';
 import { bitswap } from '@helia/block-brokers'
 import { all } from '@libp2p/websockets/filters';
 import { peerIdFromKeys } from '@libp2p/peer-id';
@@ -34,7 +34,7 @@ export function createBrowserHelia(): Promise<any> {
   // Оборачиваем всю асинхронную логику в промис
   initializationPromise = (async () => {    
     // Достаем или генерируем PeerID (зависит от твоей реализации crypto.ts)
-    const privateKey = await getOrCreatePrivateKey();
+    const privateKey = await getPrivateKey();
     const peerId = await peerIdFromKeys(privateKey.public.bytes, privateKey.bytes);
 
     const blockstore = new LevelBlockstore(CONFIG.ORBITDB_BLOCKS_DIR);
