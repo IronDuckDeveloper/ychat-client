@@ -9,6 +9,18 @@ export async function notifyArchivist(
   peerId: PeerId,
   dbAddress: string,
 ): Promise<void> {
+
+  if (!libp2p || !peerId) return;
+
+  const myIdStr = libp2p.peerId.toString();
+  const targetIdStr = peerId.toString(); // Убедитесь, что правильно извлекаете строку
+
+  // 🔥 Защита от ошибки "Tried to dial self"
+  if (targetIdStr === myIdStr) {
+    console.warn(`⚠️ [ConnectionManager] Отмена: попытка отправить анонс самому себе.`);
+    return; // Пропускаем, не вызывая ошибку сети
+  }
+  
   try {
     const stream = await libp2p.dialProtocol(peerId, CONFIG.TOPICS.ANNOUNCE);
 
