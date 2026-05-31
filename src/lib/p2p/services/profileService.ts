@@ -12,37 +12,41 @@
   * await profileDb.put(CONFIG.KEY_NICKNAME, 'Новый Крутой Ник');
 */
 
-import { CONFIG } from "../config";
+import { IPFSAccessController } from '@orbitdb/core';
+import { CONFIG } from "../config.ts";
 
 export async function initProfileDB(orbitdb: any) {
   try {
+    console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
 
-    console.log(`👤 [ProfileDB] Открываем базу профиля...`);
-
-    // Открываем или создаем базу данных
+    // 1. Создаем/Открываем базу с жестким контролем доступа
     const profileDb = await orbitdb.open(CONFIG.DB_PROFILE, {
       type: 'keyvalue',
+      // Явно указываем, что писать в базу может ТОЛЬКО владелец текущего Identity
+      AccessController: IPFSAccessController({ write: [orbitdb.identity.id] }) 
     });
 
-    console.log(`✅ [ProfileDB] База профиля успешно открыта!`);
-    console.log(`📍 [ProfileDB] Адрес базы: ${profileDb.address}`);
+    console.log(`✅ [ProfileDB] База открыта. Адрес: ${profileDb.address}`);
+    console.log(`🔒 [ProfileDB] Право на запись только у: ${orbitdb.identity.id}`);
 
-    // Проверяем, есть ли уже никнейм в базе (например, при восстановлении по seed-фразе)
+    // 2. Заполнение базовых данных
     const existingNickname = await profileDb.get(CONFIG.KEY_NICKNAME);
-    
+
     if (!existingNickname) {
-      // Если профиль новый, задаем дефолтные значения
-      console.log(`🆕 [ProfileDB] Новый профиль. Устанавливаем дефолтный никнейм.`);
+      console.log(`🆕 [ProfileDB] Данные профиля пусты. Заполняем...`);
+      
+      // Эти операции пройдут успешно, так как наш Identity совпадает с AccessController
       await profileDb.put(CONFIG.KEY_NICKNAME, 'Анонимный пользователь');
-      // Здесь же можно добавить дату создания, статус и т.д.
       await profileDb.put(CONFIG.KEY_DATE_CREATED, Date.now());
+      
+      console.log(`✅ [ProfileDB] Базовые данные успешно записаны.`);
     } else {
-      console.log(`♻️ [ProfileDB] Восстановлен профиль: ${existingNickname}`);
+      console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname}`);
     }
 
     return profileDb;
   } catch (error) {
-    console.error('❌ [ProfileDB] Ошибка при создании базы профиля:', error);
+    console.error('❌ [ProfileDB] Ошибка инициализации профиля:', error);
     throw error;
   }
 }

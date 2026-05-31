@@ -6,6 +6,7 @@ import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionMan
 import { RelayManager } from '../networking/RelayManager.ts';
 import { relayManager } from '../networking/heliaClient.ts';
 import { OrbitDBAccessController } from '@orbitdb/core';
+import { initProfileDB } from './profileService.ts';
 
 export async function joinRoom(
   helia: Helia,
@@ -201,4 +202,6 @@ export async function joinRoom(
   };
 }
 export type { ChatMessage };
+
+export type { RoomActions };
 

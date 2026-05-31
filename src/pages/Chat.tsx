@@ -1,47 +1,16 @@
 import { useRef, useState, useEffect } from 'react';
-import type { UIEvent } from 'react'; // 🔥 Исправлено: отдельный импорт для типа
+import type { UIEvent } from 'react'; 
 import { ArrowLeft, Settings, Send, Paperclip } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useIPFS } from '../hooks/useIPFS';
+import { useIPFS } from '../hooks/useIPFS.ts';
 import '../styles/chat.scss';
 import type { ChatMessage } from '../lib/p2p/services/roomService.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
 
-// const NodeStatus = ({
-//   nodeId,
-//   isReady,
-//   roomHandle,
-//   isRoomConnected,
-//   error,
-// }: {
-//   nodeId: string | null;
-//   isReady: boolean;
-//   roomHandle: any;
-//   isRoomConnected: boolean;
-//   error: string | null;
-// }) => {
-//   const getStatusText = () => {
-//     if (!isReady) return '⏳ Запуск узла...';
-//     if (!roomHandle) return '⏳ Открытие базы данных...';
-//     if (!isRoomConnected) return '⏳ Сетевой коннект (Grafting)...';
-//     return '✅ Онлайн';
-//   };
-
-//   return (
-//     <div className="ipfs-status-card">
-//       <p>Статус: {getStatusText()}</p>
-//       <p className="ipfs-node-id">
-//         Мой ID: <strong>{nodeId || 'получение...'}</strong>
-//       </p>
-//       {error ? <p className="ipfs-error">Ошибка: {error}</p> : null}
-//     </div>
-//   );
-// };
-
 const Chat = () => {
   const { contactName } = useParams();
   const navigate = useNavigate();
-  const { isReady, nodeId, error, joinRoom, helia } = useIPFS();
+  const { isReady, nodeId, joinRoom, helia } = useIPFS();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -65,52 +34,73 @@ const Chat = () => {
   useEffect(() => {
     if (!isReady || !joinRoom) return;
 
+    let isMounted = true;
     let activeHandle: any = null;
 
     const subscribe = async () => {
       setIsRoomConnected(false);
 
-      const roomActions = await joinRoom(roomName, (message: ChatMessage) => {
-        if (message?.text?.startsWith('System:')) return;
+      try {
+        const roomActions = await joinRoom(roomName, (message: ChatMessage) => {
+          if (!isMounted) return;
+          if (message?.text?.startsWith('System:')) return;
 
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === message.id)) return prev;
-          return [...prev, message];
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === message.id)) return prev;
+            return [...prev, message];
+          });
         });
-      });
 
-      activeHandle = roomActions;
-
-      const libp2p = (helia as any)?.libp2p || (window as any).helia?.libp2p;
-      if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {
-        const pubsub = libp2p.services.pubsub;
-
-        let attempts = 0;
-        while (attempts < 50) {
-          const subscribers = pubsub.getSubscribers(roomActions.dbAddress);
-
-          if (subscribers && subscribers.length > 0) {
-            console.log(
-              `📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`,
-            );
-            break;
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          attempts++;
+        // Если компонент размонтировался, пока мы ждали OrbitDB — сразу выходим
+        if (!isMounted) {
+          if (roomActions?.leaveRoom) roomActions.leaveRoom();
+          return;
         }
-      }
 
-      setRoomHandle(roomActions);
-      setIsRoomConnected(true);
+        activeHandle = roomActions;
+        setRoomHandle(roomActions);
+
+        // Склейка сети в Gossipsub
+        const libp2p = (helia as any)?.libp2p || (window as any).helia?.libp2p;
+        if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {
+          const pubsub = libp2p.services.pubsub;
+
+          let attempts = 0;
+          while (attempts < 50 && isMounted) {
+            const subscribers = pubsub.getSubscribers(roomActions.dbAddress);
+
+            if (subscribers && subscribers.length > 0) {
+              console.log(
+                `📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`,
+              );
+              break;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            attempts++;
+          }
+        }
+
+        if (isMounted) {
+          setIsRoomConnected(true);
+        }
+
+      } catch (err: any) {
+        // Заглушаем ошибку дублирования протокола из-за Strict Mode
+        if (err?.message?.includes('Handler already registered')) {
+          console.log('⚠️ [Chat] Повторная регистрация обработчика заблокирована (Strict Mode).');
+          return;
+        }
+        
+        console.error('Failed to join room:', err);
+      }
     };
 
-    subscribe().catch((err) => {
-      console.error('Failed to join room:', err);
-    });
+    subscribe();
 
     return () => {
-      if (activeHandle) {
+      isMounted = false;
+      if (activeHandle?.leaveRoom) {
         activeHandle.leaveRoom();
       }
       setRoomHandle(null);
@@ -122,7 +112,9 @@ const Chat = () => {
     if (!roomHandle || !roomHandle.pingRoom) return;
 
     const pingRelay = () => {
-      roomHandle.pingRoom!();
+      if (roomHandle?.pingRoom) {
+        roomHandle.pingRoom();
+      }
     };
 
     const intervalId = setInterval(() => {
@@ -140,25 +132,15 @@ const Chat = () => {
     };
   }, [roomHandle]);
 
-  // 🔥 Скролл подкачка сообщений
   const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
-
-    // 🔥 НОВОЕ: Вычисляем, насколько юзер отдалился от низа.
-    // Если больше чем на 50px — значит, он пошел читать историю.
-    const distanceFromBottom =
-      target.scrollHeight - target.scrollTop - target.clientHeight;
+    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
     isUserScrolledUp.current = distanceFromBottom > 50;
 
-    // Старая логика пагинации
-    if (
-      target.scrollTop === 0 &&
-      roomHandle?.hasMoreHistory() &&
-      !isLoadingMore
-    ) {
+    if (target.scrollTop === 0 && roomHandle?.hasMoreHistory() && !isLoadingMore) {
       setIsLoadingMore(true);
-
       const previousScrollHeight = target.scrollHeight;
+      
       await roomHandle.loadMoreHistory();
 
       requestAnimationFrame(() => {
@@ -171,24 +153,17 @@ const Chat = () => {
     }
   };
 
-  // Автоматический скролл вниз
   useEffect(() => {
     if (!messagesContainerRef.current) return;
-
-    // Скроллим вниз ТОЛЬКО если:
-    // 1. Мы не грузим старую историю (!isLoadingMore)
-    // 2. Юзер сейчас НЕ читает историю где-то наверху (!isUserScrolledUp.current)
     if (!isLoadingMore && !isUserScrolledUp.current) {
-      messagesContainerRef.current.scrollTop =
-        messagesContainerRef.current.scrollHeight;
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isLoadingMore]);
 
   const handleSendMessage = async () => {
     const text = draft.trim();
     if (!text || !roomHandle) return;
 
-    // 🔥 Сбрасываем флаг, чтобы при отправке своего сообщения нас точно кинуло вниз
     isUserScrolledUp.current = false;
 
     try {
@@ -216,29 +191,17 @@ const Chat = () => {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // 1. Проверяем, нажали ли Enter
-    if (event.key === 'Enter') {
-      // 2. Если зажат Shift, ничего не делаем (пусть textarea делает перенос по умолчанию)
-      if (event.shiftKey) {
-        return;
-      }
-
-      // 3. Если Shift НЕ зажат, отменяем стандартное поведение (перенос строки) и отправляем сообщение
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      handleSendMessage(); // Твоя функция отправки сообщения
+      handleSendMessage();
     }
   };
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const textarea = event.target;
-
-    // 1. Сбрасываем высоту
     textarea.style.height = '20px';
-
-    // 2. Рассчитываем новую высоту
     const newHeight = Math.min(textarea.scrollHeight, 60);
     textarea.style.height = `${newHeight}px`;
-
     setDraft(textarea.value);
   };
 
@@ -259,15 +222,6 @@ const Chat = () => {
           <Settings size={22} className="settings-icon" />
         </button>
       </div>
-
-      {/* <NodeStatus 
-        nodeId={nodeId} 
-        isReady={isReady} 
-        roomHandle={roomHandle}
-        isRoomConnected={isRoomConnected} 
-        error={error} 
-         // Временный статус для отладки сетевого состояния. Потом можно убрать или превратить в иконку в шапке.
-      /> */}
 
       <div
         className="chat-messages"

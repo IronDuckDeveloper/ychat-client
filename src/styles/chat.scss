@@ -159,6 +159,7 @@
       display: inline-block; 
       vertical-align: middle;
       caret-color: $accent-prime;
+      color: $text;
       
       &::placeholder {
         color: $hint;

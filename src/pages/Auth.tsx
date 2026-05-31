@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Eye, EyeOff, User, HelpCircle } from 'lucide-react';
+import { initializeApp } from '../lib/p2p/services/authService.ts';
 import { 
   saveSeedFromAuth, 
   generateNewMnemonic, 
@@ -24,20 +25,21 @@ function Auth() {
 
   // Эффект для очистки полей при переключении между Входом и Регистрацией
   useEffect(() => {
-    // Если ключ уже есть в localStorage — отправляем пользователя в чат
+    // Проверка авторизации
     if (isAuthenticated()) {
       navigate('/contacts', { replace: true });
       return;
     }
-
+    // Очистка полей при переключении
     setWords(Array(12).fill(''));
     setNickname('');
     setShowPass(false);
 
+    // Генерация только если мы перешли в режим регистрации
     if (isRegister) {
       generateWords();
     }
-  }, [isRegister]);
+  }, [isRegister, navigate]);
 
   const handleWordChange = (index: number, value: string) => {
     const newWords = [...words];
@@ -47,7 +49,6 @@ function Auth() {
 
   // Делаем функцию асинхронной
   const handleLoginOrRegister = async () => {
-
     if (isRegister) {
       if (!nickname.trim()) {
         alert('Пожалуйста, введите никнейм');
@@ -80,7 +81,6 @@ function Auth() {
       // 1. Конвертируем слова в Seed
       const seedBuffer = await getSeedFromMnemonic(words);
       const seed64 = new Uint8Array(seedBuffer);
-
       // 2. Отрезаем 32 байта для Ed25519
       const seed32 = seed64.slice(0, 32);
 
@@ -88,16 +88,18 @@ function Auth() {
       // Он сам сохранит базу, очистит старый кэш IndexedDB и подготовит почву.
       await saveSeedFromAuth(seed32);
 
-      if (isRegister) {
-        console.log('Регистрация завершена, ключи сохранены.');
-        // Здесь мы будем вызывать создание OrbitDB БД для профиля (никнейма)
-        // Но пока просто редирект:
-        navigate('/contacts', { replace: true });
+      // ЗАПУСКАЕМ СЕТЬ И ПРОФИЛЬ
+      // Если регистрация - передаем никнейм. Если вход - undefined.
+      await initializeApp(isRegister ? nickname : undefined);
+
+    if (isRegister) {
+        console.log('✅ Регистрация завершена, профиль создан.');
       } else {
-        console.log('Вход выполнен, ключи восстановлены.');
-        // Для входа ключи сохранены, можно пускать пользователя дальше:
-        navigate('/contacts', { replace: true });
+        console.log('✅ Вход выполнен, профиль восстановлен.');
       }
+      // Переходим к контактам
+        navigate('/contacts', { replace: true });
+
     } catch (error) {
       console.error('Ошибка авторизации:', error);
       alert('Произошла ошибка при обработке данных.');
