@@ -7,36 +7,36 @@ import '../styles/chat.scss';
 import type { ChatMessage } from '../lib/p2p/services/roomService.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
 
-const NodeStatus = ({
-  nodeId,
-  isReady,
-  roomHandle,
-  isRoomConnected,
-  error,
-}: {
-  nodeId: string | null;
-  isReady: boolean;
-  roomHandle: any;
-  isRoomConnected: boolean;
-  error: string | null;
-}) => {
-  const getStatusText = () => {
-    if (!isReady) return '⏳ Запуск узла...';
-    if (!roomHandle) return '⏳ Открытие базы данных...';
-    if (!isRoomConnected) return '⏳ Сетевой коннект (Grafting)...';
-    return '✅ Онлайн';
-  };
+// const NodeStatus = ({
+//   nodeId,
+//   isReady,
+//   roomHandle,
+//   isRoomConnected,
+//   error,
+// }: {
+//   nodeId: string | null;
+//   isReady: boolean;
+//   roomHandle: any;
+//   isRoomConnected: boolean;
+//   error: string | null;
+// }) => {
+//   const getStatusText = () => {
+//     if (!isReady) return '⏳ Запуск узла...';
+//     if (!roomHandle) return '⏳ Открытие базы данных...';
+//     if (!isRoomConnected) return '⏳ Сетевой коннект (Grafting)...';
+//     return '✅ Онлайн';
+//   };
 
-  return (
-    <div className="ipfs-status-card">
-      <p>Статус: {getStatusText()}</p>
-      <p className="ipfs-node-id">
-        Мой ID: <strong>{nodeId || 'получение...'}</strong>
-      </p>
-      {error ? <p className="ipfs-error">Ошибка: {error}</p> : null}
-    </div>
-  );
-};
+//   return (
+//     <div className="ipfs-status-card">
+//       <p>Статус: {getStatusText()}</p>
+//       <p className="ipfs-node-id">
+//         Мой ID: <strong>{nodeId || 'получение...'}</strong>
+//       </p>
+//       {error ? <p className="ipfs-error">Ошибка: {error}</p> : null}
+//     </div>
+//   );
+// };
 
 const Chat = () => {
   const { contactName } = useParams();

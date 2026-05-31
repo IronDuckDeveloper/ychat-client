@@ -4,25 +4,22 @@ import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
 import { CONFIG } from '../config.ts';
 import * as bip39 from 'bip39';
 
-const STORAGE_KEY = 'browser-private-key';
-const SEED_LENGTH = 32;
-
-// 1. НОВАЯ ФУНКЦИЯ: Вызывается из Auth.tsx при успешном Входе/Регистрации
+// 1. Вызывается из Auth.tsx при успешном Входе/Регистрации
 export async function saveSeedFromAuth(seed: Uint8Array) {
-  if (seed.length !== SEED_LENGTH) throw new Error('Invalid seed length');
+  if (seed.length !== CONFIG.SEED_LENGTH) throw new Error('Invalid seed length');
 
   // Очищаем старые базы OrbitDB/Helia, так как заходит (или регистрируется) новый профиль
   await clearHeliaDatastore();
 
   // Сохраняем seed в localStorage
-  localStorage.setItem(STORAGE_KEY, uint8ArrayToString(seed, 'base64'));
+  localStorage.setItem(CONFIG.STORAGE_KEY, uint8ArrayToString(seed, 'base64'));
   console.log('💾 Seed из мнемоники успешно сохранен в хранилище');
 }
 
 // 2. ОБНОВЛЕННАЯ ФУНКЦИЯ: Теперь она только читает ключ.
 // Вызывается из createBrowserHelia()
 export async function getPrivateKey() {
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = localStorage.getItem(CONFIG.STORAGE_KEY);
 
   if (!stored) {
     // Если ключа нет, значит пользователь не авторизован.
@@ -32,14 +29,14 @@ export async function getPrivateKey() {
 
   try {
     const seed = uint8ArrayFromString(stored, 'base64');
-    if (seed.length !== SEED_LENGTH) throw new Error('Invalid seed length');
+    if (seed.length !== CONFIG.SEED_LENGTH) throw new Error('Invalid seed length');
 
     console.log('✅ Seed успешно прочитан из хранилища');
     // Эта функция из твоего кода идеально создает Ed25519 ключи
     return await generateKeyPairFromSeed('Ed25519', seed);
   } catch (err) {
     console.warn('⚠️ Seed поврежден, удаляем...');
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CONFIG.STORAGE_KEY);
     throw new Error('KEY_CORRUPTED');
   }
 }
@@ -94,5 +91,5 @@ export async function getSeedFromMnemonic(wordsArray: string[]): Promise<Uint8Ar
 
 // Проверяет, авторизован ли уже пользователь в этом браузере
 export function isAuthenticated(): boolean {
-  return !!localStorage.getItem(STORAGE_KEY);
+  return !!localStorage.getItem(CONFIG.STORAGE_KEY);
 }

@@ -1,11 +1,6 @@
 import { multiaddr } from '@multiformats/multiaddr';
 import type { Libp2p } from '@libp2p/interface';
-
-interface RelayConfig {
-  name: string;
-  address: string;
-  peerId: string;
-}
+import { type RelayConfig } from '../config.ts';
 
 export class RelayManager {
   private relayPool: RelayConfig[] = [];

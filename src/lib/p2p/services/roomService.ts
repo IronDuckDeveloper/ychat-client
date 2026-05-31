@@ -1,30 +1,11 @@
 import type { Helia } from 'helia';
 import type { Libp2p, PeerId } from '@libp2p/interface';
 import { getOrbitDB } from '../orbit/client.ts';
-import { CONFIG } from '../config.ts';
+import { CONFIG, type ChatMessage, type RoomActions } from '../config.ts';
 import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionManager.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
 import { relayManager } from '../networking/heliaClient.ts';
 import { OrbitDBAccessController } from '@orbitdb/core';
-
-export type MessageType = 'sent' | 'received' | 'system';
-
-export interface ChatMessage {
-  id: string;
-  whoSent: string;
-  text: string;
-  type: MessageType;
-}
-
-export interface RoomActions {
-  // или type RoomActions = {
-  sendMessage: (message: string) => Promise<void>;
-  leaveRoom: () => void;
-  pingRoom?: () => void;
-  dbAddress: string;
-  loadMoreHistory: () => Promise<void>;
-  hasMoreHistory: () => boolean;
-}
 
 export async function joinRoom(
   helia: Helia,
@@ -219,3 +200,5 @@ export async function joinRoom(
     hasMoreHistory: () => hasMore,
   };
 }
+export type { ChatMessage };
+
