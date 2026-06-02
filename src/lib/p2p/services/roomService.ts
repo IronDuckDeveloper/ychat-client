@@ -6,7 +6,6 @@ import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionMan
 import { RelayManager } from '../networking/RelayManager.ts';
 import { relayManager } from '../networking/heliaClient.ts';
 import { OrbitDBAccessController } from '@orbitdb/core';
-import { initProfileDB } from './profileService.ts';
 
 // Храним не просто инстансы, а промисы открытия и счетчик активных компонентов
 const dbCache = new Map<string, {

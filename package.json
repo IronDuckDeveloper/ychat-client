@@ -29,6 +29,8 @@
     "buffer": "^6.0.3",
     "datastore-level": "10.0.0",
     "helia": "4.2.6",
+    "it-length-prefixed": "^11.0.1",
+    "it-pipe": "^3.0.1",
     "libp2p": "1.9.4",
     "lucide-react": "^1.11.0",
     "react": "^19.2.5",

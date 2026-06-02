@@ -49,7 +49,7 @@ export const CONFIG = {
   KEY_NICKNAME: 'nickname', // Ключ для хранения никнейма в базе профиля
   KEY_DATE_CREATED: 'createdAt', // Ключ для хранения даты создания профиля
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства
-  KEY_IP_ADDRESS: 'regIp', // Ключ для хранения IP-адреса
+  KEY_IP_ADDRESS: 'ipAddress', // Ключ для хранения IP-адреса
 
   STORAGE_KEY: 'browser-private-key', // Ключ для хранилища в localStorage, где будет сохраняться seed-фраза в виде base64 строки
   SEED_LENGTH: 32,  // Длина seed для Ed25519 - 32 байта
@@ -62,11 +62,16 @@ export const CONFIG = {
 
   CHUNK_SIZE: 1, // Сколько сообщений грузить за раз
 
+    MSG: {
+    SUCCESS : 'SUCCESS',
+    FORBIDDEN : 'FORBIDDEN',
+  },
+
   TOPICS: {
     ANNOUNCE: '/p2p-relay/v1/announce', // Топик для анонсирования адреса базы данных на сервер-Архивариус
     PEER_SYNC_REQUEST: 'peers:sync:request', // Топик для запроса синхронизации с релеями
     PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:', // Базовый топик для ответа синхронизации, к которому будет добавляться ID запрашивающего пира
-    PEER_SYNC_REQUEST_TOPIC: 'peers:sync:request' // Топик для запроса синхронизации релеев (можно использовать тот же, что и PEER_SYNC_REQUEST, просто обрабатывать по-разному)
-
+    PEER_SYNC_REQUEST_TOPIC: 'peers:sync:request', // Топик для запроса синхронизации релеев (можно использовать тот же, что и PEER_SYNC_REQUEST, просто обрабатывать по-разному)
+    RPC_PROTOCOL: '/ychat/anti-flood/1.0.0' // Протокол для RPC-метода проверки регистрации (антифрод)
   }
 };

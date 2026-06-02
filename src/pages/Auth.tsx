@@ -20,6 +20,7 @@ function Auth() {
   // Функция генерации настоящей BIP39 мнемоники (12 слов)
   const generateWords = () => {
     const mnemonic = generateNewMnemonic();
+    console.log('✅✅✅✅✅✅✅✅✅ mnemonic generated:', mnemonic);
     setWords(mnemonic);
   };
 

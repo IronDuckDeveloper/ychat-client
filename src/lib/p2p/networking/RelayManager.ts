@@ -1,6 +1,9 @@
 import { multiaddr } from '@multiformats/multiaddr';
 import type { Libp2p } from '@libp2p/interface';
-import { type RelayConfig } from '../config.ts';
+import { CONFIG, type RelayConfig } from '../config.ts';
+import { pipe } from 'it-pipe';
+import * as lp from 'it-length-prefixed';
+import { peerIdFromString } from '@libp2p/peer-id';
 
 export class RelayManager {
   private relayPool: RelayConfig[] = [];
@@ -21,6 +24,18 @@ export class RelayManager {
     if (this.relayPool.length === 0) return [];
     const r = this.relayPool[0];
     return [`${r.address}/p2p/${r.peerId}`];
+  }
+
+  // Получить весь текущий пул для перебора при старте
+  public getPool(): RelayConfig[] {
+    return this.relayPool;
+  }
+
+  // Зафиксировать рабочий релей, если старт прошел не с первого в списке
+  public setActiveIndex(index: number): void {
+    if (index >= 0 && index < this.relayPool.length) {
+      this.currentIdx = index;
+    }
   }
 
   // Привязываем инстанс libp2p после его старта
@@ -67,7 +82,7 @@ export class RelayManager {
       const targetTarget = multiaddr(`${currentRelay.address}/p2p/${currentRelay.peerId}`);
       
       // Открываем прямой стрим к релею по протоколу анонсов
-      const stream = await this.libp2p.dialProtocol(targetTarget, '/p2p-relay/v1/announce');
+      const stream = await this.libp2p.dialProtocol(targetTarget, CONFIG.TOPICS.ANNOUNCE);
       
       // Динамически импортируем pipe, чтобы не было проблем с типами ESM
       const { pipe } = await import('it-pipe');
@@ -122,5 +137,85 @@ export class RelayManager {
     }
     
     this.isSwitching = false;
+  }
+
+  // Получить текущий активный релей
+  public getActiveRelay(): RelayConfig | null {
+    return this.relayPool[this.currentIdx] || null;
+  }
+
+  /**
+   * Отправляет запрос на регистрацию Архивариусу
+   * @returns boolean - успешна ли регистрация
+   */
+  public async registerWithRelay(
+    libp2p: Libp2p,
+    relayPeerIdString: string,
+    profileDbAddress: string,
+    fingerprint: string,
+    ipAddress: string
+  ): Promise<boolean> {
+
+    try {
+      console.log(`🔄 [RPC] Отправляем запрос Архивариусу: ${relayPeerIdString.slice(-6)}...`);
+      
+      const relayPeerId = peerIdFromString(relayPeerIdString);
+      const stream = await libp2p.dialProtocol(relayPeerId, CONFIG.TOPICS.RPC_PROTOCOL);
+
+      const payload = JSON.stringify({
+        action: 'REGISTER',
+        profileDbAddress: profileDbAddress,
+        fingerprint: fingerprint,
+        ipAddress: ipAddress
+      });
+
+      // ==========================================
+      // 1. ОТПРАВКА ДАННЫХ (Глушим типы pipe полностью)
+      // ==========================================
+      // Передаем lp.encode БЕЗ скобок. Радикально отключаем проверку типов пайпа.
+      await (pipe as any)(
+        [new TextEncoder().encode(payload)],
+        lp.encode,
+        stream.sink
+      );
+
+      // ==========================================
+      // 2. ПОЛУЧЕНИЕ ОТВЕТА
+      // ==========================================
+      let isSuccess = false;
+
+      // Передаем lp.decode БЕЗ скобок. Полностью изолируем цепочку вывода типов.
+      await (pipe as any)(
+        stream.source,
+        lp.decode,
+        async function (source: any) {
+          for await (const chunk of source) {
+            // chunk гарантированно будет иметь метод .subarray() в рантайме
+            const responseString = new TextDecoder().decode(chunk.subarray());
+            const response = JSON.parse(responseString);
+            
+            console.log('📬 [RPC] Ответ Архивариуса:', response);
+            
+            if (response.status === CONFIG.MSG.SUCCESS) {
+              isSuccess = true;
+              console.log(`✅ [RPC] Успешная регистрация: ${response.message}`);
+            } else if (response.status === CONFIG.MSG.FORBIDDEN) { 
+              isSuccess = false;
+              console.error(`🚨 [RPC] Отказ в регистрации: ${response.message}`);
+            } else {
+              console.error(`🚨 [RPC] Неизвестный статус: ${response.status}`);
+            }
+            break; // Нужен только один пакет
+          }
+        }
+      );
+
+      await stream.close();
+      return isSuccess;
+    } catch (error: any) {
+      console.error('❌ [RPC Error] Ошибка связи с Архивариусом:', error);
+      // РАДИКАЛЬНОЕ РЕШЕНИЕ: вместо return false кидаем ошибку сети наверх
+      throw new Error(`Сбой связи с Архивариусом: ${error.message || error}`);
+    }
   }
 }
