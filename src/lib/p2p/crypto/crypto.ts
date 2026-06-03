@@ -93,3 +93,17 @@ export async function getSeedFromMnemonic(wordsArray: string[]): Promise<Uint8Ar
 export function isAuthenticated(): boolean {
   return !!localStorage.getItem(CONFIG.STORAGE_KEY);
 }
+
+// Вызывается, если сервер отказал в регистрации, чтобы не плодить "мертвые" профили
+export async function clearAuthData() {
+  // 1. Удаляем сохраненный сид из памяти браузера
+  localStorage.removeItem(CONFIG.STORAGE_KEY);
+  
+  // 2. Сносим базы IndexedDB, которые успели создаться до ошибки
+  try {
+    await clearHeliaDatastore();
+    console.log('🗑️ [Rollback] Seed и локальные базы успешно удалены.');
+  } catch (err) {
+    console.error('⚠️ [Rollback] Ошибка при удалении баз:', err);
+  }
+}

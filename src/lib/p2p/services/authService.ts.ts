@@ -139,7 +139,24 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
   } catch (error) {
     console.error('❌ [Init] Ошибка инициализации:', error);
-    throw error;
+
+    try {
+      console.log('🧹 [Init] Откат изменений: останавливаем базы и узел...');
+      if (globalProfileDb) await globalProfileDb.close();
+      if (globalOrbitDB) await globalOrbitDB.stop();
+      if (globalHelia) await globalHelia.stop();
+    } catch (cleanupError) {
+      console.error('⚠️ [Init] Ошибка при очистке мусора:', cleanupError);
+    }
+
+    // Сбрасываем стейт
+    globalHelia = null;
+    globalOrbitDB = null;
+    globalProfileDb = null;
+    globalRelayManager = null;
+    isInitializing = false;
+
+    throw error;  // Пробрасываем ошибку дальше в Auth.tsx
   } finally {
     isInitializing = false;
   }

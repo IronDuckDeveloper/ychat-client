@@ -7,7 +7,8 @@ import {
   generateNewMnemonic, 
   isValidMnemonic, 
   getSeedFromMnemonic, 
-  isAuthenticated
+  isAuthenticated,
+  clearAuthData
 } from '../lib/p2p/crypto/crypto.ts';
 
 function Auth() {
@@ -101,9 +102,21 @@ function Auth() {
       // Переходим к контактам
         navigate('/contacts', { replace: true });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Ошибка авторизации:', error);
-      alert('Произошла ошибка при обработке данных.');
+
+      // 🛑 ДЕЛАЕМ ОТКАТ ПРИ ОШИБКЕ РЕГИСТРАЦИИ 🛑
+      if (isRegister) {
+        console.log('🔄 Откат изменений: удаляем фейковые ключи из памяти...');
+        await clearAuthData(); // 👈 Вызываем нашу новую функцию
+        
+        // Опционально: можно сбросить поля ввода на экране
+        setNickname('');
+        generateWords(); 
+      }
+      
+      // Показываем пользователю, что именно пошло не так
+      alert(error.message || 'Произошла ошибка при обработке данных. Регистрация прервана.');
     }
   };
 
