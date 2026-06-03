@@ -153,7 +153,8 @@ export class RelayManager {
     relayPeerIdString: string,
     profileDbAddress: string,
     fingerprint: string,
-    ipAddress: string
+    ipAddress: string,
+    action: 'REGISTER' | 'LOGIN'
   ): Promise<boolean> {
 
     try {
@@ -163,7 +164,7 @@ export class RelayManager {
       const stream = await libp2p.dialProtocol(relayPeerId, CONFIG.TOPICS.RPC_PROTOCOL);
 
       const payload = JSON.stringify({
-        action: 'REGISTER',
+        action: action, // 👈 Передаем на сервер,
         profileDbAddress: profileDbAddress,
         fingerprint: fingerprint,
         ipAddress: ipAddress

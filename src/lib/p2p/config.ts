@@ -64,8 +64,8 @@ export const CONFIG = {
 
     MSG: {
     SUCCESS : 'SUCCESS',
-    FORBIDDEN : 'FORBIDDEN',
-  },
+    FORBIDDEN : 'FORBIDDEN'
+    },
 
   TOPICS: {
     ANNOUNCE: '/p2p-relay/v1/announce', // Топик для анонсирования адреса базы данных на сервер-Архивариус

@@ -94,6 +94,8 @@ export async function initializeApp(nicknameForRegistration?: string) {
       for (const relay of relays) {
         try {
           console.log(`⏳ [Init] Пробуем зарегистрироваться через релей: ${relay.name}...`);
+
+          const actionType = nicknameForRegistration ? 'REGISTER' : 'LOGIN';   
           
           // Шлем запрос именно на текущий в итерации relay.peerId
           const isRegistered = await globalRelayManager.registerWithRelay(
@@ -101,9 +103,11 @@ export async function initializeApp(nicknameForRegistration?: string) {
             relay.peerId,
             profileAddressStr,
             fingerprint,
-            ipAddress
+            ipAddress,
+            actionType
           );
 
+          // Если регистрация прошла успешно, выходим из цикла и фиксируем этот релей как активный в менеджере
           if (isRegistered) {
             registrationSuccess = true;
             
