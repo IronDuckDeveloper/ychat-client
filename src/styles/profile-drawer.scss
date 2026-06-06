@@ -1,0 +1,259 @@
+@import './variables.scss';
+
+// Оверлей (затемнение заднего фона)
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba($chat-bg-dark, 0.4);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+
+  &.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+// Боковое меню
+.profile-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: calc(100vw * 2 / 3); // 2/3 экрана на мобилках
+  background-color: $bg;
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 4px 0 15px rgba($chat-bg-dark, 0.15);
+
+  // 1/3 экрана на десктопах
+  @media (min-width: 768px) {
+    width: calc(100vw / 3);
+  }
+
+  &.open {
+    transform: translateX(0);
+  }
+
+  // Крестик закрытия меню
+  .close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    color: $hint;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+
+    &:hover {
+      color: $text;
+    }
+  }
+
+  // Контентная верхняя часть
+  .drawer-top {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3.5rem 1.5rem 1rem;
+    overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+
+    .avatar-container {
+      margin-bottom: 2rem;
+
+      .drawer-avatar {
+        width: 120px;
+        height: 120px;
+        background-color: rgba($accent-prime, 0.1);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: $accent-prime;
+        position: relative;
+        overflow: hidden;
+
+        .avatar-edit-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba($chat-bg-dark, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: $text_variant;
+          cursor: pointer;
+          transition: background-color 0.2s;
+
+          &:hover {
+            background: rgba($chat-bg-dark, 0.6);
+          }
+        }
+      }
+    }
+
+    // Блок формы / отображения данных
+    .profile-info-container {
+      width: 100%;
+
+      // Режим просмотра
+      .info-display {
+        text-align: center;
+        
+        .display-nickname {
+          font-size: 1.4rem;
+          font-weight: 700;
+          color: $accent-prime;
+          margin-bottom: 0.75rem;
+        }
+
+        .display-bio {
+          font-size: 0.95rem;
+          color: $text;
+          line-height: 1.5;
+          word-break: break-word;
+        }
+      }
+
+      // Режим редактирования (Полная копия стилей auth-screen)
+      .drawer-inputs-group {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        width: 100%;
+
+        .drawer-input-wrapper {
+          position: relative;
+          display: flex;
+          align-items: center;
+          width: 100%;
+
+          &.alignment-top {
+            align-items: flex-start;
+          }
+
+          .drawer-input-icon {
+            position: absolute;
+            left: 1rem;
+            color: $hint;
+            pointer-events: none;
+
+            &.textarea-icon {
+              top: 1rem; // Выравнивание иконки bio по верхнему краю
+            }
+          }
+
+          .drawer-nickname-input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.7rem;
+            border: 2px solid rgba($accent-prime, 0.2);
+            border-radius: $radius;
+            outline: none;
+            font-size: 0.95rem;
+            background-color: $text_variant;
+            color: $text;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+
+            &:focus {
+              border-color: $accent-prime;
+            }
+
+            &::placeholder {
+              color: $hint;
+            }
+
+            &.bio-textarea {
+              resize: none;
+              min-height: 120px;
+              font-family: inherit;
+              line-height: 1.4;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Нижняя панель с кнопками
+  .drawer-bottom {
+    padding: 1.5rem;
+    display: flex;
+    justify-content: space-between; // Разносит кнопки по краям (Выход слева, Изменить справа)
+    align-items: center;
+    border-top: 1px solid rgba($accent-prime, 0.1);
+    background-color: $bg;
+
+    .round-action-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba($chat-bg-dark, 0.1);
+      transition: transform 0.1s, background-color 0.2s, color 0.2s;
+
+      &:hover {
+        transform: scale(1.05);
+      }
+
+      &:active {
+        transform: scale(0.98);
+      }
+
+      // Кнопка выхода (Красная / Нейтральная деструктивная)
+      &.logout-btn {
+        background-color: $text_variant;
+        color: $hint;
+        border: 2px solid rgba($hint, 0.2);
+
+        &:hover {
+          color: $chat-bg-dark;
+          border-color: $chat-bg-dark;
+        }
+      }
+
+      // Кнопка Изменить (Прозрачный фиолетовый стиль)
+      &.edit-btn {
+        background-color: $text_variant;
+        color: $accent-prime;
+        border: 2px solid rgba($accent-prime, 0.3);
+
+        &:hover {
+          background-color: rgba($accent-prime, 0.05);
+          border-color: $accent-prime;
+        }
+      }
+
+      // Кнопка Сохранить (Фиолетовая заливка)
+      &.save-btn {
+        background-color: $accent-prime;
+        color: $text_variant;
+
+        &:hover {
+          background-color: $user-bubble; // Использование более светлого фиолетового при ховере
+        }
+      }
+
+      // Гарантия, что любая иконка внутри кнопки унаследует нужный цвет
+      svg {
+        color: inherit;
+      }
+    }
+  }
+}

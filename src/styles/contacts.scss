@@ -13,7 +13,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  height: 60px; // Размер как в чате
+  height: 60px;
   background-color: $accent-prime;
   border-bottom: 1px solid $border;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
@@ -24,37 +24,63 @@
     gap: 0.75rem;
 
     .avatar {
+      width: 3rem; 
+      height: 3rem;
+      background-color: rgba($text_variant, 0.15); 
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      color: $text_variant;
+      color: $text_variant; 
+      overflow: hidden;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background-color: rgba($text_variant, 0.25);
+        transform: scale(1.02);
+      }
     }
 
     .username {
+      font-weight: 600;
       color: $text_variant;
     }
   }
 
-  .settings-button {
+  .header-actions {
+    display: flex;
+    flex-direction: row; // Строго в ряд
+    align-items: center;
+    gap: 0.5rem;        // Минимальный аккуратный отступ (8px), чтобы они были прямо рядом
+    flex-shrink: 0;     // Запрещаем кнопкам сжиматься или переноситься
+  }
+
+    .header-action-button {
     background: none;
     border: none;
-    padding: 0;
+    width: 40px;        // Задаем фиксированную кликабельную область
+    height: 40px;       // Чтобы кнопки были аккуратными квадратами
+    border-radius: $radius; // Используем твой радиус скругления для легкого фона при ховере
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    color: $text_variant;
+    transition: all 0.2s ease;
 
     &:hover {
-      .settings-icon {
-        transform: scale(1.08);
-      }
+      background-color: rgba($text_variant, 0.1); // Легкая подсветка кнопки при наведении
+      transform: scale(1.05);
     }
-  }
 
-  .settings-icon {
-    color: $text_variant;
-    transition: color 0.2s ease;
+    &:active {
+      transform: scale(0.95);
+    }
+
+    svg {
+      display: block; // Убираем дефолтные инлайновые отступы у иконки
+    }
   }
 }
 

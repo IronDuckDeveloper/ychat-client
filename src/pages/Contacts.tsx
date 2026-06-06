@@ -1,15 +1,19 @@
-import { User, Settings, Search } from 'lucide-react';
+import { User, Search, Share2, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { globalProfileDb, onDbReady } from '../lib/p2p/services/authService.ts';
 import { isAuthenticated } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
+import ProfileDrawer from '../components/ProfileDrawer';
 
 const ContactList = () => {
   const navigate = useNavigate();
   const [myNickname, setMyNickname] = useState<string>('Загрузка...');
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);   // Состояние для управления боковым меню
+  const [myBio, setMyBio] = useState<string>(''); // Добавляем стейт для Bio
+
 
   // 1. Проверка авторизации (токен/сид)
   useEffect(() => {
@@ -37,14 +41,18 @@ const ContactList = () => {
     };
   }, []);
 
-  // 2. Ожидание инициализации P2P-базы и загрузка профиля
+// Загрузка профиля из базы
   useEffect(() => {
     if (!isAuthenticated()) return;
 
     const loadProfile = async (db: any) => {
       try {
         const name = await db.get(CONFIG.KEY_NICKNAME);
+        // Предположим, у тебя в CONFIG есть ключ для био, например KEY_BIO. Если нет — подставь свою строку.
+        const bio = await db.get('user_bio'); 
+        
         setMyNickname(name || 'Аноним');
+        setMyBio(bio || '');
       } catch (error) {
         console.error('Ошибка при чтении профиля:', error);
         setMyNickname('Ошибка');
@@ -53,18 +61,39 @@ const ContactList = () => {
       }
     };
 
-    // Если база уже готова на момент монтирования
     if (globalProfileDb) {
       setDbInstance(globalProfileDb);
       loadProfile(globalProfileDb);
     } else {
-      // Если база еще создается, подписываемся на её готовность
       onDbReady(() => {
         setDbInstance(globalProfileDb);
         loadProfile(globalProfileDb);
       });
     }
   }, []);
+
+  // Функция сохранения, которая вызывается СТРОГО при нажатии галочки «Применить»
+  const handleSaveProfile = async (newNickname: string, newBio: string) => {
+    if (!dbInstance) return;
+    
+    try {
+      // 1. Пишем в P2P базу данных
+      await dbInstance.put(CONFIG.KEY_NICKNAME, newNickname);
+      await dbInstance.put('user_bio', newBio);
+      
+      // 2. Обновляем основной стейт экрана контактов только после успешной записи
+      setMyNickname(newNickname);
+      setMyBio(newBio);
+    } catch (error) {
+      console.error('Не удалось сохранить профиль в P2P:', error);
+    }
+  };
+
+  const handleLogout = () => {
+    // Твоя логика очистки сессии/сид-фразы
+    localStorage.clear();
+    navigate('/', { replace: true });
+  };
 
   // Если сессия есть, но OrbitDB на бэкграунде еще запускается — висит лоадер
   if (isLoading || !dbInstance) {
@@ -81,18 +110,35 @@ const ContactList = () => {
 
   return (
     <div className="contacts-container">
+      {/* Подключаем боковое меню */}
+      <ProfileDrawer 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        nickname={myNickname}
+        bio={myBio}
+        onSave={handleSaveProfile}
+        onLogout={handleLogout}
+      />
       {/* Header */}
       <div className="contacts-header">
         <div className="header-left">
-          <div className="avatar">
+          {/* Контейнер аватара, который мы стилизовали */}
+          <div className="avatar" onClick={() => setIsProfileOpen(true)}>
+            {/* Иконка, размер 24 хорошо подходит в контейнер 48px */}
             <User size={24} />
+              </div>
+            <span className="username">{myNickname}</span>
           </div>
-          <span className="username">{myNickname}</span>
+          {/* Кнопки внутри контейнера actions */}
+          <div className="header-actions">
+            <button className="header-action-button" aria-label="Поделиться" title="Поделиться">
+              <Share2 size={22} />
+            </button>
+            <button className="header-action-button" aria-label="Добавить" title="Добавить">
+              <Plus size={22} />
+            </button>
+          </div>
         </div>
-        <button className="settings-button" aria-label="Settings">
-          <Settings size={24} className="settings-icon" />
-        </button>
-      </div>
 
       {/* Search */}
       <div className="contacts-search">
