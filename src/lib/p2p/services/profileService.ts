@@ -15,7 +15,7 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
 
-export async function initProfileDB(orbitdb: any) {
+export async function initProfileDB(orbitdb: any, nicknameForRegistration?: string) {
   try {
     console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
 
@@ -36,7 +36,7 @@ export async function initProfileDB(orbitdb: any) {
       console.log(`🆕 [ProfileDB] Данные профиля пусты. Заполняем...`);
       
       // Эти операции пройдут успешно, так как наш Identity совпадает с AccessController
-      await profileDb.put(CONFIG.KEY_NICKNAME, 'Анонимный пользователь');
+      await profileDb.put(CONFIG.KEY_NICKNAME, nicknameForRegistration || 'Анонимный пользователь');
       await profileDb.put(CONFIG.KEY_DATE_CREATED, Date.now());
       
       console.log(`✅ [ProfileDB] Базовые данные успешно записаны.`);

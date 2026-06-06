@@ -9,12 +9,17 @@
 html,
 body,
 #root {
-  min-height: 100vh;
+  overscroll-behavior-y: none; /* Запрещаем всей странице оттягиваться вниз/вверх */
+  width: 100%;
+  height: 100%; /* ВАЖНО: height, а не min-height */
+  overflow: hidden; /* Намертво убиваем скролл на уровне страницы */
   margin: 0;
   padding: 0;
+  touch-action: none; /* Блокируем системные жесты (например, pull-to-refresh) на пустых местах */
 }
 
 body {
+  position: fixed;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: $bg;
   color: $text;
@@ -30,7 +35,8 @@ input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  height: 100%;
+  width: 100%;
   padding: 2rem;
   text-align: center;
 }

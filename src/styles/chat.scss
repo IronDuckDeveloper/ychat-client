@@ -4,8 +4,10 @@
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%; /* Контейнер занимает все 100% высоты зафиксированного body */
+  width: 100%;
   background-color: $chat-bg-light;
+  overflow: hidden; /* Не даем контенту вывалиться за пределы контейнера */
 }
 
 .chat-header {
@@ -71,12 +73,18 @@
 }
 
 .chat-messages {
+  contain: content;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch; /* Включает плавный скролл на старых iOS */
+  overscroll-behavior-y: none;   /* Запрещает передавать скролл родителю */
+  touch-action: pan-y; /* Разрешаем браузеру считывать свайпы вверх/вниз в этой зоне */
+  overscroll-behavior: none; /* Запрещаем отскок внутри контейнера на Mac */
   flex: 1;
   padding: 1rem;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-height: 0; /* ВАЖНО для корректной работы flex и overflow */
 
   .message {
     max-width: 80%;

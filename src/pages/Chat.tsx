@@ -16,6 +16,7 @@ const Chat = () => {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const isLoadingRef = useRef(false); // Защита от гонок при загрузке истории
 
   const [roomHandle, setRoomHandle] = useState<{
     sendMessage: (message: string) => Promise<void>;
@@ -30,6 +31,51 @@ const Chat = () => {
 
   const roomName = contactName ?? 'global-chat';
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
+
+  // Метод "1 пикселя" для плавной остановки
+  // Жесткая блокировка скролла (улучшенная версия)
+  useEffect(() => {
+  const container = messagesContainerRef.current;
+  if (!container) return;
+
+  let startY = 0;
+
+  const handleTouchStart = (e: TouchEvent) => {
+    startY = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: TouchEvent) => {
+    const currentY = e.touches[0].clientY;
+    const isSwipingDown = currentY > startY; // Палец идет вниз (скролл вверх)
+
+    // Если мы в самом верху (или почти) и тянем вниз - намертво блочим
+    if (container.scrollTop <= 1 && isSwipingDown) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    }
+  };
+
+  const handleWheel = (e: WheelEvent) => {
+    // e.deltaY < 0 это попытка прокрутить вверх
+    if (container.scrollTop <= 1 && e.deltaY < 0) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    }
+  };
+
+  // passive: false критически важен для работы preventDefault()
+  container.addEventListener('touchstart', handleTouchStart, { passive: true });
+  container.addEventListener('touchmove', handleTouchMove, { passive: false });
+  container.addEventListener('wheel', handleWheel, { passive: false });
+
+  return () => {
+    container.removeEventListener('touchstart', handleTouchStart);
+    container.removeEventListener('touchmove', handleTouchMove);
+    container.removeEventListener('wheel', handleWheel);
+  };
+}, []); // Убрал зависимость, чтобы слушатель навешивался один раз // Перезапускаем при изменении лоадера, чтобы не ломать подгрузку истории
 
   useEffect(() => {
     if (!isReady || !joinRoom) return;
@@ -132,26 +178,45 @@ const Chat = () => {
     };
   }, [roomHandle]);
 
-  const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
-    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    isUserScrolledUp.current = distanceFromBottom > 50;
+const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
+  const target = e.target as HTMLDivElement;
 
-    if (target.scrollTop === 0 && roomHandle?.hasMoreHistory() && !isLoadingMore) {
-      setIsLoadingMore(true);
-      const previousScrollHeight = target.scrollHeight;
-      
+  // Если мы сейчас грузим историю, вообще выходим из функции
+  if (isLoadingRef.current) return;
+
+  const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+  isUserScrolledUp.current = distanceFromBottom > 50;
+
+  // Условие загрузки
+  if (target.scrollTop <= 1 && roomHandle?.hasMoreHistory()) {
+    // Включаем блокировку до завершения всего процесса
+    isLoadingRef.current = true;
+    setIsLoadingMore(true);
+    
+    const previousScrollHeight = target.scrollHeight;
+    
+    try {
       await roomHandle.loadMoreHistory();
-
+      
       requestAnimationFrame(() => {
         if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop =
-            messagesContainerRef.current.scrollHeight - previousScrollHeight;
+          const newScrollHeight = messagesContainerRef.current.scrollHeight;
+          // Устанавливаем скролл
+          messagesContainerRef.current.scrollTop = newScrollHeight - previousScrollHeight;
         }
-        setIsLoadingMore(false);
+        
+        // Разблокируем только СЛЕДУЮЩИМ тиком, чтобы избежать двойных срабатываний
+        setTimeout(() => {
+          isLoadingRef.current = false;
+          setIsLoadingMore(false);
+        }, 100); 
       });
+    } catch (err) {
+      isLoadingRef.current = false;
+      setIsLoadingMore(false);
     }
-  };
+  }
+};
 
   useEffect(() => {
     if (!messagesContainerRef.current) return;
@@ -226,7 +291,7 @@ const Chat = () => {
       <div
         className="chat-messages"
         ref={messagesContainerRef}
-        onScroll={handleScroll}
+        onScroll={(e) => !isLoadingRef.current && handleScroll(e)}
       >
         {isLoadingMore && (
           <div className="message system">Загрузка старых сообщений...</div>

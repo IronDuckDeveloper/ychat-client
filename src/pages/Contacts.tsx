@@ -18,6 +18,25 @@ const ContactList = () => {
     }
   }, [navigate]);
 
+  // Блокировка перехода "Назад"
+  useEffect(() => {
+    // Добавляем текущую страницу в историю браузера искусственно.
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = () => {
+      // Когда пользователь нажимает "Назад" (или делает свайп), 
+      // мы снова пушим текущий URL, никуда его не отпуская.
+      window.history.pushState(null, '', window.location.href);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    // Подчищаем слушатель при размонтировании (уходе в чат)
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
   // 2. Ожидание инициализации P2P-базы и загрузка профиля
   useEffect(() => {
     if (!isAuthenticated()) return;
