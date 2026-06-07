@@ -7,9 +7,9 @@
   * В дальнейшем мы будем использовать эту базу для хранения и управления данными профиля, 
   * а также для синхронизации с другими пользователями в сети.
   * 
-  * const myName = await profileDb.get(CONFIG.KEY_NICKNAME);
+  * const myName = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
   * 
-  * await profileDb.put(CONFIG.KEY_NICKNAME, 'Новый Крутой Ник');
+  * await profileDb.put(CONFIG.PROFILE.KEY_NICKNAME, 'Новый Крутой Ник');
 */
 
 import { IPFSAccessController } from '@orbitdb/core';
@@ -20,7 +20,7 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
     console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
 
     // 1. Создаем/Открываем базу с жестким контролем доступа
-    const profileDb = await orbitdb.open(CONFIG.DB_PROFILE, {
+    const profileDb = await orbitdb.open(CONFIG.PROFILE.DB_PROFILE, {
       type: 'keyvalue',
       // Явно указываем, что писать в базу может ТОЛЬКО владелец текущего Identity
       AccessController: IPFSAccessController({ write: [orbitdb.identity.id] }) 
@@ -30,15 +30,15 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
     console.log(`🔒 [ProfileDB] Право на запись только у: ${orbitdb.identity.id}`);
 
     // 2. Заполнение базовых данных
-    const existingNickname = await profileDb.get(CONFIG.KEY_NICKNAME);
+    const existingNickname = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
 
     if (!existingNickname) {
       console.log(`🆕 [ProfileDB] Данные профиля пусты. Заполняем...`);
       
       // Эти операции пройдут успешно, так как наш Identity совпадает с AccessController
-      await profileDb.put(CONFIG.KEY_NICKNAME, nicknameForRegistration || 'Анонимный пользователь');
-      await profileDb.put(CONFIG.KEY_DATE_CREATED, Date.now());
-      
+      await profileDb.put(CONFIG.PROFILE.KEY_NICKNAME, nicknameForRegistration || 'Анонимный пользователь');
+      await profileDb.put(CONFIG.PROFILE.KEY_DATE_CREATED, Date.now());
+
       console.log(`✅ [ProfileDB] Базовые данные успешно записаны.`);
     } else {
       console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname}`);

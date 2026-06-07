@@ -1,91 +1,219 @@
-import { User, Camera, Edit2, Check, X, Info, LogOut } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { User, Camera, Edit2, Check, X, Info, LogOut, Upload, MonitorPlay } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 
 interface ProfileDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   nickname: string;
   bio: string;
-  onSave: (newNickname: string, newBio: string) => Promise<void> | void;
+  avatarUrl: string | null; // <-- Добавили пропс для текущей картинки
+  onSave: (newNickname: string, newBio: string, newAvatarFile: Blob | null) => Promise<void> | void;
   onLogout?: () => void;
 }
 
-const ProfileDrawer = ({ isOpen, onClose, nickname, bio, onSave, onLogout }: ProfileDrawerProps) => {
+const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLogout }: ProfileDrawerProps) => {
   const [isEditing, setIsEditing] = useState(false);
   
-  // Локальный стейт для полей ввода (черновик)
   const [editNickname, setEditNickname] = useState(nickname);
   const [editBio, setEditBio] = useState(bio);
+  
+  // Стейты для работы с аватаром
+  const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | null>(avatarUrl);
+  const [draftAvatarBlob, setDraftAvatarBlob] = useState<Blob | null>(null);
+  
+  // Стейты камеры
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // Синхронизируем локальный стейт с оригиналом ТОЛЬКО когда меню открывается
   useEffect(() => {
     if (isOpen) {
       setEditNickname(nickname);
       setEditBio(bio);
-      setIsEditing(false); // Всегда открываем в режиме просмотра
+      setDraftAvatarUrl(avatarUrl);
+      setDraftAvatarBlob(null);
+      setIsEditing(false);
+      setIsCameraActive(false);
+    } else {
+      stopCamera(); // Выключаем камеру при закрытии меню
     }
-  }, [isOpen, nickname, bio]);
+  }, [isOpen, nickname, bio, avatarUrl]);
+
+  // --- ЛОГИКА ВЕБ-КАМЕРЫ ---
+const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
+      
+      // 1. Сначала говорим React показать интерфейс камеры (отрендерить тег <video>)
+      setIsCameraActive(true); 
+
+      // 2. Даем браузеру долю секунды, чтобы тег <video> появился в DOM, и привязываем поток
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 50);
+
+    } catch (err) {
+      console.error("Нет доступа к камере", err);
+      alert("Не удалось получить доступ к камере.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+const takePhoto = () => {
+  if (videoRef.current && canvasRef.current) {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    
+    // Делаем фото квадратным
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    canvas.width = size;
+    canvas.height = size;
+    
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      // Вырезаем центр видео, чтобы фото не было сплюснутым
+      const startX = (video.videoWidth - size) / 2;
+      const startY = (video.videoHeight - size) / 2;
+      
+      ctx.drawImage(video, startX, startY, size, size, 0, 0, size, size);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          setDraftAvatarBlob(blob);
+          setDraftAvatarUrl(URL.createObjectURL(blob));
+          stopCamera();
+        }
+      }, 'image/jpeg', 0.8);
+    }
+  }
+};
+
+  // --- ЛОГИКА ФАЙЛА ---
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setDraftAvatarBlob(file);
+      setDraftAvatarUrl(URL.createObjectURL(file));
+    }
+  };
 
   const handleClose = () => {
-    // Просто закрываем, локальный стейт сбросится при следующем открытии
+    stopCamera();
     setIsEditing(false);
     onClose();
   };
 
   const handleCancelEdit = () => {
-    // Отмена редактирования: возвращаем локальные поля к исходным пропсам
+    stopCamera();
     setEditNickname(nickname);
     setEditBio(bio);
+    setDraftAvatarUrl(avatarUrl);
+    setDraftAvatarBlob(null);
     setIsEditing(false);
   };
 
   const handleSave = async () => {
-    // Сохранение происходит строго здесь! Передаем измененные данные наверх
-    await onSave(editNickname, editBio);
+    // Если blob не изменился, передаем null, чтобы сервис не делал лишнюю работу
+    const blobToSave = draftAvatarBlob; 
+    await onSave(editNickname, editBio, blobToSave);
     setIsEditing(false);
   };
 
-  return (
-    <>
-      <div 
-        className={`drawer-overlay ${isOpen ? 'open' : ''}`} 
-        onClick={handleClose}
-      />
-
+    // Решаем, что показывать в кружочке профиля
+    const displayUrl = isEditing ? draftAvatarUrl : avatarUrl;
+        <button 
+          className="close-btn" 
+          onClick={handleCancelEdit}
+          aria-label="Отменить редактирование"
+          title="Отменить редактирование"
+          ></button>
+    return (
+      <>
+      <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={handleClose}/>
       <div className={`profile-drawer ${isOpen ? 'open' : ''}`}>
         
-        {/* Кнопка закрыть / отменить */}
         {isEditing ? (
-          <button 
-            className="close-btn" 
-            onClick={handleCancelEdit}
-            aria-label="Отменить редактирование"
-            title="Отменить редактирование"
-          >
+          
+          <button className="close-btn" 
+          onClick={handleCancelEdit} 
+          aria-label="Отменить редактирование" 
+          title="Отменить редактирование">
             <X size={24} />
-          </button>
+            </button>
         ) : (
           <button 
-            className="close-btn" 
-            onClick={handleClose}
-            aria-label="Закрыть меню"
-            title="Закрыть меню"
-          >
+          className="close-btn" 
+          onClick={handleClose} 
+          aria-label="Закрыть" 
+          title="Закрыть">
             <X size={24} />
           </button>
         )}
 
-        {/* Верхний блок */}
         <div className="drawer-top">
           <div className="avatar-container">
-            <div className="drawer-avatar">
-              <User size={64} className="user-icon" />
-              {isEditing && (
-                <div className="avatar-edit-overlay">
-                  <Camera size={28} className="camera-icon" />
-                </div>
-              )}
-            </div>
+            {/* Скрытые элементы для обработки файлов и фото */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileSelect}
+              style={{ display: 'none' }} 
+              placeholder="Выберите изображение"
+              accept="image/*" 
+            />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+            {isCameraActive ? (
+              <div className="camera-view">
+                <video ref={videoRef} autoPlay playsInline muted className="drawer-avatar-video" />
+                <button className="snap-btn" onClick={takePhoto}>Снять</button>
+              </div>
+            ) : (
+              <div className="drawer-avatar">
+                {displayUrl ? (
+                  <img src={displayUrl} alt="Avatar" className="user-avatar-image" />
+                ) : (
+                  <User size={64} className="user-icon" />
+                )}
+              </div>
+            )}
+            {/* Кнопка добавления фото */}
+            {!isCameraActive && isEditing && (
+              
+                  <div className="avatar-edit-actions">
+                    {/* Кнопка "Из файла" — слева */}
+                    <button 
+                      className="avatar-action-btn"
+                      onClick={() => fileInputRef.current?.click()} 
+                      title="Из файла"
+                      aria-label="Загрузить из файла"
+                    >
+                      <Upload size={22} />
+                    </button>
+
+                    {/* Кнопка "С камеры" — справа */}
+                    <button 
+                      className="avatar-action-btn"
+                      onClick={startCamera} 
+                      title="С камеры"
+                      aria-label="Сделать фото"
+                    >
+                      <MonitorPlay size={22} />
+                    </button>
+                  </div>
+                )}
           </div>
 
           <div className="profile-info-container">
@@ -128,17 +256,14 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, onSave, onLogout }: Pro
 
         {/* Нижний блок с круглыми кнопками */}
         <div className="drawer-bottom">
-          {/* Слева: Выйти */}
           <button 
-            className="round-action-btn logout-btn" 
-            onClick={onLogout}
-            aria-label="Выйти из аккаунта"
-            title="Выйти из аккаунта"
+          className="round-action-btn logout-btn" 
+          onClick={onLogout}
+          aria-label="Выйти из аккаунта"
+          title="Выйти из аккаунта"
           >
             <LogOut size={24} />
-          </button>
-
-          {/* Справа: Изменить / Применить */}
+            </button>
           {isEditing ? (
             <button 
               className="round-action-btn save-btn" 

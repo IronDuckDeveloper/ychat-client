@@ -40,6 +40,13 @@
         background-color: rgba($text_variant, 0.25);
         transform: scale(1.02);
       }
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block; // Убирает дефолтный нижний отступ у строчных элементов
+      }
     }
 
     .username {

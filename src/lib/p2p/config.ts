@@ -44,10 +44,16 @@ export const CONFIG = {
   ORBITDB_BLOCKS_DIR: './data/blocks.level', // Директория для хранения блоков OrbitDB
   DATA_DIR: './data', // Директория для хранения данных Helia (включая ключи)
       
-  DB_PROFILE: 'user-profile',// Строка 'user-profile' создаст базу локально и привяжет к текущей Identity.
-  DB_CONTACTS: 'my-contacts', // Ключ для хранения списка контактов
-  KEY_NICKNAME: 'nickname', // Ключ для хранения никнейма в базе профиля
-  KEY_DATE_CREATED: 'createdAt', // Ключ для хранения даты создания профиля
+  PROFILE: {
+    DB_PROFILE: 'user-profile',// Строка 'user-profile' создаст базу локально и привяжет к текущей Identity.
+    DB_CONTACTS: 'my-contacts', // Ключ для хранения списка контактов
+    KEY_NICKNAME: 'nickname', // Ключ для хранения никнейма в базе профиля
+    KEY_DATE_CREATED: 'createdAt', // Ключ для хранения даты создания профиля
+    KEY_BIO: 'user_bio', // Ключ для хранения биографии пользователя в базе профиля
+    KEY_LAST_UPDATED: 'lastUpdated', // Ключ для хранения даты последнего обновления профиля
+    KEY_AVATAR_CID: 'avatarCID', // Ключ для хранения CID аватара
+  },
+
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства
   KEY_IP_ADDRESS: 'ipAddress', // Ключ для хранения IP-адреса
 

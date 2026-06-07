@@ -80,8 +80,8 @@ export async function initializeApp(nicknameForRegistration?: string) {
       const fingerprint = await generateDeviceFingerprint();
       const ipAddress = await getClientIpAddress();
       
-      await globalProfileDb.put(CONFIG.KEY_NICKNAME, nicknameForRegistration);
-      await globalProfileDb.put(CONFIG.KEY_DATE_CREATED, Date.now());
+      await globalProfileDb.put(CONFIG.PROFILE.KEY_NICKNAME, nicknameForRegistration);
+      await globalProfileDb.put(CONFIG.PROFILE.KEY_DATE_CREATED, Date.now());
       await globalProfileDb.put(CONFIG.KEY_FINGERPRINT, fingerprint);
       await globalProfileDb.put(CONFIG.KEY_IP_ADDRESS, ipAddress);
 

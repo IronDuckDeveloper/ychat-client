@@ -72,11 +72,59 @@
     box-sizing: border-box;
 
     .avatar-container {
+      width: 150px; 
+      height: 150px;
       margin-bottom: 2rem;
+      position: relative;     // ← Добавь это обязательно
+      display: flex;
+      justify-content: center;
+
+      .camera-view {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        border-radius: 50%;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #000; // Черный фон пока камера грузится
+
+    .drawer-avatar-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover; // Заполняет круг без сплющивания
+      transform: scaleX(-1); // Эффект зеркала (очень важно для селфи-камеры!)
+    }
+
+    .snap-btn {
+      position: absolute;
+      bottom: 10%;
+      background-color: rgba(255, 255, 255, 0.85);
+      border: none;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: $text;
+      cursor: pointer;
+      z-index: 10;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      transition: all 0.2s;
+
+      &:hover {
+        background-color: white;
+        transform: scale(1.05);
+      }
+      &:active {
+        transform: scale(0.95);
+      }
+    }
+  }
 
       .drawer-avatar {
-        width: 120px;
-        height: 120px;
+        width: 100%;
+        height: 100%;
         background-color: rgba($accent-prime, 0.1);
         border-radius: 50%;
         display: flex;
@@ -86,20 +134,51 @@
         position: relative;
         overflow: hidden;
 
-        .avatar-edit-overlay {
-          position: absolute;
-          inset: 0;
-          background: rgba($chat-bg-dark, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: $text_variant;
-          cursor: pointer;
-          transition: background-color 0.2s;
+        .user-avatar-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; // Это ключевое свойство: картинка заполнит контейнер, сохраняя пропорции
+        display: block;
+    }
+      }
 
-          &:hover {
-            background: rgba($chat-bg-dark, 0.6);
-          }
+      .avatar-edit-actions {
+        position: absolute;
+        bottom: -10px;          // чуть ниже аватарки
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 40px;               // расстояние между кнопками
+        z-index: 5;
+      }
+
+      .avatar-action-btn {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        background-color: $text_variant;
+        color: $accent-prime;
+        border: 2px solid rgba($accent-prime, 0.4);
+        box-shadow: 0 4px 12px rgba($chat-bg-dark, 0.15);
+        transition: all 0.2s ease;
+
+        &:hover {
+          background-color: rgba($accent-prime, 0.1);
+          border-color: $accent-prime;
+          transform: scale(1.08);
+        }
+
+        &:active {
+          transform: scale(0.95);
+        }
+
+        svg {
+          color: inherit;
         }
       }
     }
