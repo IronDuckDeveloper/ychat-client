@@ -1,124 +1,22 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Eye, EyeOff, User, HelpCircle } from 'lucide-react';
-import { initializeApp } from '../lib/p2p/services/authService.ts';
-import { 
-  saveSeedFromAuth, 
-  generateNewMnemonic, 
-  isValidMnemonic, 
-  getSeedFromMnemonic, 
-  isAuthenticated,
-  clearAuthData
-} from '../lib/p2p/crypto/crypto.ts';
 
-function Auth() {
-  const [isRegister, setIsRegister] = useState(false);
-  const [showPass, setShowPass] = useState(false);
-  const [nickname, setNickname] = useState('');
-  const [words, setWords] = useState<string[]>(Array(12).fill(''));
-  const navigate = useNavigate();
+// Импортируем нашу логику
+import { useAuthLogic } from '../hooks/useAuthLogic.ts';
 
-  // Функция генерации настоящей BIP39 мнемоники (12 слов)
-  const generateWords = () => {
-    const mnemonic = generateNewMnemonic();
-    console.log('✅✅✅✅✅✅✅✅✅ mnemonic generated:', mnemonic); // УДАЛИТЬ
-    setWords(mnemonic);
-  };
-
-  // Эффект для очистки полей при переключении между Входом и Регистрацией
-  useEffect(() => {
-    // Проверка авторизации
-    if (isAuthenticated()) {
-      navigate('/contacts', { replace: true });
-      return;
-    }
-    // Очистка полей при переключении
-    setWords(Array(12).fill(''));
-    setNickname('');
-    setShowPass(false);
-
-    // Генерация только если мы перешли в режим регистрации
-    if (isRegister) {
-      generateWords();
-    }
-  }, [isRegister, navigate]);
-
-  const handleWordChange = (index: number, value: string) => {
-    const newWords = [...words];
-    newWords[index] = value.trim();
-    setWords(newWords);
-  };
-
-  // Делаем функцию асинхронной
-  const handleLoginOrRegister = async () => {
-    if (isRegister) {
-      if (!nickname.trim()) {
-        alert('Пожалуйста, введите никнейм');
-        return;
-      }
-      if (words.some((w) => !w)) {
-        alert('Пожалуйста, сгенерируйте и сохраните слова');
-        return;
-      }
-
-      console.log('Начинаем регистрацию...');
-    } else {
-      if (words.some((w) => !w)) {
-        alert('Пожалуйста, заполните все 12 слов');
-        return;
-      }
-
-      // Проверка валидности мнемоники (чексумма и словарь)
-      if (!isValidMnemonic(words)) {
-        alert(
-          'Некорректная сид-фраза. Проверьте правильность написания слов и их порядок.',
-        );
-        return;
-      }
-
-      console.log('Начинаем вход...');
-    }
-
-    try {
-      // 1. Конвертируем слова в Seed
-      const seedBuffer = await getSeedFromMnemonic(words);
-      const seed64 = new Uint8Array(seedBuffer);
-      // 2. Отрезаем 32 байта для Ed25519
-      const seed32 = seed64.slice(0, 32);
-
-      // 3. ПЕРЕДАЕМ ОТВЕТСТВЕННОСТЬ твоему crypto.ts!
-      // Он сам сохранит базу, очистит старый кэш IndexedDB и подготовит почву.
-      await saveSeedFromAuth(seed32);
-
-      // ЗАПУСКАЕМ СЕТЬ И ПРОФИЛЬ
-      // Если регистрация - передаем никнейм. Если вход - undefined.
-      await initializeApp(isRegister ? nickname : undefined);
-
-    if (isRegister) {
-        console.log('✅ Регистрация завершена, профиль создан.');
-      } else {
-        console.log('✅ Вход выполнен, профиль восстановлен.');
-      }
-      // Переходим к контактам
-        navigate('/contacts', { replace: true });
-
-    } catch (error: any) {
-      console.error('Ошибка авторизации:', error);
-
-      // 🛑 ДЕЛАЕМ ОТКАТ ПРИ ОШИБКЕ РЕГИСТРАЦИИ 🛑
-      if (isRegister) {
-        console.log('🔄 Откат изменений: удаляем фейковые ключи из памяти...');
-        await clearAuthData(); // 👈 Вызываем нашу новую функцию
-        
-        // Опционально: можно сбросить поля ввода на экране
-        setNickname('');
-        generateWords(); 
-      }
-      
-      // Показываем пользователю, что именно пошло не так
-      alert(error.message || 'Произошла ошибка при обработке данных. Регистрация прервана.');
-    }
-  };
+const AuthScreen = () => {
+  // Достаем все стейты и функции из хука
+  const {
+    isRegister,
+    setIsRegister,
+    showPass,
+    setShowPass,
+    nickname,
+    setNickname,
+    words,
+    handleWordChange,
+    generateWords,
+    handleLoginOrRegister
+  } = useAuthLogic();
 
   return (
     <div className="auth-screen">
@@ -200,6 +98,8 @@ function Auth() {
       </div>
     </div>
   );
-}
+};
 
-export default Auth;
+export default function Auth() {
+  return <AuthScreen />;
+}

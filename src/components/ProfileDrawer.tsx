@@ -1,5 +1,6 @@
 import { User, Camera, Edit2, Check, X, Info, LogOut, Upload, MonitorPlay } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+// import { globalHelia, globalOrbitDB, globalProfileDb, globalContactsDb } from '../lib/p2p/services/authService.ts';
 
 interface ProfileDrawerProps {
   isOpen: boolean;
@@ -10,6 +11,56 @@ interface ProfileDrawerProps {
   onSave: (newNickname: string, newBio: string, newAvatarFile: Blob | null) => Promise<void> | void;
   onLogout?: () => void;
 }
+
+// export const wipeP2PDataAndReload = async () => {
+//   const confirm = window.confirm(
+//     "Это удалит локальный кэш файлов и контактов. Приложение перезагрузится, а данные скачаются из P2P сети заново. Ваш аккаунт не будет удален. Продолжить?"
+//   );
+  
+//   if (!confirm) return;
+
+//   try {
+//     console.log('Останавливаем P2P ноды для разблокировки файлов...');
+    
+//     // 1. Аккуратно глушим базы и ноду, чтобы они отпустили локи в IndexedDB
+//     if (globalProfileDb) await globalProfileDb.close();
+//     if (globalContactsDb) await globalContactsDb.close();
+//     if (globalOrbitDB) await globalOrbitDB.stop();
+//     if (globalHelia) await globalHelia.stop();
+
+//     // 2. Получаем список всех баз в браузере (IndexedDB)
+//     const databases = await window.indexedDB.databases();
+
+//     // 3. Удаляем их все (Local Storage при этом остается целым!)
+//     const deletionPromises = databases.map(db => {
+//       return new Promise((resolve) => {
+//         if (!db.name) return resolve(true);
+        
+//         const req = window.indexedDB.deleteDatabase(db.name);
+        
+//         req.onsuccess = () => resolve(true);
+//         req.onerror = () => {
+//           console.warn(`Не удалось удалить БД: ${db.name}`);
+//           resolve(false); 
+//         };
+//         req.onblocked = () => {
+//           console.warn(`БД ${db.name} заблокирована. Пропускаем.`);
+//           resolve(false);
+//         };
+//       });
+//     });
+
+//     await Promise.all(deletionPromises);
+//     console.log('✅ Кэш очищен. Перезапускаем матрицу...');
+
+//     // 4. Жесткая перезагрузка страницы
+//     window.location.reload();
+    
+//   } catch (error) {
+//     console.error('❌ Ошибка при сбросе кэша:', error);
+//     alert('Не удалось полностью очистить кэш. Попробуйте перезагрузить страницу.');
+//   }
+// };
 
 const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLogout }: ProfileDrawerProps) => {
   const [isEditing, setIsEditing] = useState(false);

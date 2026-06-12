@@ -26,7 +26,7 @@ function App() {
         
         {/* Защищенная зона: если нет ключей, роутер сам выкинет на "/" */}
         <Route 
-          path="/chat/:contactName" 
+          path="/chat/:peerId" 
           element={
             <ProtectedRoute>
               <Chat />

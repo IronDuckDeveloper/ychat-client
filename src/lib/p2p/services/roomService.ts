@@ -233,6 +233,18 @@ export async function joinRoom(
     },
     hasMoreHistory: () => hasMore,};
 }
+
+// Генерирует всегда одинаковое имя базы для двух конкретных пиров
+export const getDeterministicRoomName = async (nodeId: string, peerId: string) => {
+  const sorted = [nodeId, peerId].sort().join('_');
+  // Используем Web Crypto API для хэширования
+  const msgBuffer = new TextEncoder().encode(sorted);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return `room_${hashHex}`; // Получится room_a8f5f167f44f...
+}
+
 export type { ChatMessage };
 
 export type { RoomActions };

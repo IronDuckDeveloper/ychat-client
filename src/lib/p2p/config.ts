@@ -31,12 +31,15 @@ export interface RoomActions {
   hasMoreHistory: () => boolean;
 }
 
-// Интерфейс для записи контакта в базе данных контактов
-export interface ContactRecord {
-  peerId: string;
-  roomDbAddress: string;
-  profileDbAddress: string;
-  nickname?: string; // Подтягивается динамически
+export interface ContactItem {
+  id: string;               // PeerID контакта
+  profileDbAddress: string; // Адрес его OrbitDB с профилем
+  chatDbAddress: string;    // Адрес вашей общей базы сообщений (eventlog)
+  nickname: string;         // Кэш никнейма для моментального UI
+  avatarCid: string;        // Кэш аватара для моментального UI
+  updatedAt: number;        // Таймстемп (для сортировки списка чатов)
+  lastMessage?: string; 
+  lastMessageTime?: number;
 }
 
 export const CONFIG = {
@@ -52,6 +55,8 @@ export const CONFIG = {
     KEY_BIO: 'user_bio', // Ключ для хранения биографии пользователя в базе профиля
     KEY_LAST_UPDATED: 'lastUpdated', // Ключ для хранения даты последнего обновления профиля
     KEY_AVATAR_CID: 'avatarCID', // Ключ для хранения CID аватара
+    MSG_PROFILE_UPDATED: 'PROFILE_UPDATED', // Сообщение об обновлении профиля
+    MSG_PROFILE_REQUEST: 'PROFILE_REQUEST' // Сообщение об прозьбе обновить профиль
   },
 
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства
@@ -70,7 +75,7 @@ export const CONFIG = {
 
     MSG: {
     SUCCESS : 'SUCCESS',
-    FORBIDDEN : 'FORBIDDEN'
+    FORBIDDEN : 'FORBIDDEN',
     },
 
   TOPICS: {
@@ -78,6 +83,8 @@ export const CONFIG = {
     PEER_SYNC_REQUEST: 'peers:sync:request', // Топик для запроса синхронизации с релеями
     PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:', // Базовый топик для ответа синхронизации, к которому будет добавляться ID запрашивающего пира
     PEER_SYNC_REQUEST_TOPIC: 'peers:sync:request', // Топик для запроса синхронизации релеев (можно использовать тот же, что и PEER_SYNC_REQUEST, просто обрабатывать по-разному)
-    RPC_PROTOCOL: '/ychat/anti-flood/1.0.0' // Протокол для RPC-метода проверки регистрации (антифрод)
+    PROFILE_UPDATES_TOPIC: 'ychat/profiles/updates', // Топик для обновления профилей
+    RPC_PROTOCOL: '/ychat/anti-flood/1.0.0', // Протокол для RPC-метода проверки регистрации (антифрод)
+    ANNOUNCE_NEW_MESSAGE: `ychat-notifications-` // Топик для анонсирования нового сообщения
   }
 };

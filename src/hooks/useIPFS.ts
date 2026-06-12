@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Helia } from 'helia';
-import { joinRoom as joinOrbitRoom } from '../lib/p2p/services/roomService';
+import { joinRoom as joinOrbitRoom, getDeterministicRoomName } from '../lib/p2p/services/roomService';
 import type { ChatMessage, RoomActions } from '../lib/p2p/services/roomService';
 
 // Импортируем глобальный инстанс и подписку из нашего сервиса инициализации
@@ -27,11 +27,14 @@ export const useIPFS = () => {
     });
   }, []);
 
-  const joinRoomCallback = useCallback(
+const joinRoomCallback = useCallback(
     async (roomName: string, onMessage: (message: ChatMessage) => void): Promise<RoomActions> => {
       if (!globalHelia) {
         throw new Error('Helia node is not ready yet');
       }
+      
+      console.log(`🔑 [useIPFS] Передаем комнату в OrbitDB: ${roomName}`);
+      
       return await joinOrbitRoom(globalHelia, roomName, onMessage);
     },
     []
@@ -41,7 +44,7 @@ export const useIPFS = () => {
     helia: globalHelia as Helia | null,
     isReady,
     nodeId,
-    error: null, // Ошибки старта теперь отлавливаются глобально в initializeApp
+    error: null,
     joinRoom: joinRoomCallback,
   };
 };

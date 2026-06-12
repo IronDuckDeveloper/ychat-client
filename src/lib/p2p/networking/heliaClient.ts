@@ -19,6 +19,7 @@ import { RelayManager } from './RelayManager.ts';
 import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
+import { kadDHT } from '@libp2p/kad-dht';
 
 let initializationPromise: Promise<any> | null = null;
 
@@ -77,7 +78,7 @@ export function createBrowserHelia(): Promise<any> {
             transports: [
               webSockets({ filter: all }),
               webRTC(),
-              circuitRelayTransport({ discoverRelays: 1 }),
+              circuitRelayTransport({ discoverRelays: 5 }),
             ],
             connectionManager: {
               minConnections: 1,
@@ -90,6 +91,12 @@ export function createBrowserHelia(): Promise<any> {
             services: {
               identify: identify(),
               ping: ping(),
+              dht: kadDHT({
+                clientMode: true,
+                kBucketSize: 20,
+                validators: {},
+                selectors: {},
+              }),
               pubsub: gossipsub({
                 doPX: true,
                 D: 3,

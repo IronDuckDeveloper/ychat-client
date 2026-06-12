@@ -8,6 +8,28 @@
   background-color: $chat-bg-light;
 }
 
+// 👇 ДОБАВЛЯЕМ СЮДА: Стили для экрана загрузки
+  &.loading {
+    justify-content: center;
+    align-items: center;
+
+    .loading-content {
+      text-align: center;
+      color: $hint; // Используем переменную вместо #666
+
+      .spinner {
+        margin-bottom: 10px;
+        font-size: 24px;
+        display: inline-block; // Чтобы анимация вращения работала ровно
+      }
+
+      p {
+        font-size: 14px;
+        margin: 0;
+      }
+    }
+  }
+
 .contacts-header {
   display: flex;
   align-items: center;
@@ -132,6 +154,14 @@
   flex: 1;
   overflow-y: auto;
 
+  // Состояние пустого списка
+  .empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: $hint;
+    font-size: 14px;
+  }
+
   .contact-item {
     display: flex;
     align-items: center;
@@ -158,6 +188,7 @@
 
     .contact-info {
       flex: 1;
+      overflow: hidden; // Чтобы длинные имена/id не ломали верстку
 
       .contact-name {
         font-weight: 600;
@@ -165,8 +196,9 @@
       }
 
       .contact-last-message {
-        font-size: 0.75rem;
+        font-size: 0.75rem; // Это и есть 12px
         color: $hint;
+        opacity: 0.8; // Чуть приглушаем, как ты делал в инлайнах
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
