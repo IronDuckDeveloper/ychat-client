@@ -7,6 +7,7 @@ import { getAllContacts, saveContact, deleteContact, updateLastMessage } from '.
 import { isAuthenticated } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG, type ContactItem } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
+import { requestPeerProfile } from '../lib/p2p/services/profileService.ts';
 
 export const useContactsLogic = () => {
   const navigate = useNavigate();
@@ -130,8 +131,17 @@ export const useContactsLogic = () => {
                 const payload = JSON.parse(new TextDecoder().decode(evt.detail.data));
                 // Ожидаем структуру: { from: string, text: string, ts: number }
                 if (payload.from && payload.text) {
+                  // Проверяем, не сидим ли мы прямо сейчас в чате с этим пользователем
+                  const isCurrentlyInThisChat = window.location.pathname.includes(payload.from);
+
                   console.log(`📡 [PubSub Пуш] Новое фоновое сообщение от ${payload.from}: "${payload.text}"`);
-                  await updateLastMessage(globalContactsDb, payload.from, payload.text, payload.ts || Date.now());
+                  await updateLastMessage(
+                    globalContactsDb, 
+                    payload.from, 
+                    payload.text, 
+                    payload.ts || Date.now(),
+                    !isCurrentlyInThisChat // Если мы НЕ в этом чате, увеличиваем счетчик
+                  );
                 }
               } catch (err) {
                 console.warn('❌ Ошибка парсинга фонового пуш-уведомления', err);
@@ -172,14 +182,7 @@ export const useContactsLogic = () => {
       console.error('Helia не инициализирована');
       return;
     }
-    try {
-      const message = { type: CONFIG.PROFILE.MSG_PROFILE_REQUEST, targetId: targetPeerId };
-      const encodedMessage = new TextEncoder().encode(JSON.stringify(message));
-      await globalHelia.libp2p.services.pubsub.publish(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC, encodedMessage); 
-      console.log(`📡 [PubSub] Отправлен ${CONFIG.PROFILE.MSG_PROFILE_REQUEST} для: ${targetPeerId}`);
-    } catch (error) {
-      console.error('Ошибка при запросе обновления профиля:', error);
-    }
+    await requestPeerProfile(globalHelia, targetPeerId);
   };
 
   const handleDeleteContact = async (e: React.MouseEvent, contactId: string) => {
@@ -274,14 +277,7 @@ export const useContactsLogic = () => {
       setContacts(await getAllContacts(globalContactsDb));
 
       if (globalHelia) {
-        try {
-          const pubsub = globalHelia.libp2p.services.pubsub;
-          const msg = { type: CONFIG.PROFILE.MSG_PROFILE_REQUEST, targetId: decoded.id };
-          await pubsub.publish(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC, new TextEncoder().encode(JSON.stringify(msg)));
-          console.log(`📤 [PubSub] Отправлен быстрый пинг PROFILE_REQUEST для ${peerShort}`);
-        } catch (pubSubError) {
-          console.error('❌ [PubSub] Ошибка при отправке пинга:', pubSubError);
-        }
+        await requestPeerProfile(globalHelia, decoded.id);
       }
 
       if (globalOrbitDB) {

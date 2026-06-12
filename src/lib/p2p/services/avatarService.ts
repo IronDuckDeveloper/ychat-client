@@ -43,18 +43,18 @@ export async function fetchAvatarFromHelia(helia: any, cidString: string, timeou
     const cid = CID.parse(cidString);
     const chunks = [];
     console.log(`🖼️ [Helia FS] Загружаем аватар. CID: ${cidString}`);
-    // 🔥 ДОБАВЛЕНО: 2. Настраиваем таймаут. Если блок не найден локально и сети нет, 
-    // запрос отвалится через timeoutMs, а не зависнет навсегда.
+    
+    // 🔥 ДОБАВЛЕНО: 2. Настраиваем таймаут.
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
-      console.log(`🖼️ [Helia FS] Загружаем аватар. abortController: ${abortController}`);
+    console.log(`🖼️ [Helia FS] Загружаем аватар. abortController: ${abortController}`);
+    
     // Асинхронно читаем блоки файла
-    // ВАЖНО: передаем signal в параметры cat, чтобы Helia знала, когда остановиться
     for await (const chunk of fs.cat(cid as any, { signal: abortController.signal })) {
       chunks.push(chunk);
     }
     
-    clearTimeout(timeoutId); // Успешно скачали? Отменяем таймер смерти.
+    clearTimeout(timeoutId); 
     
     // Склеиваем байты обратно
     const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
@@ -73,13 +73,49 @@ export async function fetchAvatarFromHelia(helia: any, cidString: string, timeou
     avatarCache.set(cidString, objectUrl);
     
     return objectUrl;
+
   } catch (error: any) {
-    // Обрабатываем нашу кастомную ошибку таймаута мягко, без краша
+    // Оставляем твои оригинальные логи ошибок
     if (error.name === 'AbortError') {
       console.warn(`⏳ [Helia FS] Таймаут загрузки аватара ${cidString}. Сеть недоступна или блок потерян.`);
     } else {
       console.error(`❌ [Helia FS] Ошибка загрузки аватара ${cidString}:`, error);
     }
+
+    // ==========================================
+    // 🔥 4. ФОЛЛБЭК НА ПУБЛИЧНЫЕ HTTP-ШЛЮЗЫ
+    // ==========================================
+    console.log(`🌐 [Helia FS] Запускаем резервную загрузку через HTTP-шлюзы...`);
+    
+    const gateways = [
+      `https://ipfs.io/ipfs/${cidString}`,
+      `https://dweb.link/ipfs/${cidString}`,
+      `https://cloudflare-ipfs.com/ipfs/${cidString}`
+    ];
+
+    for (const gatewayUrl of gateways) {
+      try {
+        // Добавляем таймаут и на обычный fetch, чтобы шлюз тоже не висел бесконечно
+        const response = await fetch(gatewayUrl, { signal: AbortSignal.timeout(timeoutMs) });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          
+          console.log(`✅ [Helia FS] Аватар спасён через шлюз: ${gatewayUrl}`);
+          
+          // Обязательно сохраняем в кэш! 
+          avatarCache.set(cidString, objectUrl);
+          
+          return objectUrl;
+        }
+      } catch (gatewayError) {
+        // Если этот адрес недоступен, просто идем к следующему (согласно твоим правилам обработки списков адресов)
+        continue; 
+      }
+    }
+    
+    console.error(`❌ [Helia FS] Все резервные шлюзы недоступны для CID: ${cidString}`);
     return null;
   }
 }

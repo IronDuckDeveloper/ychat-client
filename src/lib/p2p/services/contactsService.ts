@@ -82,7 +82,8 @@ export const updateLastMessage = async (
   db: any, 
   peerId: string, 
   text: string, 
-  timestamp: number
+  timestamp: number,
+  incrementUnread: boolean = false
 ) => {
   if (!db) {
     console.warn('⚠️ [ContactsService] База контактов не передана!');
@@ -90,34 +91,101 @@ export const updateLastMessage = async (
   }
   
   try {
-    // 1. Достаем ВСЕ контакты, чтобы обойти проблему несовпадения ключей OrbitDB
+    // 1. Достаем ВСЕ контакты
     const allContacts = await getAllContacts(db);
     
     // 2. Ищем нужный пир вручную
-    const contact = allContacts.find((c: any) => c.id === peerId);
+    let contact = allContacts.find((c: any) => c.id === peerId);
     
     if (!contact) {
-      console.warn(`⚠️ [ContactsService] Контакт ${peerId} не найден среди ${allContacts.length} записей!`);
-      // Выведем список id, которые реально лежат в базе, чтобы понять, в чем разница
-      console.log('Доступные ID в базе:', allContacts.map((c: any) => c.id));
-      return; 
+      contact = {
+        id: peerId,
+        profileDbAddress: '', // Подтянется позже, когда нода ответит на MSG_PROFILE_REQUEST
+        chatDbAddress: '',    // Сгенерируется при открытии чата
+        nickname: `${peerId.substring(0, 6)}...`, // Временное имя
+        avatarCid: '',
+        updatedAt: timestamp,
+      };
+      
+      // Лог оставляем, чтобы видеть историю, но убираем return!
+      console.log('✨ [ContactsService] Автодобавление нового пира. Доступные до этого ID в базе:', allContacts.map((c: any) => c.id));
     }
 
-    // 3. Добавляем новые поля
+    // Высчитываем новый счетчик (для нового контакта тут будет 0)
+    const currentCount = contact.unreadCount || 0;
+    const newCount = incrementUnread ? currentCount + 1 : currentCount;
+
+    // 3. Собираем обновленный объект
     const updatedContact = {
       ...contact,
       lastMessage: text,
-      lastMessageTime: timestamp
+      lastMessageTime: timestamp,
+      unreadCount: newCount,
+      updatedAt: timestamp // Поднимаем контакт наверх списка при новом сообщении
     };
 
-    // 4. Сохраняем
+    // 4. Вот теперь сохранение железно сработает и для старых, и для новых контактов!
     await saveContact(db, updatedContact);
-    console.log(`✅ [ContactsService] Контакт ${contact.nickname || peerId} обновлен превью: "${text}"`);
+    console.log(`✅ [ContactsService] Контакт ${updatedContact.nickname || peerId} успешно сохранен/обновлен. Превью: "${text}"`);
     
-    // Обязательно пинаем UI, чтобы список перерисовался!
+    // Пинаем UI для перерисовки списка
     window.dispatchEvent(new Event('onContactsUpdated'));
     
   } catch (error) {
     console.error(`❌ [ContactsService] Ошибка записи превью:`, error);
+  }
+};
+
+// ФУНКЦИЯ ДЛЯ СБРОСА СЧЕТЧИКА
+export const clearUnread = async (db: any, peerId: string) => {
+  if (!db) return;
+  try {
+    const allContacts = await getAllContacts(db);
+    const contact = allContacts.find((c: any) => c.id === peerId);
+    
+    // Сбрасываем только если счетчик реально больше нуля
+    if (contact && contact.unreadCount && contact.unreadCount > 0) {
+      const updatedContact = { ...contact, unreadCount: 0 };
+      await saveContact(db, updatedContact);
+      window.dispatchEvent(new Event('onContactsUpdated'));
+    }
+  } catch (error) {
+    console.error(`❌ [ContactsService] Ошибка сброса счетчика:`, error);
+  }
+};
+/**
+ * Проверяет, есть ли пир в базе, и если нет — создает его
+ */
+import { requestPeerProfile } from './profileService'; 
+
+export const addContactIfMissing = async (db: any, helia: any, peerId: string) => {
+  if (!db || !peerId) return;
+  
+  try {
+    const allContacts = await getAllContacts(db);
+    const exists = allContacts.some((c: any) => c.id === peerId);
+
+    if (!exists) {
+      const newContact = {
+        id: peerId,
+        profileDbAddress: '',
+        chatDbAddress: '',
+        nickname: `${peerId.substring(0, 6)}...`,
+        avatarCid: '',
+        updatedAt: Date.now(),
+        unreadCount: 0
+      };
+      
+      await saveContact(db, newContact);
+      console.log(`✨ [ContactsService] Автодобавление пира: ${peerId}`);
+      window.dispatchEvent(new Event('onContactsUpdated'));
+
+      // 🔥 КРИТИЧЕСКИ ВАЖНО: Сразу просим сеть отдать нам профиль этого человека!
+      if (helia) {
+        await requestPeerProfile(helia, peerId);
+      }
+    }
+  } catch (err) {
+    console.error(`❌ [ContactsService] Ошибка автодобавления:`, err);
   }
 };

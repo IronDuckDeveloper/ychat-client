@@ -6,6 +6,7 @@ import { type ChatMessage, getDeterministicRoomName } from '../lib/p2p/services/
 import { CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
+import { clearUnread } from '../lib/p2p/services/contactsService.ts';
 
 export const useChatLogic = () => {
   const navigate = useNavigate();
@@ -33,6 +34,13 @@ export const useChatLogic = () => {
 
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
+
+  useEffect(() => {
+  if (globalContactsDb && peerId) {
+    // Просто сбрасываем счетчик для этого пира при монтировании экрана чата
+    clearUnread(globalContactsDb, peerId);
+  }
+}, [peerId, globalContactsDb]);
 
   useEffect(() => {
     const fetchNameFallback = async () => {

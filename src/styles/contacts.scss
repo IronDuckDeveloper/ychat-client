@@ -6,21 +6,19 @@
   flex-direction: column;
   height: 100vh;
   background-color: $chat-bg-light;
-}
 
-// 👇 ДОБАВЛЯЕМ СЮДА: Стили для экрана загрузки
   &.loading {
     justify-content: center;
     align-items: center;
 
     .loading-content {
       text-align: center;
-      color: $hint; // Используем переменную вместо #666
+      color: $hint; 
 
       .spinner {
         margin-bottom: 10px;
         font-size: 24px;
-        display: inline-block; // Чтобы анимация вращения работала ровно
+        display: inline-block; 
       }
 
       p {
@@ -29,6 +27,7 @@
       }
     }
   }
+}
 
 .contacts-header {
   display: flex;
@@ -48,7 +47,7 @@
     .avatar {
       width: 3rem; 
       height: 3rem;
-      background-color: rgba($text_variant, 0.15); 
+      background-color: rgba(#ffffff, 0.15); // Тут нужен белый с прозрачностью поверх фиолетового
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -59,7 +58,7 @@
       transition: all 0.2s ease;
 
       &:hover {
-        background-color: rgba($text_variant, 0.25);
+        background-color: rgba(#ffffff, 0.25);
         transform: scale(1.02);
       }
 
@@ -67,7 +66,7 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
-        display: block; // Убирает дефолтный нижний отступ у строчных элементов
+        display: block; 
       }
     }
 
@@ -79,18 +78,18 @@
 
   .header-actions {
     display: flex;
-    flex-direction: row; // Строго в ряд
+    flex-direction: row; 
     align-items: center;
-    gap: 0.5rem;        // Минимальный аккуратный отступ (8px), чтобы они были прямо рядом
-    flex-shrink: 0;     // Запрещаем кнопкам сжиматься или переноситься
+    gap: 0.5rem;        
+    flex-shrink: 0;     
   }
 
-    .header-action-button {
+  .header-action-button {
     background: none;
     border: none;
-    width: 40px;        // Задаем фиксированную кликабельную область
-    height: 40px;       // Чтобы кнопки были аккуратными квадратами
-    border-radius: $radius; // Используем твой радиус скругления для легкого фона при ховере
+    width: 40px;        
+    height: 40px;       
+    border-radius: $radius; 
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -99,7 +98,7 @@
     transition: all 0.2s ease;
 
     &:hover {
-      background-color: rgba($text_variant, 0.1); // Легкая подсветка кнопки при наведении
+      background-color: rgba(#ffffff, 0.1); 
       transform: scale(1.05);
     }
 
@@ -108,7 +107,7 @@
     }
 
     svg {
-      display: block; // Убираем дефолтные инлайновые отступы у иконки
+      display: block; 
     }
   }
 }
@@ -120,15 +119,15 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    background-color: white; // Как в чате
-    border-radius: 20px;     // Как в чате
-    padding: 0.6rem 1rem;    // Как в чате
-    min-height: 48px;        // Как в чате
-    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06); // Как в чате
-    border: 1px solid rgba(153, 120, 171, 0.1);      // Как в чате
+    background-color: $text_variant; 
+    border-radius: 20px;     
+    padding: 0.6rem 1rem;    
+    min-height: 48px;        
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06); 
+    border: 1px solid rgba(#9978AB, 0.1); // Используем $user-bubble через HEX напрямую для rgba()
 
     .search-icon {
-      color: $text; // Цвет иконки как в чате
+      color: $text; 
       flex-shrink: 0;
     }
 
@@ -140,11 +139,11 @@
       border: none;
       margin: 0 1.0rem;
       padding: 0;
-      color: $text; // Текст ввода
+      color: $text; 
       caret-color: $accent-prime;
 
       &::placeholder {
-        color: $hint; // Цвет плейсхолдера как в чате
+        color: $hint; 
       }
     }
   }
@@ -154,7 +153,6 @@
   flex: 1;
   overflow-y: auto;
 
-  // Состояние пустого списка
   .empty-state {
     text-align: center;
     padding: 2rem;
@@ -171,24 +169,45 @@
     border-bottom: 1px solid $chat-bg-light;
 
     &:hover {
-      background-color: $text_variant; // Цвет при наведении как в чате
+      background-color: $text_variant; 
     }
 
     .contact-avatar {
+      position: relative; 
       width: 3rem;
       height: 3rem;
-      background-color: rgba(132, 87, 160, 0.1);
+      background-color: rgba(#8457A0, 0.1); // Используем $accent-prime с прозрачностью
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       color: $accent-prime;
       font-weight: bold;
+
+      .unread-badge {
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        background-color: $secondary; // Тот самый красивый бирюзовый
+        color: $text_variant; // Белый текст
+        font-size: 10px;
+        font-weight: 700;
+        border-radius: 10px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px; 
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid $chat-bg-light; // Рамка в цвет фона контейнера
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+        z-index: 5;
+      }
     }
 
     .contact-info {
       flex: 1;
-      overflow: hidden; // Чтобы длинные имена/id не ломали верстку
+      overflow: hidden; 
 
       .contact-name {
         font-weight: 600;
@@ -196,9 +215,9 @@
       }
 
       .contact-last-message {
-        font-size: 0.75rem; // Это и есть 12px
+        font-size: 0.75rem; 
         color: $hint;
-        opacity: 0.8; // Чуть приглушаем, как ты делал в инлайнах
+        opacity: 0.8; 
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;

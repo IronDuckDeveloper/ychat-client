@@ -50,3 +50,25 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
     throw error;
   }
 }
+/**
+ * Функция запроса профиля
+ */
+export const requestPeerProfile = async (helia: any, targetPeerId: string) => {
+  if (!helia) {
+    console.error('⚠️ [ProfileService] Helia не инициализирована для запроса профиля');
+    return;
+  }
+  try {
+    const pubsub = helia.libp2p.services.pubsub;
+    const msg = { type: CONFIG.PROFILE.MSG_PROFILE_REQUEST, targetId: targetPeerId };
+    
+    await pubsub.publish(
+      CONFIG.TOPICS.PROFILE_UPDATES_TOPIC, 
+      new TextEncoder().encode(JSON.stringify(msg))
+    );
+    
+    console.log(`📤 [PubSub] Отправлен запрос профиля (PROFILE_REQUEST) для: ${targetPeerId}`);
+  } catch (error) {
+    console.error('❌ [PubSub] Ошибка при запросе профиля:', error);
+  }
+};

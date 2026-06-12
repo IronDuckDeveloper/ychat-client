@@ -38,8 +38,9 @@ export interface ContactItem {
   nickname: string;         // Кэш никнейма для моментального UI
   avatarCid: string;        // Кэш аватара для моментального UI
   updatedAt: number;        // Таймстемп (для сортировки списка чатов)
-  lastMessage?: string; 
-  lastMessageTime?: number;
+  lastMessage?: string; // Текст последнего сообщения
+  lastMessageTime?: number; // Таймстемп последнего сообщения
+  unreadCount?: number; // Количество непрочитанных сообщений
 }
 
 export const CONFIG = {

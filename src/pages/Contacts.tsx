@@ -92,6 +92,10 @@ const ContactList = () => {
             >
               <div className="contact-avatar">
                 <ContactAvatar cid={contact.avatarCid} />
+                {/* Выводим бейдж, только если есть непрочитанные */}
+                {contact.unreadCount && contact.unreadCount > 0 ? (
+                  <span className="unread-badge">{contact.unreadCount}</span>
+                ) : null}
               </div>
               <div className="contact-info">
                 <div className="contact-name">{contact.nickname}</div>

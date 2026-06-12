@@ -5,7 +5,7 @@ import { initProfileDB } from './profileService.ts';
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
-import { initContactsDB } from './contactsService.ts';
+import { addContactIfMissing, initContactsDB } from './contactsService.ts';
 
 export let globalHelia: any = null;
 export let globalOrbitDB: any = null;
@@ -138,15 +138,21 @@ export async function initializeApp(nicknameForRegistration?: string) {
         console.warn('⚠️ Ошибка парсинга сообщения PubSub:', e);
         return; 
       }
+
+      const myPeerId = globalHelia.libp2p.peerId.toString();
+      const senderId = evt.detail.from.toString();
       
+      // Игнорируем эхо от собственных сообщений
+      if (senderId === myPeerId) return;
+
       // 1. Пришло уведомление об обновлении (PROFILE_UPDATED)
+      // ЭТОТ БЛОК АВТОМАТИЧЕСКИ ПОЙМАЕТ ОТВЕТ НА НАШ ЗАПРОС И ОБНОВИТ ИМЯ/АВАТАР
       if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {  
         console.log(`📩 [PubSub Сеть] Получено обновление профиля от ${msg.senderId.slice(0,8)}`);
         const { getContact, saveContact } = await import('./contactsService.ts');
         const contact = await getContact(globalContactsDb, msg.senderId);
         
         if (contact) {
-          // Проверяем, реально ли что-то изменилось, чтобы не дергать базу и UI вхолостую
           if (contact.avatarCid !== msg.avatarCid || contact.nickname !== msg.nickname) {
             console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}`);
             contact.avatarCid = msg.avatarCid;
@@ -162,14 +168,18 @@ export async function initializeApp(nicknameForRegistration?: string) {
         }
       }
 
-      // 2. Кто-то просит нас представиться (PROFILE_REQUEST)
+      // 2. Кто-то просит НАС представиться (PROFILE_REQUEST)
       if (msg.type === CONFIG.PROFILE.MSG_PROFILE_REQUEST) {
-        const myPeerId = globalHelia.libp2p.peerId.toString();
-        
         // Проверяем, нас ли просят обновиться?
         if (msg.targetId === myPeerId) {
           console.log(`📡 [PubSub] Получен PROFILE_REQUEST. Отправляю свой актуальный профиль в сеть...`);
           await broadcastMyProfile(); 
+
+          // 👇 ИСПРАВЛЕНО: АВТОДОБАВЛЕНИЕ ВСТРЕЧНОГО КОНТАКТА ТОЛЬКО ЕСЛИ ЗАПРОС К НАМ 👇
+          if (globalContactsDb && senderId) {
+            // Вызываем добавление. Внутри contactsService.ts она сама запросит профиль!
+            addContactIfMissing(globalContactsDb, globalHelia, senderId);
+          }
         }
       }
     });
