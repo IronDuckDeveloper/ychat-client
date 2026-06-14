@@ -24,7 +24,6 @@ export const onDbReady = (callback: () => void) => {
 
 let isInitializing = false;
 
-// Обновленный getOrOpenDb в authService.ts
 const activeDbs = new Map();
 
 export async function getOrOpenDb(address: string | undefined | null) {
@@ -42,7 +41,7 @@ export async function getOrOpenDb(address: string | undefined | null) {
   try {
     // 3. Открытие и загрузка
     const db = await globalOrbitDB.open(address, { type: 'keyvalue' });
-    await db.load();
+
     activeDbs.set(address, db);
     return db;
   } catch (e) {
@@ -122,8 +121,8 @@ export async function initializeApp(nicknameForRegistration?: string) {
       throw new Error('PubSub service is not available on libp2p node');
     }
 
-    await pubsub.subscribe(CONFIG.TOPICS.PEER_SYNC_REQUEST_TOPIC); // ПОДПИСЫВАЕМСЯ НА ТОПИК ЗАПРОСОВ СИНХРОНИЗАЦИИ РЕЛЕЕВ
-    await pubsub.subscribe(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC); // ПОДПИСЫВАЕМСЯ НА ТОПИК ОБНОВЛЕНИЙ ПРОФИЛЕЙ
+    await pubsub.subscribe(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC);   // Подписываемся на обновления профилей
+    await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC);  // Подписываемся на пинги пробуждения от других клиентов
 
     // ==========================================
     // ЛОГИКА ОБРАБОТКИ СООБЩЕНИЙ ОБНОВЛЕНИЯ ПРОФИЛЯ
@@ -144,6 +143,27 @@ export async function initializeApp(nicknameForRegistration?: string) {
       
       // Игнорируем эхо от собственных сообщений
       if (senderId === myPeerId) return;
+
+      // 1. Обработка WAKEUP_PING (Кто-то проснулся, надо пнуть базы!)
+      if (evt.detail.topic === CONFIG.TOPICS.WAKEUP_SYNC_TOPIC) {
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(evt.detail.data));
+          const myPeerId = globalHelia.libp2p.peerId.toString();
+          
+          // Если это не наше собственное эхо
+          if (msg.type === CONFIG.MSG.WAKEUP && evt.detail.from.toString() !== myPeerId) {
+            console.log(`🔔 [PubSub] Пир ${evt.detail.from.toString().slice(-6)} проснулся! Инициирую встречную синхронизацию баз...`);
+            
+            // Ждем 2 секунды, пока Gossipsub соберет меш с проснувшимся пиром
+            setTimeout(async () => {
+              await pokeOrbitDbs();
+            }, 3000);
+          }
+        } catch (e) {
+          console.error('❌ Ошибка при обработке WAKEUP_PING:', e);
+        }
+        return; // Выходим, чтобы не идти в логику профилей ниже
+      }
 
       // 1. Пришло уведомление об обновлении (PROFILE_UPDATED)
       // ЭТОТ БЛОК АВТОМАТИЧЕСКИ ПОЙМАЕТ ОТВЕТ НА НАШ ЗАПРОС И ОБНОВИТ ИМЯ/АВАТАР
@@ -296,3 +316,139 @@ export async function initializeApp(nicknameForRegistration?: string) {
     isInitializing = false;
   }
 }
+
+// ==========================================
+// 5. Пинаем базы данных (authService.ts)
+// ==========================================
+// В authService.ts
+export async function pokeOrbitDbs() {
+  if (!globalOrbitDB || !globalContactsDb) return;
+
+  // 1. Проверяем, есть ли вообще пиры в сети, прежде чем "пинать"
+  const peers = globalHelia.libp2p.getPeers();
+  if (peers.length === 0) {
+    console.warn('⚠️ [OrbitDB] Сеть пуста, пропускаем синхронизацию...');
+    return;
+  }
+
+  console.log('🔄 [OrbitDB] Начинаем синхронизацию...');
+  
+  try {
+    const { getAllContacts, updateLastMessage } = await import('./contactsService.ts');
+    const contacts = await getAllContacts(globalContactsDb);
+    
+    // Используем Promise.all для параллельного открытия баз, это быстрее
+    await Promise.all(contacts.map(async (contact) => {
+    if (!contact.chatDbAddress) return;
+
+    const chatDb = await getOrOpenDb(contact.chatDbAddress);
+    if (!chatDb) return;
+
+    try {
+      // ВАЖНО: Добавлена проверка состояния базы
+      if (chatDb.status !== 'open') {
+          console.warn(`⚠️ [OrbitDB] База ${contact.chatDbAddress} закрыта, пропускаем.`);
+          return;
+      }
+
+      const allRecords = await chatDb.all();
+      const lastMsg = allRecords.length > 0 ? allRecords[allRecords.length - 1] : null;
+
+      console.log(`[Debug DB] Проверка чата ${contact.nickname}. Сообщений в итераторе: ${allRecords.length}`);
+
+      if (lastMsg && lastMsg.ts > (contact.lastMessageTime || 0)) {
+        console.log(`📥 [Синхронизация после сна] Обновляем превью для ${contact.nickname}`);
+        const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
+        await updateLastMessage(globalContactsDb, contact.id, lastMsg.text, lastMsg.ts, !isCurrentlyInThisChat);
+        window.dispatchEvent(new Event('onContactsUpdated'));
+      }
+    } catch (dbError) {
+      // Изолируем ошибку одной базы, чтобы не упал весь цикл
+      console.error(`❌ [Debug DB] Ошибка при чтении базы чата ${contact.nickname}:`, dbError);
+    }
+  }));
+
+    console.log('✅ [OrbitDB] Синхронизация завершена успешно.');
+  } catch (e) {
+    console.error('❌ [OrbitDB] Ошибка синхронизации:', e);
+  }
+}
+// export async function pokeOrbitDbs() {
+//   if (!globalOrbitDB || !globalContactsDb) return;
+  
+//   console.log('⏳ [OrbitDB] Отложенный запуск синхронизации баз (ждем стабилизации сети)...');
+  
+//   // ДОБАВЛЕН ASYNC ВОТ СЮДА 👇
+//   setTimeout(async () => {
+//     console.log('🫵 [OrbitDB] Пинаем базы данных для восстановления репликации...');
+//     try {
+//       const { getAllContacts, updateLastMessage } = await import('./contactsService.ts');
+//       const contacts = await getAllContacts(globalContactsDb);
+      
+//       // 👇 МАЯЧОК 1: Сколько контактов мы вообще нашли? 👇
+//       console.log(`[Debug DB] Найдено контактов для проверки: ${contacts.length}`);
+      
+//       const reconnectDatabases = async () => {
+//         for (const contact of contacts) {
+//           // 👇 МАЯЧОК 2: Есть ли у контакта адрес базы чата? 👇
+//           console.log(`[Debug DB] Контакт ${contact.nickname}: chatDbAddress = ${contact.chatDbAddress}`);
+
+//           if (contact.chatDbAddress) {
+//             const chatDb = await getOrOpenDb(contact.chatDbAddress);
+            
+//             // 👇 МАЯЧОК 3: Удалось ли открыть базу? 👇
+//             console.log(`[Debug DB] Статус открытия базы для ${contact.nickname}: ${chatDb ? 'УСПЕХ' : 'ОШИБКА (null)'}`);
+            
+//             if (chatDb) {
+//               setTimeout(async () => {
+//                 const allRecords = await chatDb.all();
+//                 const lastMsg = allRecords.length > 0 ? allRecords[allRecords.length - 1] : null;
+
+//                 console.log(`[Debug DB] Проверка чата ${contact.nickname}. Сообщений в итераторе: ${allRecords.length}`);
+
+//                 if (lastMsg) {
+//                   const contactLastTime = contact.lastMessageTime || 0;
+                  
+//                   console.log(`[Debug DB] ${contact.nickname}: в базе ts=${lastMsg.ts}, в кэше ts=${contactLastTime}. Текст: ${lastMsg.text}`);
+
+//                   if (lastMsg.ts && lastMsg.ts > contactLastTime) {
+//                     console.log(`📥 [Синхронизация после сна] Обновляем превью для ${contact.nickname}`);
+                    
+//                     const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
+                    
+//                     await updateLastMessage(
+//                       globalContactsDb, 
+//                       contact.id, 
+//                       lastMsg.text, 
+//                       lastMsg.ts, 
+//                       !isCurrentlyInThisChat
+//                     );
+                    
+//                     window.dispatchEvent(new Event('onContactsUpdated'));
+//                   }
+//                 }
+//               }, 1000);
+//             }
+//           }
+//         }
+//       };
+
+//       // 1. Мгновенный пинг
+//       await reconnectDatabases();
+//       console.log('✅ [OrbitDB] Первичный пинг баз выполнен.');
+
+//       // 2. Контрольный пинг через 3 секунды (когда Gossipsub построит меш)
+//       setTimeout(async () => {
+//         console.log('⏱️ [OrbitDB] Контрольный пинг баз после стабилизации меша PubSub...');
+//         await reconnectDatabases();
+//       }, 3000);
+
+//     } catch (e) {
+//       console.error('❌ Ошибка при пинге баз OrbitDB:', e);
+//     }
+//   }, 2000); // Даем 2 секунды на стабилизацию соединения
+// }
+
+// (window as any).debugPoke = pokeOrbitDbs;
+
+(window as any).debugPoke = pokeOrbitDbs;

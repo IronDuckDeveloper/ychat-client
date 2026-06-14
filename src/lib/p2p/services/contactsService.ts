@@ -1,5 +1,6 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG, type ContactItem } from '../config.ts';
+import { requestPeerProfile } from './profileService'; 
 
 export async function initContactsDB(orbitdb: any) {
   console.log(`📇 [ContactsDB] Открываем базу контактов...`);
@@ -156,8 +157,6 @@ export const clearUnread = async (db: any, peerId: string) => {
 /**
  * Проверяет, есть ли пир в базе, и если нет — создает его
  */
-import { requestPeerProfile } from './profileService'; 
-
 export const addContactIfMissing = async (db: any, helia: any, peerId: string) => {
   if (!db || !peerId) return;
   
@@ -189,3 +188,40 @@ export const addContactIfMissing = async (db: any, helia: any, peerId: string) =
     console.error(`❌ [ContactsService] Ошибка автодобавления:`, err);
   }
 };
+
+/**
+ * Функцию для обновления адреса базы чата
+ */
+export async function updateChatDbAddress(db: any, peerId: string, address: string) {
+  if (!db || !peerId || !address) return;
+  
+  try {
+    // Вытаскиваем все записи, чтобы точно не промахнуться мимо нужного поля
+    const allContacts = await db.all();
+    const contactRecord = allContacts.find((c: any) => 
+      c.id === peerId || c._id === peerId || c.value?.id === peerId || c.value?._id === peerId
+    );
+    
+    // Достаем сам объект (в зависимости от типа БД он может лежать внутри .value)
+    const contact = contactRecord?.value || contactRecord;
+
+    if (contact) {
+      // Если адрес уже такой же, не дергаем базу лишний раз
+      if (contact.chatDbAddress === address) return;
+
+      contact.chatDbAddress = address;
+      
+      // Универсальное сохранение под любой тип хранилища OrbitDB
+      if (db.type === 'keyvalue') {
+        await db.put(peerId, contact);
+      } else {
+        await db.put(contact);
+      }
+      console.log(`🎯 [ContactsDB] Железобетонно сохранили адрес базы: ${address}`);
+    } else {
+      console.warn(`⚠️ [ContactsDB] Контакт ${peerId} не найден для привязки адреса базы!`);
+    }
+  } catch (error) {
+    console.error(`❌ [ContactsDB] Ошибка при сохранении адреса:`, error);
+  }
+}

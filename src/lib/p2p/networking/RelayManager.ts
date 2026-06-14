@@ -38,24 +38,41 @@ export class RelayManager {
     }
   }
 
-  // Привязываем инстанс libp2p после его старта
-  public startMonitoring(libp2p: Libp2p, onRelayChanged?: (newRelay: RelayConfig) => void) {
-    this.libp2p = libp2p;
+  public getActiveIndex(): number {
+  // Название переменной может немного отличаться (например, this.activeIndex) - 
+  // посмотри, куда сохраняет значение метод setActiveIndex
+  return this.currentIdx || 0; 
+}
 
-    // Слушаем событие отключения пиров
-    this.libp2p.addEventListener('peer:disconnect', async (evt) => {
-      const disconnectedPeerId = evt.detail.toString();
-      const currentActiveRelay = this.relayPool[this.currentIdx];
+// Привязываем инстанс libp2p после его старта
+public startMonitoring(libp2p: Libp2p, onRelayChanged?: (newRelay: RelayConfig) => void) {
+  this.libp2p = libp2p;
 
-      // Если отвалился именно тот релей, через который мы сейчас работаем
-      if (currentActiveRelay && currentActiveRelay.peerId === disconnectedPeerId) {
-        console.warn(`🚨 [RelayManager] Активный релей ${currentActiveRelay.name} отключился!`);
-        await this.switchToNextRelay(onRelayChanged);
+  this.libp2p.addEventListener('peer:disconnect', async (evt) => {
+    const disconnectedPeerId = evt.detail.toString();
+    
+    // 1. Фиксируем релей, который считался активным НА МОМЕНТ прихода события
+    const currentActiveRelay = this.relayPool[this.currentIdx];
+
+    if (currentActiveRelay && currentActiveRelay.peerId === disconnectedPeerId) {
+      
+      // 2. ЗАЩИТА ОТ ПРИЗРАКОВ: проверяем реальные коннекты в libp2p
+      const activeConnections = this.libp2p?.getConnections(evt.detail) || [];
+      if (activeConnections.length > 0) {
+        // Если физическая связь еще есть (закрылся просто один из под-стримов), игнорируем
+        return;
       }
-    });
-  }
 
-  /**
+      console.warn(`🚨 [RelayManager] Активный релей ${currentActiveRelay.name} ПОЛНОСТЬЮ отключился!`);
+      // 3. Фризим UI
+      window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: false } }));
+      // 4. ПЕРЕКЛЮЧАЕМСЯ НА ЗАПАСНЫЙ РЕЛЕЙ
+      await this.switchToNextRelay(onRelayChanged);
+    }
+  });
+}
+
+/**
  * Проверить, принадлежит ли Peer ID к нашему пулу надежности
  */
   public isRelay(peerId: string): boolean {
@@ -121,8 +138,23 @@ export class RelayManager {
           signal: AbortSignal.timeout(5000) // Если за 5 секунд не ответил — пропускаем
         });
 
+        // Преобразуем строку в объект PeerId
+        const peerIdObj = peerIdFromString(nextRelay.peerId);
+
+        // Защищаем релей от автоматического сбора мусора
+        await this.libp2p.peerStore.merge(peerIdObj, { 
+          tags: {
+            'keep-alive': {
+              value: 100,
+            }
+          }
+        });
+
         console.log(`✅ [RelayManager] Успешно переключено на резервный релей: ${nextRelay.name}`);
         success = true;
+
+        // Размораживаем UI
+        window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: true } }));
         
         if (onRelayChanged) {
           onRelayChanged(nextRelay);

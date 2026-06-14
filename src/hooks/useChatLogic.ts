@@ -116,6 +116,9 @@ export const useChatLogic = () => {
           ? await getDeterministicRoomName(nodeId, peerId)
           : (peerId ?? 'global-chat');
 
+        // 1. Добавляем флаг загрузки истории
+        let isHistoryLoaded = false;
+
         const roomActions = await joinRoom(resolvedRoomDbId, (message: ChatMessage) => { 
           if (!isMounted) return;
           if (message?.text?.startsWith('System:')) return;
@@ -125,12 +128,15 @@ export const useChatLogic = () => {
             return [...prev, message];
           });
 
-          // Обновляем базу при получении сообщения от пира
-          if (peerId && globalContactsDb) {
+          // 2. Обновляем превью ТОЛЬКО если это новые сообщения (после загрузки истории)
+          if (peerId && globalContactsDb && isHistoryLoaded) {
             console.log(`🔄 [Chat] Обновляем превью для входящего от ${peerId}`);
             contactsService.updateLastMessage(globalContactsDb, peerId, message.text, Date.now());
           }
         });
+
+        // 3. Как только joinRoom отработал, значит вся история загружена
+        isHistoryLoaded = true;
 
         if (!isMounted) {
           if (roomActions?.leaveRoom) roomActions.leaveRoom();
@@ -139,6 +145,12 @@ export const useChatLogic = () => {
 
         activeHandle = roomActions;
         setRoomHandle(roomActions);
+
+        // 4. Тот самый код для сохранения адреса (теперь его никто не затрет!)
+        if (peerId && globalContactsDb && roomActions.dbAddress) {
+          console.log(`⏳ [Chat] Передаем адрес базы ${roomActions.dbAddress} в contactsService...`);
+          contactsService.updateChatDbAddress(globalContactsDb, peerId, roomActions.dbAddress);
+        }
 
         const libp2p = (helia as any)?.libp2p || (window as any).helia?.helia?.libp2p;
         if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {

@@ -1,0 +1,46 @@
+@import './variables.scss';
+
+.network-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  
+  // Используем ТВОИ переменные
+  background-color: rgba($bg, 0.1); // Берем $bg и делаем его прозрачным
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  
+  // Используем $text для темного текста
+  color: $text; 
+  pointer-events: all;
+  
+  animation: fade-in 0.3s ease-out;
+
+  .spinner {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    color: $accent-prime; // Добавим акцент для иконки
+  }
+
+  h2 {
+    margin: 0.5rem 0;
+  }
+
+  p {
+    opacity: 0.7;
+    margin: 0;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

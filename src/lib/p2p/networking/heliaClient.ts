@@ -20,6 +20,8 @@ import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
 import { kadDHT } from '@libp2p/kad-dht';
+import { broadcastMyProfile, pokeOrbitDbs } from '../services/authService.ts.ts';
+import { NetworkStateMachine } from './NetworkStateMachine.ts';
 
 let initializationPromise: Promise<any> | null = null;
 
@@ -84,6 +86,7 @@ export function createBrowserHelia(): Promise<any> {
               minConnections: 1,
               maxConnections: 5,
               maxParallelDials: 2,
+              dialTimeout: 10000,
             },
             connectionEncryption: [noise()],
             streamMuxers: [yamux()],
@@ -126,6 +129,8 @@ export function createBrowserHelia(): Promise<any> {
 
         // Фиксируем успешный индекс в менеджере
         relayManager.setActiveIndex(currentRelayIndex);
+        // Размораживаем UI
+        window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: true } }));
 
       } catch (error: any) {
         console.warn(`⚠️ [HeliaInit] Не удалось подключиться к релею ${relay.name || relay.peerId.slice(-6)}. Ошибка: ${error.message}`);
@@ -143,11 +148,32 @@ export function createBrowserHelia(): Promise<any> {
     }
 
     // Запускаем мониторинг именно здесь, один раз
-    relayManager.startMonitoring(heliaNode.libp2p, (newRelay) => {
+    relayManager.startMonitoring(heliaNode.libp2p, async (newRelay) => {
       notifyArchivist(heliaNode.libp2p, peerId, newRelay.name);
       console.log(`📢 Оповещаем новый архивариус: ${newRelay.name}`);
-    });
 
+      if (heliaNode) {
+        try {
+          const pubsub = heliaNode.libp2p.services.pubsub;
+          
+          // 1. Принудительно публикуем запрос синхронизации пиров
+          await pubsub.publish( 
+            CONFIG.TOPICS.WAKEUP_SYNC_TOPIC,
+            new TextEncoder().encode(JSON.stringify({ type: CONFIG.MSG.WAKEUP }))
+          );
+
+          // 2. Дергаем публикацию профиля. 
+          await broadcastMyProfile(); 
+          
+          // 3. Пинаем OrbitDB базы контактов на новом релее
+          await pokeOrbitDbs();
+          
+          console.log('🔄 [Network Fix] Меш PubSub и базы OrbitDB успешно переинициализированны на новом релее.');
+        } catch (pubSubRefreshError) {
+          console.error('❌ [Network Fix] Не удалось обновить меш подписок или базы:', pubSubRefreshError);
+        }
+      }
+    });
     return await heliaNode;
   })();
 

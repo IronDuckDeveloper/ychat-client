@@ -74,18 +74,19 @@ export const CONFIG = {
 
   CHUNK_SIZE: 1, // Сколько сообщений грузить за раз
 
-    MSG: {
+  MSG: {
     SUCCESS : 'SUCCESS',
     FORBIDDEN : 'FORBIDDEN',
-    },
+    WAKEUP : 'WAKEUP_PING',
+  },
 
   TOPICS: {
     ANNOUNCE: '/p2p-relay/v1/announce', // Топик для анонсирования адреса базы данных на сервер-Архивариус
     PEER_SYNC_REQUEST: 'peers:sync:request', // Топик для запроса синхронизации с релеями
     PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:', // Базовый топик для ответа синхронизации, к которому будет добавляться ID запрашивающего пира
-    PEER_SYNC_REQUEST_TOPIC: 'peers:sync:request', // Топик для запроса синхронизации релеев (можно использовать тот же, что и PEER_SYNC_REQUEST, просто обрабатывать по-разному)
     PROFILE_UPDATES_TOPIC: 'ychat/profiles/updates', // Топик для обновления профилей
     RPC_PROTOCOL: '/ychat/anti-flood/1.0.0', // Протокол для RPC-метода проверки регистрации (антифрод)
+    WAKEUP_SYNC_TOPIC: 'peers:wakeup:ping', // Для пробуждения соседей и синхронизации OrbitDB
     ANNOUNCE_NEW_MESSAGE: `ychat-notifications-` // Топик для анонсирования нового сообщения
   }
 };
