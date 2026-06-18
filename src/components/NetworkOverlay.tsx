@@ -15,7 +15,7 @@ export const NetworkOverlay: React.FC = () => {
         unsubscribe = globalNetworkState.subscribe((newState) => {
           setStatus(newState);
 
-          if (newState === NET_STATE.SLEEPING || newState === NET_STATE.RECOVERING) {
+          if (newState === NET_STATE.SLEEPING) {
             wasSleeping.current = true;
           }
 

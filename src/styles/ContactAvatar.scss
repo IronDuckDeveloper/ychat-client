@@ -1,6 +1,5 @@
 
-// Если переменные лежат в другом файле, не забудь импорт, например:
-@import "variables"; 
+@import './variables.scss';
 
 // Ключевые кадры для крутилки (вместо animate-spin)
 @keyframes avatar-loader-spin {

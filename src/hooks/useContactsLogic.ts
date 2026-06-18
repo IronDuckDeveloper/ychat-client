@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CID } from 'multiformats/cid';
 
-import { globalProfileDb, globalContactsDb, globalOrbitDB, onDbReady, globalHelia, getOrOpenDb, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
-import { getAllContacts, saveContact, deleteContact, updateLastMessage } from '../lib/p2p/services/contactsService.ts';
+import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
+import { getAllContacts, saveContact, deleteContact } from '../lib/p2p/services/contactsService.ts';
 import { isAuthenticated } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG, type ContactItem } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
@@ -12,47 +12,31 @@ import { requestPeerProfile } from '../lib/p2p/services/profileService.ts';
 export const useContactsLogic = () => {
   const navigate = useNavigate();
   
-  // Стейты профиля
   const [myNickname, setMyNickname] = useState<string>('Загрузка...');
   const [myBio, setMyBio] = useState<string>(''); 
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   
-  // Стейты приложения
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   
-  // Стейт списка контактов
   const [contacts, setContacts] = useState<ContactItem[]>([]);
 
-  // Слушаем фоновые обновления профилей из PubSub
   useEffect(() => {
     const handleContactsUpdate = async () => {
-      console.log('♻️ [UI] Получен сигнал на обновление списка контактов!');
       if (globalContactsDb) {
         const updatedList = await getAllContacts(globalContactsDb);
         setContacts(updatedList);
       }
     };
-
     window.addEventListener('onContactsUpdated', handleContactsUpdate);
     return () => window.removeEventListener('onContactsUpdated', handleContactsUpdate);
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      navigate('/', { replace: true });
-    }
+    if (!isAuthenticated()) navigate('/', { replace: true });
   }, [navigate]);
 
-  useEffect(() => {
-    window.history.pushState(null, '', window.location.href);
-    const handlePopState = () => window.history.pushState(null, '', window.location.href);
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  // Загрузка профиля И КОНТАКТОВ из баз
   useEffect(() => {
     if (!isAuthenticated()) return;
 
@@ -71,91 +55,8 @@ export const useContactsLogic = () => {
         }
 
         if (globalContactsDb) {
-          const list = await getAllContacts(globalContactsDb);
-          setContacts(list);
-
-          // СЛУШАЕМ ОБНОВЛЕНИЯ ПРОФИЛЕЙ
-          const updateContactWithRetry = async (contact: ContactItem, _retries = 3) => {
-            if (!contact) {
-              console.warn("Попытка обновить пустой контакт, пропускаем.");
-              return;
-            }
-            try {
-              const remoteDb = await getOrOpenDb(contact.profileDbAddress);
-              await remoteDb.load();
-              if (!remoteDb) return;
-              if (remoteDb.all().length === 0) {
-                console.log(`⏳ База пира ${contact.id} еще синхронизируется...`);
-                return; 
-              }
-              remoteDb.events.on('update', async (_address: any, _hash: string, entry: any) => {
-                console.log('🔄 Прилетело обновление:', entry.payload.value);   
-                const getSafe = async (db: any, key: string) => {
-                  try {
-                    return await db.get(key);
-                  } catch (e) {
-                    return null;
-                  }
-                };
-                
-                const freshName = await getSafe(remoteDb, CONFIG.PROFILE.KEY_NICKNAME);
-                const freshAvatar = await getSafe(remoteDb, CONFIG.PROFILE.KEY_AVATAR_CID);
-                
-                await saveContact(globalContactsDb, { 
-                  ...contact, 
-                  nickname: freshName, 
-                  avatarCid: freshAvatar,
-                  updatedAt: Date.now() 
-                });
-                window.dispatchEvent(new Event('onContactsUpdated'));
-              });
-
-            } catch (e) {
-              console.error(`❌ Не удалось обновить контакт ${contact.id}.`);
-            }
-          };
-
-        // СЛУШАТЕЛЬ ФОНОВЫХ ПРЕВЬЮ КОНТАКТОВ (Последнее сообщение)
-        if (globalHelia) {
-          const myPeerId = globalHelia.libp2p.peerId.toString();
-          const myNotificationTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${myPeerId}`;
-
-          try {
-            // Подписываемся ТОЛЬКО на свой личный топик уведомлений
-            await globalHelia.libp2p.services.pubsub.subscribe(myNotificationTopic);
-            
-            const handleIncomingNotification = async (evt: any) => {
-              if (evt.detail.topic !== myNotificationTopic) return;
-              
-              try {
-                const payload = JSON.parse(new TextDecoder().decode(evt.detail.data));
-                // Ожидаем структуру: { from: string, text: string, ts: number }
-                if (payload.from && payload.text) {
-                  // Проверяем, не сидим ли мы прямо сейчас в чате с этим пользователем
-                  const isCurrentlyInThisChat = window.location.pathname.includes(payload.from);
-
-                  console.log(`📡 [PubSub Пуш] Новое фоновое сообщение от ${payload.from}: "${payload.text}"`);
-                  await updateLastMessage(
-                    globalContactsDb, 
-                    payload.from, 
-                    payload.text, 
-                    payload.ts || Date.now(),
-                    !isCurrentlyInThisChat // Если мы НЕ в этом чате, увеличиваем счетчик
-                  );
-                }
-              } catch (err) {
-                console.warn('❌ Ошибка парсинга фонового пуш-уведомления', err);
-              }
-            };
-
-            globalHelia.libp2p.services.pubsub.addEventListener('message', handleIncomingNotification);
-          } catch (pubSubErr) {
-            console.error('❌ Не удалось запустить фоновые уведомления', pubSubErr);
-          }
-        }
-
-          const validContacts = contacts.filter(c => c && c.profileDbAddress);
-          validContacts.forEach(contact => updateContactWithRetry(contact));
+          const rawContacts = await getAllContacts(globalContactsDb);
+          setContacts(rawContacts);
         }
       } catch (error) {
         console.error('Ошибка при чтении данных:', error);
@@ -174,25 +75,18 @@ export const useContactsLogic = () => {
         loadData(globalProfileDb);
       });
     }
-  }, []);
+  }, [navigate]);
 
   const handleRefreshContact = async (e: React.MouseEvent, targetPeerId: string) => {
     e.stopPropagation();
-    if (!globalHelia) {
-      console.error('Helia не инициализирована');
-      return;
-    }
-    await requestPeerProfile(globalHelia, targetPeerId);
+    if (globalHelia) await requestPeerProfile(globalHelia, targetPeerId);
   };
 
   const handleDeleteContact = async (e: React.MouseEvent, contactId: string) => {
     e.stopPropagation(); 
-    if (window.confirm('Точно удалить этот контакт?')) {
+    if (window.confirm('Точно удалить этот contact?')) {
       const success = await deleteContact(globalContactsDb, contactId);
-      if (success) {
-        const updatedList = await getAllContacts(globalContactsDb);
-        setContacts(updatedList);
-      }
+      if (success) setContacts(await getAllContacts(globalContactsDb));
     }
   };
 
@@ -209,23 +103,16 @@ export const useContactsLogic = () => {
         try {
           const dht = globalHelia.libp2p.dht;
           if (dht && typeof dht.provide === 'function') {
-            await dht.provide(CID.parse(cid)).catch((e: unknown) => console.warn("DHT provide failed", e))
+            await dht.provide(CID.parse(cid)).catch(() => {});
           }
-          console.log("✅ Блок анонсирован в DHT");
-        } catch (err) {
-          console.warn("⚠️ Ошибка при анонсе в DHT (возможно, это нормально для клиента):", err);
-        }
+        } catch {}
         await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, cid);
-        const localUrl = URL.createObjectURL(newAvatarBlob);
-        setMyAvatarUrl(localUrl);
+        setMyAvatarUrl(URL.createObjectURL(newAvatarBlob));
       }
       
       setMyNickname(newNickname);
       setMyBio(newBio);
-
-      if (globalHelia) {
-        await broadcastMyProfile();
-      }
+      if (globalHelia) await broadcastMyProfile();
     } catch (error) {
       console.error('Не удалось сохранить профиль в P2P:', error);
     }
@@ -239,15 +126,10 @@ export const useContactsLogic = () => {
   const handleShare = async () => {
     if (!globalHelia || !globalProfileDb) return alert('Сеть еще не готова!');
     try {
-      const myPeerId = globalHelia.libp2p.peerId.toString();
-      const profileAddr = globalProfileDb.address.toString();
-      const tokenObj = { id: myPeerId, profile: profileAddr };
-      const base64Token = btoa(JSON.stringify(tokenObj));
-      await navigator.clipboard.writeText(base64Token);
-      alert('Твой код скопирован в буфер обмена! Отправь его собеседнику.');
-    } catch (err) {
-      console.error('Ошибка копирования', err);
-    }
+      const tokenObj = { id: globalHelia.libp2p.peerId.toString(), profile: globalProfileDb.address.toString() };
+      await navigator.clipboard.writeText(btoa(JSON.stringify(tokenObj)));
+      alert('Твой код скопирован!');
+    } catch {}
   };
 
   const handleAdd = async () => {
@@ -256,75 +138,29 @@ export const useContactsLogic = () => {
     try {
       const decoded = JSON.parse(atob(token));
       if (!decoded.id || !decoded.profile) throw new Error('Кривой токен');
-      if (globalHelia && decoded.id === globalHelia.libp2p.peerId.toString()) {
-        alert('Нельзя добавить самого себя :)');
-        return;
-      }
+      if (globalHelia && decoded.id === globalHelia.libp2p.peerId.toString()) return alert('Нельзя добавить себя');
 
-      const peerShort = `${decoded.id.slice(0, 8)}...`;
-      let newContact: ContactItem = {
+      const newContact: ContactItem = {
         id: decoded.id,
         profileDbAddress: decoded.profile,
         chatDbAddress: '', 
-        nickname: `Пир: ${peerShort}`, 
+        nickname: `Пир: ${decoded.id.slice(0, 8)}...`, 
         avatarCid: '',
-        updatedAt: Date.now(),
-        lastMessage: 'Привет! Как дела?',
-        lastMessageTime: 1718182000000
+        updatedAt: Date.now()
       };
 
       await saveContact(globalContactsDb, newContact);
       setContacts(await getAllContacts(globalContactsDb));
 
-      if (globalHelia) {
-        await requestPeerProfile(globalHelia, decoded.id);
-      }
-
-      if (globalOrbitDB) {
-        console.log(`🔄 Фоновая синхронизация профиля: ${decoded.profile}`);
-        try {
-          const remoteProfileDb = await globalOrbitDB.open(decoded.profile, { type: 'keyvalue' });
-          await remoteProfileDb.load();
-          remoteProfileDb.events.on('update', async (_address: any, _hash: string, entry: any) => {
-            console.log('🔄 Получено обновление профиля друга через OrbitDB:', entry.payload.value);
-          });
-          
-          const realName = await remoteProfileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-          const realAvatar = await remoteProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
-
-          if (realName) {
-            console.log(`✅ Профиль был в кэше сети! Имя: ${realName}`);
-            newContact.nickname = realName;
-            if (realAvatar) newContact.avatarCid = realAvatar;
-            await saveContact(globalContactsDb, newContact);
-            setContacts(await getAllContacts(globalContactsDb));
-          }
-        } catch (syncError) {
-          console.warn('⚠️ Ошибка при попытке фонового открытия базы OrbitDB:', syncError);
-        }
-      }
-    } catch (err) {
+      if (globalHelia) await requestPeerProfile(globalHelia, decoded.id);
+    } catch {
       alert('Неверный формат кода!');
-      console.error('Ошибка парсинга токена контакта:', err);
     }
   };
 
-  // Возвращаем всё, что нужно для отрисовки интерфейса
   return {
-    navigate,
-    isLoading,
-    dbInstance,
-    isProfileOpen,
-    setIsProfileOpen,
-    myNickname,
-    myBio,
-    myAvatarUrl,
-    contacts,
-    handleRefreshContact,
-    handleDeleteContact,
-    handleSaveProfile,
-    handleLogout,
-    handleShare,
-    handleAdd
+    navigate, isLoading, dbInstance, isProfileOpen, setIsProfileOpen,
+    myNickname, myBio, myAvatarUrl, contacts,
+    handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleShare, handleAdd
   };
 };

@@ -2,26 +2,23 @@ import { useRef, useState, useEffect } from 'react';
 import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react'; 
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useIPFS } from './useIPFS.ts';
-import { type ChatMessage, getDeterministicRoomName } from '../lib/p2p/services/roomService.ts';
-import { CONFIG } from '../lib/p2p/config.ts';
+import { getDeterministicRoomName } from '../lib/p2p/services/roomService.ts';
+import { type ChatMessage, CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
-import { clearUnread } from '../lib/p2p/services/contactsService.ts';
 
 export const useChatLogic = () => {
   const navigate = useNavigate();
   const { peerId } = useParams(); 
   const location = useLocation();
-  const [displayName, setDisplayName] = useState(
-    location.state?.contactName || 'Загрузка...'
-  );
+  const [displayName, setDisplayName] = useState(location.state?.contactName || 'Загрузка...');
   const { isReady, nodeId, joinRoom, helia } = useIPFS();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const isLoadingRef = useRef(false); // Защита от гонок при загрузке истории
+  const isLoadingRef = useRef(false);
 
   const [roomHandle, setRoomHandle] = useState<{
     sendMessage: (message: string) => Promise<void>;
@@ -36,71 +33,34 @@ export const useChatLogic = () => {
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
 
   useEffect(() => {
-  if (globalContactsDb && peerId) {
-    // Просто сбрасываем счетчик для этого пира при монтировании экрана чата
-    clearUnread(globalContactsDb, peerId);
-  }
-}, [peerId, globalContactsDb]);
+    if (globalContactsDb && peerId) {
+      contactsService.clearUnread(globalContactsDb, peerId);
+    }
+
+    // Очищаем при размонтировании (выходе из чата)
+    return () => {
+      if (globalContactsDb && peerId) {
+        contactsService.clearUnread(globalContactsDb, peerId);
+      }
+    };
+  }, [peerId]);
 
   useEffect(() => {
     const fetchNameFallback = async () => {
       if (displayName !== 'Загрузка...' || !peerId || !globalContactsDb) return;
-
       try {
         const contact = await contactsService.getContactById(globalContactsDb, peerId);
         if (contact) {
-          setDisplayName(contact.nickname || contact.name);
+          setDisplayName(contact.nickname || contact.id);
         } else {
           setDisplayName(`${peerId.slice(0, 6)}...${peerId.slice(-4)}`);
         }
-      } catch (error) {
-        console.error('Ошибка при поиске контакта:', error);
+      } catch {
         setDisplayName('Неизвестный');
       }
     };
-
     fetchNameFallback();
   }, [peerId, displayName]);
-
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    let startY = 0;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      startY = e.touches[0].clientY;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      const currentY = e.touches[0].clientY;
-      const isSwipingDown = currentY > startY;
-
-      if (container.scrollTop <= 1 && isSwipingDown) {
-        if (e.cancelable) {
-          e.preventDefault();
-        }
-      }
-    };
-
-    const handleWheel = (e: WheelEvent) => {
-      if (container.scrollTop <= 1 && e.deltaY < 0) {
-        if (e.cancelable) {
-          e.preventDefault();
-        }
-      }
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('wheel', handleWheel, { passive: false });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('wheel', handleWheel);
-    };
-  }, []);
 
   useEffect(() => {
     if (!isReady || !joinRoom) return;
@@ -116,27 +76,37 @@ export const useChatLogic = () => {
           ? await getDeterministicRoomName(nodeId, peerId)
           : (peerId ?? 'global-chat');
 
-        // 1. Добавляем флаг загрузки истории
-        let isHistoryLoaded = false;
-
-        const roomActions = await joinRoom(resolvedRoomDbId, (message: ChatMessage) => { 
+        const roomActions = await joinRoom(resolvedRoomDbId, (message: ChatMessage, isBackgroundSync: boolean = false) => { 
           if (!isMounted) return;
           if (message?.text?.startsWith('System:')) return;
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === message.id)) return prev;
-            return [...prev, message];
+            // Добавляем и жестко сортируем по времени, чтобы сообщения всегда стояли по порядку
+            const updated = [...prev, message];
+            return updated.sort((a, b) => a.ts - b.ts);
           });
 
-          // 2. Обновляем превью ТОЛЬКО если это новые сообщения (после загрузки истории)
-          if (peerId && globalContactsDb && isHistoryLoaded) {
-            console.log(`🔄 [Chat] Обновляем превью для входящего от ${peerId}`);
-            contactsService.updateLastMessage(globalContactsDb, peerId, message.text, Date.now());
+          // Любое прилетевшее сообщение прокидываем в превью. Метод внутри сам проверит ts.
+          if (peerId && globalContactsDb && peerId !== 'global-chat') {
+            const isCurrentlyInThisChat = window.location.pathname.includes(peerId);
+            const shouldIncrement = !isCurrentlyInThisChat && !isBackgroundSync && message.type !== 'sent';
+
+            contactsService.updateLastMessage(
+              globalContactsDb, 
+              peerId, 
+              message.text, 
+              message.ts || Date.now(), 
+              shouldIncrement
+            );
+
+            // Если мы сидим в этом чате, принудительно гасим индикатор
+            // при любом новом сообщении, чтобы он не зависал
+            if (isCurrentlyInThisChat) {
+              contactsService.clearUnread(globalContactsDb, peerId);
+            }
           }
         });
-
-        // 3. Как только joinRoom отработал, значит вся история загружена
-        isHistoryLoaded = true;
 
         if (!isMounted) {
           if (roomActions?.leaveRoom) roomActions.leaveRoom();
@@ -146,42 +116,12 @@ export const useChatLogic = () => {
         activeHandle = roomActions;
         setRoomHandle(roomActions);
 
-        // 4. Тот самый код для сохранения адреса (теперь его никто не затрет!)
         if (peerId && globalContactsDb && roomActions.dbAddress) {
-          console.log(`⏳ [Chat] Передаем адрес базы ${roomActions.dbAddress} в contactsService...`);
           contactsService.updateChatDbAddress(globalContactsDb, peerId, roomActions.dbAddress);
         }
 
-        const libp2p = (helia as any)?.libp2p || (window as any).helia?.helia?.libp2p;
-        if (libp2p && libp2p.services.pubsub && roomActions.dbAddress) {
-          const pubsub = libp2p.services.pubsub;
-
-          let attempts = 0;
-          while (attempts < 50 && isMounted) {
-            const subscribers = pubsub.getSubscribers(roomActions.dbAddress);
-
-            if (subscribers && subscribers.length > 0) {
-              console.log(
-                `📡 [Gossipsub] Сеть склеилась! Топик: ${roomActions.dbAddress}. Пиров: ${subscribers.length}`,
-              );
-              break;
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, 300));
-            attempts++;
-          }
-        }
-
-        if (isMounted) {
-          setIsRoomConnected(true);
-        }
-
-      } catch (err: any) {
-        if (err?.message?.includes('Handler already registered')) {
-          console.log('⚠️ [Chat] Повторная регистрация обработчика заблокирована (Strict Mode).');
-          return;
-        }
-        
+        setIsRoomConnected(true);
+      } catch (err) {
         console.error('Failed to join room:', err);
       }
     };
@@ -190,37 +130,11 @@ export const useChatLogic = () => {
 
     return () => {
       isMounted = false;
-      if (activeHandle?.leaveRoom) {
-        activeHandle.leaveRoom();
-      }
+      if (activeHandle?.leaveRoom) activeHandle.leaveRoom();
       setRoomHandle(null);
       setIsRoomConnected(false);
     };
   }, [isReady, joinRoom, helia, nodeId, peerId]);
-
-  useEffect(() => {
-    if (!roomHandle || !roomHandle.pingRoom) return;
-
-    const pingRelay = () => {
-      if (roomHandle?.pingRoom) {
-        roomHandle.pingRoom();
-      }
-    };
-
-    const intervalId = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        pingRelay();
-      }
-    }, CONFIG.INACTIVITY_TIMEOUT_MS);
-
-    const handleFocus = () => pingRelay();
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [roomHandle]);
 
   const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
@@ -232,24 +146,21 @@ export const useChatLogic = () => {
     if (target.scrollTop <= 1 && roomHandle?.hasMoreHistory()) {
       isLoadingRef.current = true;
       setIsLoadingMore(true);
-      
       const previousScrollHeight = target.scrollHeight;
       
       try {
         await roomHandle.loadMoreHistory();
-        
         requestAnimationFrame(() => {
           if (messagesContainerRef.current) {
             const newScrollHeight = messagesContainerRef.current.scrollHeight;
             messagesContainerRef.current.scrollTop = newScrollHeight - previousScrollHeight;
           }
-          
           setTimeout(() => {
             isLoadingRef.current = false;
             setIsLoadingMore(false);
           }, 100); 
         });
-      } catch (err) {
+      } catch {
         isLoadingRef.current = false;
         setIsLoadingMore(false);
       }
@@ -270,45 +181,23 @@ export const useChatLogic = () => {
     isUserScrolledUp.current = false;
 
     try {
+      const now = Date.now();
       await roomHandle.sendMessage(text);
       setDraft('');
 
-      // Обновляем базу при нашей отправке
-      if (peerId && globalContactsDb) {
-        console.log(`🔄 [Chat] Обновляем превью для исходящего к ${peerId}`);
-        contactsService.updateLastMessage(globalContactsDb, peerId, text, Date.now());
-      }
-
-      // Отправляем легковесный пуш собеседнику в сеть!
       if (helia && peerId) {
         try {
           const myPeerId = (helia as any).libp2p.peerId.toString();
-          const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`; // Топик твоего друга
-          
-          const notificationData = {
-            from: myPeerId,
-            text: text,
-            ts: Date.now()
-          };
-
+          const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
+          const notificationData = { from: myPeerId, text, ts: now };
           const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
           await (helia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
-          console.log(`📤 [PubSub Пуш] Превью успешно отправлено в топик друга: ${targetTopic}`);
         } catch (err) {
-          console.warn('⚠️ Не удалось отправить фоновый пуш собеседнику:', err);
+          console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
         }
       }          
-    } catch (err) {
-      console.error('Ошибка отправки сообщения:', err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-error-${Date.now()}-${prev.length}`,
-          whoSent: 'system',
-          text: 'Не удалось отправить сообщение. Повторите попытку.',
-          type: 'system',
-        },
-      ]);
+    } catch {
+      console.error('Ошибка отправки сообщения');
     }
   };
 
@@ -334,7 +223,7 @@ export const useChatLogic = () => {
     setDraft(textarea.value);
   };
 
-  return {
+return {
     navigate,
     displayName,
     messages,

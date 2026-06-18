@@ -20,7 +20,6 @@ export class NetworkStateMachine {
   public relayManager: any;
   public pubsubTopic: string;
   public broadcastMyProfile: () => Promise<void>;
-  public pokeOrbitDbs: () => Promise<void>;
   
   public state: NetState; // Использовали тут
   private watchdogTimer: any;
@@ -31,13 +30,11 @@ export class NetworkStateMachine {
     relayManager: any;
     pubsubTopic?: string;
     broadcastMyProfile: () => Promise<void>;
-    pokeOrbitDbs: () => Promise<void>;
   }) {
     this.libp2p = config.libp2p;
     this.relayManager = config.relayManager;
     this.pubsubTopic = config.pubsubTopic || CONFIG.TOPICS.WAKEUP_SYNC_TOPIC || 'ychat-global';
     this.broadcastMyProfile = config.broadcastMyProfile;
-    this.pokeOrbitDbs = config.pokeOrbitDbs;
 
     this.state = NET_STATE.DISCONNECTED;
     this.watchdogTimer = null;
@@ -82,18 +79,44 @@ export class NetworkStateMachine {
     window.addEventListener('offline', () => this.transitionTo(NET_STATE.DISCONNECTED));
   }
 
-  private startWatchdog() {
+private startWatchdog() {
     this.stopWatchdog();
     this.watchdogTimer = setInterval(async () => {
+      // Если вкладка скрыта или мы не в состоянии CONNECTED - ничего не делаем
       if (document.visibilityState !== 'visible' || this.state !== NET_STATE.CONNECTED) return;
       
       try {
-        const activeRelay = this.relayManager.getPool()[this.relayManager.getActiveIndex() || 0];
+        // 1. Проверяем, есть ли вообще соединения
+        const connections = this.libp2p.getConnections();
+        if (connections.length === 0) {
+          console.warn('⚠️ [Watchdog] Нет активных P2P соединений. Запускаем recovery...');
+          this.recoverNetwork();
+          return;
+        }
+
+        // 2. Достаем активный релей (используем ?? чтобы 0 не превратился в false)
+        const activeIndex = this.relayManager.getActiveIndex();
+        const activeRelay = this.relayManager.getPool()[activeIndex ?? 0];
+        
         if (!activeRelay) return;
         
+        // 3. Проверяем, есть ли наш релей в списке живых соединений
+        const isConnectedToRelay = connections.some((conn: any) => 
+          conn.remotePeer.toString() === activeRelay.peerId
+        );
+
+        if (isConnectedToRelay) {
+          // Если соединение висит в пуле libp2p, значит сокет жив. Дергать ping не обязательно.
+          return; 
+        }
+
+        // 4. Если в списке соединений релея нет, но другие пиры есть — пробуем достучаться
+        console.warn(`⚠️ [Watchdog] Релея ${activeRelay.peerId} нет в прямых коннектах. Пробуем ping...`);
         await this.libp2p.services.ping.ping(peerIdFromString(activeRelay.peerId));
+
       } catch (err) {
-        console.warn('⚠️ [Watchdog] Пинг релея провалился. Запускаем recovery...');
+        // Теперь выводим реальную ошибку, чтобы понимать причину
+        console.warn('⚠️ [Watchdog] Пинг релея провалился:', err);
         this.recoverNetwork();
       }
     }, 15000);
@@ -106,51 +129,48 @@ export class NetworkStateMachine {
     }
   }
 
+  // src/network/NetworkStateMachine.ts
+
   public async recoverNetwork() {
     if (this.state === NET_STATE.RECOVERING) return;
     this.transitionTo(NET_STATE.RECOVERING);
 
     try {
       const activeRelay = this.relayManager.getPool()[this.relayManager.getActiveIndex() || 0];
-      let isRelayAlive = false;
-
+      
+      // 1. Не ждем результатов сети! Запускаем пинг и дайлинг в фоне.
+      // Пусть libp2p сам разбирается с соединением, не блокируя стейт-машину.
       if (activeRelay) {
-        try {
-          await this.libp2p.services.ping.ping(peerIdFromString(activeRelay.peerId));
-          isRelayAlive = true;
-        } catch (err) {
-          console.warn('⚠️ [Network] Текущий релей не отвечает.');
-        }
+        this.libp2p.services.ping.ping(peerIdFromString(activeRelay.peerId))
+          .catch(async () => {
+            console.warn('⚠️ [Network] Пинг релея не прошел, пробуем переподключиться в фоне...');
+            const { multiaddr } = await import('@multiformats/multiaddr');
+            const targetStr = `${activeRelay.address}/p2p/${activeRelay.peerId}`;
+            
+            // Фоновый dial без await
+            this.libp2p.dial(multiaddr(targetStr)).catch((e: any) => {
+              console.warn('⚠️ [Network] Фоновый dial не удался:', e.message);
+            });
+          });
       }
 
-      if (!isRelayAlive && activeRelay) {
-          const { multiaddr } = await import('@multiformats/multiaddr');
-          const targetStr = `${activeRelay.address}/p2p/${activeRelay.peerId}`;
-          try {
-            await this.libp2p.dial(multiaddr(targetStr));
-          } catch (e) {
-            console.warn('⚠️ [Network] Не удалось восстановить связь с релеем напрямую.');
-          }
-      }
-
+      // 2. Мгновенно подписываемся на топики (это локальная операция, она быстрая)
       try {
         this.libp2p.services.pubsub.subscribe(this.pubsubTopic);
-      } catch (e) { /* Игнорируем ошибку */ }
+      } catch (e) { /* Игнорируем */ }
 
-      if (this.broadcastMyProfile) await this.broadcastMyProfile();
-      if (this.pokeOrbitDbs) await this.pokeOrbitDbs();
+      // 3. Отправляем профиль и дергаем БД СРАЗУ, без таймаутов. 
+      // Если сети еще нет - OrbitDB запишет все в локальный IndexedDB и отправит позже.
+      if (this.broadcastMyProfile) this.broadcastMyProfile().catch(() => {});
 
+      // 4. Пытаемся кинуть WAKEUP, но не ждем его
       try {
         const wakeupMsg = new TextEncoder().encode(JSON.stringify({ type: CONFIG.MSG?.WAKEUP || 'WAKEUP' }));
-        await this.libp2p.services.pubsub.publish(this.pubsubTopic, wakeupMsg);
-      } catch (e) {
-        console.warn('⚠️ [Network] Не удалось отправить WAKEUP');
-      }
+        // Убираем await, чтобы не висеть на transient connection
+        this.libp2p.services.pubsub.publish(this.pubsubTopic, wakeupMsg).catch(() => {});
+      } catch (e) {}
 
-      setTimeout(() => {
-        if (this.pokeOrbitDbs) this.pokeOrbitDbs();
-      }, 3000);
-
+      // Мгновенно возвращаем состояние CONNECTED, чтобы UI мог нормально работать с локальной БД
       this.transitionTo(NET_STATE.CONNECTED);
 
     } catch (error) {

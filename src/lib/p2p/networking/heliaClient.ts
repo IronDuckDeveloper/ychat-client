@@ -20,8 +20,7 @@ import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
 import { kadDHT } from '@libp2p/kad-dht';
-import { broadcastMyProfile, pokeOrbitDbs } from '../services/authService.ts.ts';
-import { NetworkStateMachine } from './NetworkStateMachine.ts';
+import { broadcastMyProfile } from '../services/authService.ts.ts';
 
 let initializationPromise: Promise<any> | null = null;
 
@@ -164,9 +163,6 @@ export function createBrowserHelia(): Promise<any> {
 
           // 2. Дергаем публикацию профиля. 
           await broadcastMyProfile(); 
-          
-          // 3. Пинаем OrbitDB базы контактов на новом релее
-          await pokeOrbitDbs();
           
           console.log('🔄 [Network Fix] Меш PubSub и базы OrbitDB успешно переинициализированны на новом релее.');
         } catch (pubSubRefreshError) {

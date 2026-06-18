@@ -18,6 +18,7 @@ export interface ChatMessage {
   whoSent: string;
   text: string;
   type: MessageType;
+  ts: number;
 }
 
 // Интерфейс для действий в комнате, который возвращается при присоединении к комнате
