@@ -38,6 +38,7 @@
   background-color: $accent-prime;
   border-bottom: 1px solid $border;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  position: relative;
 
   .header-left {
     display: flex;
@@ -77,6 +78,7 @@
   }
 
   .header-actions {
+    position: relative; // Важно для позиционирования меню относительно кнопки
     display: flex;
     flex-direction: row; 
     align-items: center;
@@ -108,6 +110,47 @@
 
     svg {
       display: block; 
+    }
+  }
+
+  // НОВОЕ КОНТЕКСТНОЕ МЕНЮ ДЛЯ ХЕДЕРА
+  .header-context-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background-color: $text_variant; // Белый/светлый фон карточки, чтобы контрастировал с фиолетовым хедером
+    border: 1px solid rgba(#9978AB, 0.2);
+    border-radius: $radius;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    min-width: 150px;
+    z-index: 150; // Поверх элементов списка
+    overflow: hidden;
+
+    button {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 12px 16px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: $text; // Темный текст
+      transition: background-color 0.2s;
+      text-align: left;
+
+      &:hover {
+        background-color: $chat-bg-light;
+      }
+
+      svg {
+        color: $accent-prime; // Иконки фиолетовые в тон приложения
+        flex-shrink: 0;
+      }
     }
   }
 }
@@ -167,6 +210,7 @@
     padding: 1rem;
     cursor: pointer;
     border-bottom: 1px solid $chat-bg-light;
+    position: relative;
 
     &:hover {
       background-color: $text_variant; 
@@ -228,5 +272,311 @@
       font-size: 0.625rem;
       color: $hint;
     }
+
+    .contact-actions {
+      position: relative;
+      display: flex;
+      align-items: center;
+
+      .menu-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 50%;
+        color: $hint;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+
+        &:hover {
+          background-color: rgba(#8457A0, 0.1); // Цвет из ваших переменных
+          color: $accent-prime;
+        }
+      }
+
+      .context-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 4px;
+        background-color: $text_variant;
+        border: 1px solid rgba(#9978AB, 0.2);
+        border-radius: $radius;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        min-width: 170px;
+        z-index: 50;
+        overflow: hidden;
+
+        button {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          width: 100%;
+          padding: 12px 16px;
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
+          color: $text;
+          transition: background-color 0.2s;
+          text-align: left;
+
+          &:hover {
+            background-color: $chat-bg-light;
+          }
+
+          &.delete-option {
+            color: #ef4444; // Красный цвет для кнопки "Удалить"
+            
+            &:hover {
+              background-color: rgba(239, 68, 68, 0.05);
+            }
+          }
+
+          svg {
+            flex-shrink: 0;
+            opacity: 0.8;
+          }
+        }
+      }
+    }
+  }
+}
+
+// ==========================================
+// МОДАЛЬНОЕ ОКНО
+// ==========================================
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6); // Затемнение фона
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+
+  .modal-content {
+    position: relative;
+    background-color: $text_variant; // Белый (или цвет вашей карточки)
+    padding: 2rem;
+    border-radius: 1.5rem;
+    width: 90%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    animation: slideUp 0.3s ease;
+
+    .close-button {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      color: $hint;
+      cursor: pointer;
+      padding: 0.25rem;
+      transition: color 0.2s;
+
+      &:hover {
+        color: $text;
+      }
+    }
+
+    .modal-title {
+      margin: 0 0 1.5rem 0;
+      color: $text;
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+
+    .qr-wrapper {
+      background: white; // QR должен быть на белом для читаемости камерами
+      padding: 1rem;
+      border-radius: 1rem;
+      cursor: pointer;
+      border: 2px solid $chat-bg-light;
+      transition: all 0.2s ease;
+      margin-bottom: 1.5rem;
+
+      &:hover {
+        transform: scale(1.03);
+        border-color: $accent-prime;
+        box-shadow: 0 4px 12px rgba($accent-prime, 0.2);
+      }
+    }
+
+    .peer-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      margin-bottom: 0.5rem;
+
+      .peer-label {
+        font-size: 0.75rem;
+        color: $hint;
+        margin-bottom: 0.25rem;
+      }
+
+      .peer-value {
+        font-family: monospace;
+        background-color: $chat-bg-light;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        font-size: 0.75rem;
+        color: $text;
+        word-break: break-all;
+        text-align: center;
+        width: 100%;
+      }
+    }
+
+    .modal-hint {
+      font-size: 0.75rem;
+      color: $hint;
+      margin: 0;
+      text-align: center;
+    }
+  }
+}
+
+// ==========================================
+// TOAST (Уведомление)
+// ==========================================
+.toast-notification {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: $accent-prime; // Ваш фиолетовый
+  color: $text_variant; // Белый текст
+  padding: 0.75rem 1.5rem;
+  border-radius: 2rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1100;
+  pointer-events: none;
+  animation: toastFade 0.3s ease forwards;
+}
+
+// ==========================================
+// АНИМАЦИИ
+// ==========================================
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastFade {
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  10% { opacity: 1; transform: translate(-50%, 0); }
+  90% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 1; transform: translate(-50%, 0); } // Управляется React-состоянием
+}
+
+// ==========================================
+// СТИЛИ ДЛЯ МОДАЛКИ ДОБАВЛЕНИЯ КОНТАКТА
+// ==========================================
+
+.modal-camera-wrapper {
+  width: 100%;
+  height: 180px;
+  max-width: 240px;
+  background-color: #000;
+  border-radius: $radius;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  border: 2px solid $chat-bg-light;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+
+  .modal-camera-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.modal-inputs-group {
+  width: 100%;
+  margin-bottom: 1.5rem;
+
+  .modal-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+
+    .modal-input-icon {
+      position: absolute;
+      left: 1rem;
+      color: $hint;
+      pointer-events: none;
+    }
+
+    .modal-peer-input {
+      width: 100%;
+      padding: 0.75rem 1rem 0.75rem 2.7rem;
+      border: 2px solid rgba($accent-prime, 0.2);
+      border-radius: $radius;
+      outline: none;
+      font-size: 0.95rem;
+      background-color: $chat-bg-light;
+      color: $text;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+
+      &:focus {
+        border-color: $accent-prime;
+      }
+
+      &::placeholder {
+        color: $hint;
+      }
+    }
+  }
+}
+
+.modal-submit-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: $accent-prime;
+  color: $text_variant;
+  border: none;
+  border-radius: $radius;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba($accent-prime, 0.2);
+
+  &:hover:not(:disabled) {
+    background-color: $user-bubble;
+    transform: scale(1.02);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 }

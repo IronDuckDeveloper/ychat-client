@@ -15,6 +15,8 @@ export const useContactsLogic = () => {
   const [myNickname, setMyNickname] = useState<string>('Загрузка...');
   const [myBio, setMyBio] = useState<string>(''); 
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+
+  const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -36,6 +38,13 @@ export const useContactsLogic = () => {
   useEffect(() => {
     if (!isAuthenticated()) navigate('/', { replace: true });
   }, [navigate]);
+
+  useEffect(() => {
+    // Безопасно достаем ID только когда компонент уже отрендерился
+    if (globalHelia?.libp2p?.peerId) {
+    setPeerId(globalHelia.libp2p.peerId.toString());
+  }
+}, [globalHelia]);
 
   useEffect(() => {
     if (!isAuthenticated()) return;
@@ -123,44 +132,54 @@ export const useContactsLogic = () => {
     navigate('/', { replace: true });
   };
 
-  const handleShare = async () => {
-    if (!globalHelia || !globalProfileDb) return alert('Сеть еще не готова!');
+  const handleAdd = async (inputData: string) => {
+  if (!inputData) return;
+
+  try {
+    let targetId = inputData;
+    let profileAddress = '';
+
+    // Пытаемся раскодировать токен по твоей логике
     try {
-      const tokenObj = { id: globalHelia.libp2p.peerId.toString(), profile: globalProfileDb.address.toString() };
-      await navigator.clipboard.writeText(btoa(JSON.stringify(tokenObj)));
-      alert('Твой код скопирован!');
-    } catch {}
-  };
-
-  const handleAdd = async () => {
-    const token = window.prompt('Вставь код контакта:');
-    if (!token) return;
-    try {
-      const decoded = JSON.parse(atob(token));
-      if (!decoded.id || !decoded.profile) throw new Error('Кривой токен');
-      if (globalHelia && decoded.id === globalHelia.libp2p.peerId.toString()) return alert('Нельзя добавить себя');
-
-      const newContact: ContactItem = {
-        id: decoded.id,
-        profileDbAddress: decoded.profile,
-        chatDbAddress: '', 
-        nickname: `Пир: ${decoded.id.slice(0, 8)}...`, 
-        avatarCid: '',
-        updatedAt: Date.now()
-      };
-
-      await saveContact(globalContactsDb, newContact);
-      setContacts(await getAllContacts(globalContactsDb));
-
-      if (globalHelia) await requestPeerProfile(globalHelia, decoded.id);
-    } catch {
-      alert('Неверный формат кода!');
+      const decoded = JSON.parse(atob(inputData));
+      if (decoded.id) {
+        targetId = decoded.id;
+        profileAddress = decoded.profile || '';
+      }
+    } catch (e) {
+      // Если это не base64 токен (ошибка парсинга), 
+      // значит в поле ввели просто чистый Peer ID с нашего QR-кода или камеры
+      targetId = inputData;
     }
-  };
+
+    if (globalHelia && targetId === globalHelia.libp2p.peerId.toString()) {
+      return alert('Нельзя добавить себя');
+    }
+
+    const newContact: ContactItem = {
+      id: targetId,
+      profileDbAddress: profileAddress,
+      chatDbAddress: '', 
+      nickname: `Пир: ${targetId.slice(0, 8)}...`, 
+      avatarCid: '',
+      updatedAt: Date.now()
+    };
+
+    // Твоя оригинальная логика сохранения
+    await saveContact(globalContactsDb, newContact);
+    setContacts(await getAllContacts(globalContactsDb));
+
+    if (globalHelia) await requestPeerProfile(globalHelia, targetId);
+
+  } catch (error) {
+    console.error('Ошибка добавления контакта:', error);
+    alert('Неверный формат кода или ошибка при добавлении!');
+  }
+};
 
   return {
     navigate, isLoading, dbInstance, isProfileOpen, setIsProfileOpen,
-    myNickname, myBio, myAvatarUrl, contacts,
-    handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleShare, handleAdd
+    myNickname, myBio, myAvatarUrl, contacts,  peerId,
+    handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleAdd
   };
 };
