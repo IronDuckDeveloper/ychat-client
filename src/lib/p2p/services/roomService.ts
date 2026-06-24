@@ -20,14 +20,13 @@ export async function joinRoom(
   relayManagerInstance?: any,
 ): Promise<RoomActions> {
   const libp2p = (helia as any).libp2p as unknown as Libp2p;
-  const stableName = `ychat-room-${roomName.toLowerCase().replace(/\s+/g, '-')}`;
 
   const orbitdb = await getOrbitDB(helia);
 
-  let session = roomSessions.get(stableName);
+  let session = roomSessions.get(roomName);
   if (!session) {
     // Создаем сессию синхронно, чтобы идущий следом дублирующий вызов React сразу её увидел
-    const openPromise = orbitdb.open(stableName, {
+    const openPromise = orbitdb.open(roomName, {
       type: 'events',
       AccessController: OrbitDBAccessController({
         type: 'orbitdb',
@@ -39,7 +38,7 @@ export async function joinRoom(
       refCount: 0,
       instance: null
     };
-    roomSessions.set(stableName, session);
+    roomSessions.set(roomName, session);
   }
 
   // Синхронно занимаем место в очереди. Теперь refCount станет равен 2 при StrictMode
@@ -52,7 +51,7 @@ export async function joinRoom(
   } catch (err) {
     session.refCount--;
     if (session.refCount <= 0) {
-      roomSessions.delete(stableName);
+      roomSessions.delete(roomName);
     }
     throw err;
   }
@@ -128,13 +127,13 @@ export async function joinRoom(
     leaveRoom: () => {
       libp2p.removeEventListener('peer:connect', onConnect);
       
-      const currentSession = roomSessions.get(stableName);
+      const currentSession = roomSessions.get(roomName);
       if (currentSession) {
         currentSession.refCount--;
         
         // 🔒 Закрываем базу и отписываемся ТОЛЬКО когда комнату покинули ВСЕ маунты
         if (currentSession.refCount <= 0) {
-          roomSessions.delete(stableName);
+          roomSessions.delete(roomName);
           if (currentSession.instance) {
             currentSession.instance.events.off('update', onDbUpdate);
             currentSession.instance.close().catch(() => {});

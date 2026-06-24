@@ -6,27 +6,6 @@
   flex-direction: column;
   height: 100vh;
   background-color: $chat-bg-light;
-
-  &.loading {
-    justify-content: center;
-    align-items: center;
-
-    .loading-content {
-      text-align: center;
-      color: $hint; 
-
-      .spinner {
-        margin-bottom: 10px;
-        font-size: 24px;
-        display: inline-block; 
-      }
-
-      p {
-        font-size: 14px;
-        margin: 0;
-      }
-    }
-  }
 }
 
 .contacts-header {
@@ -203,6 +182,16 @@
     font-size: 14px;
   }
 
+  .empty-state.local-db-loader {
+    opacity: 0;
+  // Появится плавно только если загрузка длится дольше 1.5 секунд
+      animation: lazyFadeIn 0.3s ease 1.5s forwards; 
+  }
+
+  @keyframes lazyFadeIn {
+    to { opacity: 1; }
+  }
+
   .contact-item {
     display: flex;
     align-items: center;
@@ -211,6 +200,27 @@
     cursor: pointer;
     border-bottom: 1px solid $chat-bg-light;
     position: relative;
+    z-index: 1;
+
+    /* Стили для заблокированного состояния */
+    &.blocked {
+      /* Приглушаем только контент, оставляя меню и кнопку нетронутыми */
+      .contact-avatar,
+      .contact-info,
+      .contact-time {
+        opacity: 0.5;
+        filter: grayscale(100%);
+        pointer-events: none; /* Чтобы нельзя было кликнуть случайно по тексту */
+      }
+
+      /* Фон самой карточки можно сделать чуть бледнее, если хочется */
+      background-color: rgba(0, 0, 0, 0.02); 
+    }
+
+    /* Поднимаем контакт, если меню открыто */
+    &.menu-open {
+      z-index: 50; 
+    }
 
     &:hover {
       background-color: $text_variant; 
@@ -308,7 +318,7 @@
         display: flex;
         flex-direction: column;
         min-width: 170px;
-        z-index: 50;
+        z-index: 100;
         overflow: hidden;
 
         button {

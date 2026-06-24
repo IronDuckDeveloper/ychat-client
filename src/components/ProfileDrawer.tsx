@@ -1,6 +1,5 @@
 import { User, Camera, Edit2, Check, X, Info, LogOut, Upload, MonitorPlay } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
-// import { globalHelia, globalOrbitDB, globalProfileDb, globalContactsDb } from '../lib/p2p/services/authService.ts';
 
 interface ProfileDrawerProps {
   isOpen: boolean;

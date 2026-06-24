@@ -4,6 +4,9 @@ import { User, Search, Share2, Plus, Trash2, RefreshCcw, MoreVertical, Ban, X } 
 import { QRCodeSVG } from 'qrcode.react';
 import ProfileDrawer from '../components/ProfileDrawer';
 import ContactAvatar from '../components/ContactAvatar.tsx';
+import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine';
+import { ConfirmModal } from '../components/ConfirmModal';
+
 
 // Импортируем нашу логику
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
@@ -20,11 +23,17 @@ const ContactList = () => {
     myAvatarUrl,
     peerId,
     contacts,
+    dialogConfig,
+    closeDialog,
+    toastMessage, 
+    showToast,
     handleRefreshContact,
     handleDeleteContact,
     handleSaveProfile,
     handleLogout,
-    handleAdd, // Ваша функция добавления из хука
+    handleAdd,
+    handleBlockContact,
+    handleUnblockAndRefresh,
   } = useContactsLogic();
 
   // Состояния для меню контактов и хедера
@@ -35,7 +44,6 @@ const ContactList = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addPeerId, setAddPeerId] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Рефы для камеры в модалке добавления
   const addVideoRef = useRef<HTMLVideoElement>(null);
@@ -43,6 +51,40 @@ const ContactList = () => {
 
   const addCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+
+// ОДИН стейт для сети, который сразу проверяет текущее состояние
+  const [netState, setNetState] = useState<string>(
+    globalNetworkState?.state || 'DISCONNECTED'
+  );
+
+  // Вычисляемая переменная, всегда актуальна
+  const isNetworkReady = netState === 'CONNECTED';
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    let checkTimer: any = null;
+
+    const trySubscribe = () => {
+      if (globalNetworkState) {
+        setNetState(globalNetworkState.state);
+        unsubscribe = globalNetworkState.subscribe((state) => {
+          setNetState(state);
+        });
+        if (checkTimer) clearInterval(checkTimer);
+        return true;
+      }
+      return false;
+    };
+
+    if (!trySubscribe()) {
+      checkTimer = setInterval(trySubscribe, 50);
+    }
+
+    return () => {
+      if (checkTimer) clearInterval(checkTimer);
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   // Закрытие ВСЕХ меню при клике вне их области
   useEffect(() => {
@@ -130,7 +172,7 @@ const scanQRCode = () => {
   }
 
   // Если код не найден, продолжаем сканировать следующий кадр
-  if (isAddModalOpen && addStreamRef.current) {
+  if (addStreamRef.current && video && !video.paused && !video.ended) {
     animationFrameRef.current = requestAnimationFrame(scanQRCode);
   }
 };
@@ -158,33 +200,21 @@ const stopAddCamera = () => {
   };
 
   const handleCopyPeerId = async () => {
-    if (!peerId) return;
-    try {
-      await navigator.clipboard.writeText(peerId);
-      setToastMessage('Peer ID скопирован в буфер!');
-    } catch (err) {
-      setToastMessage('Ошибка при копировании');
-    }
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+      if (!peerId) return;
+      try {
+        await navigator.clipboard.writeText(peerId);
+        showToast('📋 Peer ID скопирован в буфер!'); // 👈 Изящно в одну строчку
+      } catch (err) {
+        showToast('❌ Ошибка при копировании');
+      }
+    };
 
   const onSubmitAddContact = () => {
     if (!addPeerId.trim()) return;
-    // Передаем введенный ID в вашу логику (подстройте под сигнатуру handleAdd, если нужно)
+    // Передаем введенный ID
     handleAdd(addPeerId.trim()); 
     setIsAddModalOpen(false);
   };
-
-  if (isLoading || !dbInstance) {
-    return (
-      <div className="contacts-container loading">
-        <div className="loading-content">
-          <div className="animate-spin spinner">⏳</div>
-          <p>Синхронизация с P2P сетью...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="contacts-container">
@@ -200,7 +230,7 @@ const stopAddCamera = () => {
       
       <div className="contacts-header">
         <div className="header-left">
-          <div className="avatar" onClick={() => setIsProfileOpen(true)}>
+          <div className="avatar" onClick={() => !isLoading && setIsProfileOpen(true)}>
             {myAvatarUrl ? <img src={myAvatarUrl} alt="Avatar" /> : <User size={24} />}
           </div>
           <span className="username">{myNickname}</span>
@@ -210,6 +240,7 @@ const stopAddCamera = () => {
           <button 
             className={`header-action-button ${isHeaderMenuOpen ? 'active' : ''}`}
             onClick={toggleHeaderMenu} 
+            disabled={isLoading} // Выключаем кнопку на время загрузки базы
             aria-label="Управление" 
             title="Управление"
           >
@@ -234,23 +265,47 @@ const stopAddCamera = () => {
       <div className="contacts-search">
         <div className="search-input-container">
           <Search size={18} className="search-icon" />
-          <input placeholder="Поиск чатов..." className="bg-transparent outline-none w-full text-sm" />
+          <input placeholder="Поиск чатов..." className="bg-transparent outline-none w-full text-sm" 
+          disabled={isLoading} // Блокируем инпут пока базы спят
+          />
         </div>
       </div>
 
       <div className="contacts-list">
-        {contacts.length === 0 ? (
-          <div className="empty-state">
-            Список контактов пуст.
-          </div>
-        ) : (
+      { !isNetworkReady ? (
+        <div className="empty-state">
+          
+        </div>
+      ) : (
+        isLoading ? (
+        <div className="empty-state">
+          <div className="animate-spin" style={{ marginBottom: '8px' }}>⏳</div>
+          Синхронизация локальной базы...
+        </div>
+      ) : contacts.length === 0 ? (
+        <div className="empty-state">
+          Список контактов пуст.
+        </div>
+      ) : (
           contacts.map((contact) => (
             <div
               key={contact.id}
-              className="contact-item"
-              onClick={() => navigate(`/chat/${contact.id}`, { 
-                state: { contactName: contact.nickname || contact.id } 
-              })}
+              className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
+              onClick={(e) => {
+                if (contact.isBlocked) {
+                  e.preventDefault(); 
+                  e.stopPropagation();
+                  console.log('Попытка войти в заблокированный чат отбита UI.');
+                  return;
+                }
+
+                navigate(`/chat/${contact.id}`, { 
+                  state: { 
+                    contactName: contact.nickname || contact.id,
+                    contact: contact
+                  } 
+                });
+          }}
             >
               <div className="contact-avatar">
                 <ContactAvatar cid={contact.avatarCid} />
@@ -285,12 +340,25 @@ const stopAddCamera = () => {
 
                 {activeMenuId === contact.id && (
                   <div className="context-menu">
-                    <button onClick={(e) => { e.stopPropagation(); handleRefreshContact(e, contact.id); setActiveMenuId(null); }}>
-                      <RefreshCcw size={16} /><span>Обновить</span>
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); console.log('Блокировка', contact.id); setActiveMenuId(null); }}>
-                      <Ban size={16} /><span>Заблокировать</span>
-                    </button>
+                    
+                    {/* 1. Если НЕ в блоке: показываем "Обновить" и "Заблокировать" */}
+                    {!contact.isBlocked ? (
+                      <>
+                        <button onClick={(e) => { e.stopPropagation(); handleRefreshContact(e, contact.id); setActiveMenuId(null); }}>
+                          <RefreshCcw size={16} /><span>Обновить профиль</span>
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleBlockContact(e, contact.id); setActiveMenuId(null); }}>
+                          <Ban size={16} /><span>Заблокировать</span>
+                        </button>
+                      </>
+                    ) : (
+                      /* 2. Если В БЛОКЕ: показываем только "Разблокировать и обновить" */
+                      <button onClick={(e) => { e.stopPropagation(); handleUnblockAndRefresh(e, contact.id); setActiveMenuId(null); }}>
+                        <RefreshCcw size={16} /><span>Разблокировать и обновить</span>
+                      </button>
+                    )}
+
+                    {/* 3. Кнопка "Удалить" видна всегда */}
                     <button className="delete-option" onClick={(e) => { e.stopPropagation(); handleDeleteContact(e, contact.id); setActiveMenuId(null); }}>
                       <Trash2 size={16} /><span>Удалить</span>
                     </button>
@@ -299,7 +367,8 @@ const stopAddCamera = () => {
               </div>
             </div>
           ))
-        )}
+        )
+      )}
       </div>
 
       {/* ========================================== */}
@@ -369,6 +438,17 @@ const stopAddCamera = () => {
 
       {/* ТОСТ */}
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
+
+      {/* Модальное окно */}
+    <ConfirmModal 
+      isOpen={dialogConfig.isOpen}
+      title={dialogConfig.title}
+      message={dialogConfig.message}
+      confirmText={dialogConfig.confirmText}
+      isDanger={dialogConfig.isDanger}
+      onConfirm={dialogConfig.onConfirm}
+      onCancel={closeDialog}
+    />
     </div>
   );
 };

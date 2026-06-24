@@ -11,7 +11,9 @@ export const useChatLogic = () => {
   const navigate = useNavigate();
   const { peerId } = useParams(); 
   const location = useLocation();
-  const [displayName, setDisplayName] = useState(location.state?.contactName || 'Загрузка...');
+  const routerState = location.state as any;
+  // Сделать routerState для всего contact
+  const [displayName, setDisplayName] = useState(routerState.contactName || 'Загрузка...');
   const { isReady, nodeId, joinRoom, helia } = useIPFS();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');

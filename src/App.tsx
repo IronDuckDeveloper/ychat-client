@@ -52,8 +52,8 @@ initializeApp()
 
   return (
     <>
-      <NetworkOverlay />
       <Router>
+        <NetworkOverlay />
         <Routes>
           <Route path="/" element={<Auth />} />
           <Route 

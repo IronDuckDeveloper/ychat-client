@@ -3,7 +3,7 @@ import { User, RefreshCw } from 'lucide-react';
 
 import { globalHelia } from '../lib/p2p/services/authService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
-import '../styles/ContactAvatar.scss';
+import '../styles/contactAvatar.scss';
 
 function ContactAvatar({ cid }: { cid: string | undefined }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);

@@ -9,6 +9,7 @@ import {
   isAuthenticated,
   clearAuthData
 } from '../lib/p2p/crypto/crypto.ts';
+import { CONFIG } from '../lib/p2p/config.ts';
 
 export const useAuthLogic = () => {
   const [isRegister, setIsRegister] = useState(false);
@@ -83,6 +84,9 @@ export const useAuthLogic = () => {
       // ЗАПУСКАЕМ СЕТЬ И ПРОФИЛЬ
       await initializeApp(isRegister ? nickname : undefined);
 
+      // ⚡️ СЕТЬ И БАЗЫ ПОДНЯЛИСЬ — СТАВИМ СИНХРОННЫЙ ФЛАГ
+      localStorage.setItem(CONFIG.IS_LODING, 'true');
+
       if (isRegister) {
         console.log('✅ Регистрация завершена, профиль создан.');
       } else {
@@ -99,6 +103,10 @@ export const useAuthLogic = () => {
       if (isRegister) {
         console.log('🔄 Откат изменений: удаляем фейковые ключи из памяти...');
         await clearAuthData(); 
+
+        // ⚡️ УБИРАЕМ ФЛАГ, ЧТОБЫ НЕ ПУСТИТЬ В ПРИЛОЖЕНИЕ С ПУСТОЙ БАЗОЙ
+        localStorage.removeItem(CONFIG.IS_LODING);
+
         setNickname('');
         generateWords(); 
       }

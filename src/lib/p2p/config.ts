@@ -42,6 +42,8 @@ export interface ContactItem {
   lastMessage?: string; // Текст последнего сообщения
   lastMessageTime?: number; // Таймстемп последнего сообщения
   unreadCount?: number; // Количество непрочитанных сообщений
+  isBlocked?: boolean; // Флаг блокировки
+  isDeleted?: boolean; // Флаг удаления
 }
 
 export const CONFIG = {
@@ -58,9 +60,13 @@ export const CONFIG = {
     KEY_LAST_UPDATED: 'lastUpdated', // Ключ для хранения даты последнего обновления профиля
     KEY_AVATAR_CID: 'avatarCID', // Ключ для хранения CID аватара
     MSG_PROFILE_UPDATED: 'PROFILE_UPDATED', // Сообщение об обновлении профиля
-    MSG_PROFILE_REQUEST: 'PROFILE_REQUEST' // Сообщение об прозьбе обновить профиль
+    MSG_PROFILE_REQUEST: 'PROFILE_REQUEST', // Сообщение об прозьбе обновить профиль
+    BLACKLIST_KEY : 'ychat_blocked_peers', // Ключ для хранения черного списка
+    DB_BLACKLIST_KEY : 'encrypted_blacklist', // Ключ для хранения зашифрованного черного списка
   },
 
+  IS_LODING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
+  
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства
   KEY_IP_ADDRESS: 'ipAddress', // Ключ для хранения IP-адреса
 

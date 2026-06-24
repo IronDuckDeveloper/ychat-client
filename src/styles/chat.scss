@@ -200,3 +200,34 @@
   }
 }
 }
+
+.blocked-dialog-overlay {
+  flex: 1; // Занимает все пространство между шапкой и низом
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-secondary); // Твоя переменная для фона
+  gap: 16px;
+
+  p {
+    font-size: 1.1rem;
+    color: var(--text-muted); // Твоя переменная для серого текста
+    font-weight: 500;
+  }
+
+  .unblock-delete-btn {
+    padding: 10px 20px;
+    background-color: #ef4444; // Красный цвет (опасная зона)
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s;
+
+    &:hover {
+      background-color: #dc2626;
+    }
+  }
+}

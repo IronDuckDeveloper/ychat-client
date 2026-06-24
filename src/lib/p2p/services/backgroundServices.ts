@@ -1,6 +1,7 @@
 import { CONFIG, type ContactItem } from '../config.ts';
 import { getOrOpenDb } from './authService.ts'; 
-import { updateLastMessage, getAllContacts, saveContact } from './contactsService.ts';
+import { updateLastMessage, getAllContacts, saveContact, isPeerBlocked  } from './contactsService.ts';
+
 
 const openingDbsLock = new Set<string>();
 
@@ -12,6 +13,10 @@ export const startBackgroundProfileWatcher = async (contactsDb: any) => {
 
     const updateContactWithRetry = async (contact: ContactItem) => {
       if (!contact || !contact.profileDbAddress) return;
+
+      // Не открываем базу профиля заблокированного юзера
+      if (contact.isBlocked) return;
+
       if (openingDbsLock.has(contact.profileDbAddress)) return;
       openingDbsLock.add(contact.profileDbAddress);
 
@@ -59,6 +64,12 @@ export const startGlobalNotificationListener = async (globalHelia: any, globalCo
       try {
         const payload = JSON.parse(new TextDecoder().decode(evt.detail.data));
         if (payload.from && payload.text) {
+          
+          // Блокируем пуш от заблокированного
+          if (await isPeerBlocked(globalContactsDb, payload.from)) {
+              console.log(`🚫 [Фаервол] Проигнорирован пуш сообщения от заблокированного: ${payload.from}`);
+              return;
+          }
           // Проверяем где сейчас пользователь через глобальный window.location
           const isCurrentlyInThisChat = window.location.pathname.includes(payload.from);
           

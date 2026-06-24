@@ -5,7 +5,7 @@ import { initProfileDB } from './profileService.ts';
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
-import { addContactIfMissing, initContactsDB } from './contactsService.ts';
+import { addContactIfMissing, initContactsDB, getContact, saveContact } from './contactsService.ts';
 
 export let globalHelia: any = null;
 export let globalOrbitDB: any = null;
@@ -167,6 +167,15 @@ export async function initializeApp(nicknameForRegistration?: string) {
       // Игнорируем эхо от собственных сообщений
       if (senderId === myPeerId) return;
 
+      // 👇 БЛОК ФАЕРВОЛА: Проверяем, не в черном ли списке отправитель
+      const { isPeerBlocked } = await import('./contactsService.ts');
+      const isBlocked = await isPeerBlocked(globalContactsDb, senderId);
+      
+      if (isBlocked) {
+        console.log(`🚫 [Фаервол] Отклонено PubSub-сообщение (${currentTopic}) от заблокированного: ${senderId.slice(0, 8)}`);
+        return; // Полностью игнорируем любые чихи от этого пира
+      }
+
       // 2. Обработка WAKEUP_PING (Кто-то проснулся)
       if (currentTopic === CONFIG.TOPICS.WAKEUP_SYNC_TOPIC) {
         try {
@@ -179,23 +188,27 @@ export async function initializeApp(nicknameForRegistration?: string) {
         return; // Выходим из слушателя, так как этот топик обработан
       }
 
-      // 3. Обработка PROFILE_UPDATED (Пришло только если currentTopic === PROFILE_UPDATES_TOPIC)
+      // 3. Обработка PROFILE_UPDATED
       if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {  
         console.log(`📩 [PubSub Сеть] Получено обновление профиля от ${msg.senderId.slice(0,8)}`);
-        const { getContact, saveContact } = await import('./contactsService.ts');
+        
         const contact = await getContact(globalContactsDb, msg.senderId);
         
         if (contact) {
+          let isChanged = false;
+
+          // Проверяем исключительно данные профиля: ник и аватар
           if (contact.avatarCid !== msg.avatarCid || contact.nickname !== msg.nickname) {
-            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}`);
             contact.avatarCid = msg.avatarCid;
             contact.nickname = msg.nickname;
+            isChanged = true;
+          }
+
+          if (isChanged) {
+            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}`);
             contact.updatedAt = Date.now();
             await saveContact(globalContactsDb, contact);
-            
             window.dispatchEvent(new Event('onContactsUpdated'));
-          } else {
-            console.log(`✅ [PubSub] Профиль ${msg.nickname} уже актуален, пропускаем.`);
           }
         }
       }

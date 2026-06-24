@@ -107,3 +107,64 @@ export async function clearAuthData() {
     console.error('⚠️ [Rollback] Ошибка при удалении баз:', err);
   }
 }
+
+// Вспомогательный хелпер для импорта AES-ключа из байтов сида
+async function getSymmetricKey(seedBytes: Uint8Array): Promise<CryptoKey> {
+  return await window.crypto.subtle.importKey(
+    'raw',
+    seedBytes as any, // 👈 Глушим конфликт типов либп2п и браузера
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Шифрование черного списка
+export const encryptBlacklist = async (blacklist: string[]): Promise<string> => {
+  const storedSeed = localStorage.getItem(CONFIG.STORAGE_KEY);
+  if (!storedSeed) throw new Error('Пользователь не авторизован (нет сида для шифрования)');
+
+  const seedBytes = uint8ArrayFromString(storedSeed, 'base64');
+  const cryptoKey = await getSymmetricKey(seedBytes);
+
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+  const jsonStr = JSON.stringify(blacklist);
+  const encodedData = new TextEncoder().encode(jsonStr);
+
+  const ciphertextBuffer = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as any },
+    cryptoKey,
+    encodedData as any
+  );
+
+  const ciphertextBytes = new Uint8Array(ciphertextBuffer);
+  const combinedBuffer = new Uint8Array(iv.length + ciphertextBytes.length);
+  combinedBuffer.set(iv, 0);
+  combinedBuffer.set(ciphertextBytes, iv.length);
+
+  return uint8ArrayToString(combinedBuffer, 'base64'); 
+};
+
+// Расшифровка черного списка
+export const decryptBlacklist = async (encryptedData: string): Promise<string[]> => {
+  const storedSeed = localStorage.getItem(CONFIG.STORAGE_KEY);
+  if (!storedSeed) throw new Error('Пользователь не авторизован (нет сида для расшифровки)');
+
+  const seedBytes = uint8ArrayFromString(storedSeed, 'base64');
+  const cryptoKey = await getSymmetricKey(seedBytes);
+
+  const combinedBuffer = uint8ArrayFromString(encryptedData, 'base64');
+
+  const iv = combinedBuffer.slice(0, 12);
+  const ciphertextBytes = combinedBuffer.slice(12);
+
+  const decryptedBuffer = await window.crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: iv as any },
+    cryptoKey,
+    ciphertextBytes as any
+  );
+
+  const jsonStr = new TextDecoder().decode(decryptedBuffer);
+  return JSON.parse(jsonStr);
+};

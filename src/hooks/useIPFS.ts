@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Helia } from 'helia';
 import { joinRoom as joinOrbitRoom, getDeterministicRoomName } from '../lib/p2p/services/roomService';
-import type { ChatMessage, RoomActions } from '../lib/p2p/services/roomService';
+import type { ChatMessage, RoomActions } from '../lib/p2p/config';
+import { isPeerBlocked } from '../lib/p2p/services/contactsService';
 
 // Импортируем глобальный инстанс и подписку из нашего сервиса инициализации
-// Убедитесь, что путь соответствует вашему расположению authService.ts (или initService.ts)
 import { globalHelia, onDbReady } from '../lib/p2p/services/authService.ts';
 
 export const useIPFS = () => {

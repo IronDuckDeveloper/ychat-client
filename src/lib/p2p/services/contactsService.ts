@@ -26,6 +26,36 @@ export const getContactById = async (contactsDb: any, id: string): Promise<Conta
   }
 };
 
+// 🛡️ Хелпер для быстрой проверки блокировки пира
+export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<boolean> => {
+  // 1. ГЛАВНАЯ ЗАЩИТА: Сначала проверяем вечный бан в памяти браузера (даже если контакт удален)
+  const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
+  if (localBlacklistStr) {
+    try {
+      const localBlacklist: string[] = JSON.parse(localBlacklistStr);
+      if (localBlacklist.includes(peerId)) {
+        return true; // Заблокирован железобетонно
+      }
+    } catch (e) {
+      console.error('Ошибка парсинга блэклиста:', e);
+    }
+  }
+
+  // 2. ВТОРИЧНАЯ ЗАЩИТА: Проверяем базу контактов (на случай рассинхрона)
+  if (contactsDb) {
+    try {
+      const contact = await getContact(contactsDb, peerId);
+      if (contact && contact.isBlocked) {
+        return true;
+      }
+    } catch (e) {
+      console.error('Ошибка проверки блокировки в БД:', e);
+    }
+  }
+
+  return false; // Чист, пропускаем
+};
+
 export const saveContact = async (contactsDb: any, contact: ContactItem) => {
   if (!contactsDb) throw new Error("База контактов не инициализирована");
   await contactsDb.put(contact.id, contact); 
@@ -47,15 +77,24 @@ export const getAllContacts = async (contactsDb: any): Promise<ContactItem[]> =>
   const allRecords = await contactsDb.all();
   return allRecords
     .map((record: any) => record.value as ContactItem)
-    .filter((c: ContactItem) => !!c)
+    // 👇 Фильтруем: отдаем в UI только тех, кто реально существует и НЕ удален
+    .filter((c: ContactItem) => !!c && !c.isDeleted)
     .sort((a: ContactItem, b: ContactItem) => (b.updatedAt || 0) - (a.updatedAt || 0));
 };
 
 export const deleteContact = async (contactsDb: any, contactId: string): Promise<boolean> => {
   if (!contactsDb) return false;
   try {
-    await contactsDb.del(contactId);
-    return true;
+    // 👇 МЯГКОЕ УДАЛЕНИЕ: Вместо физического contactsDb.del() ставим флаг
+    const contact = await getContact(contactsDb, contactId);
+    if (contact) {
+      contact.isDeleted = true;
+      contact.updatedAt = Date.now();
+      await saveContact(contactsDb, contact);
+      console.log(`🗑️ [ContactsDB] Контакт ${contactId} мягко удален (скрыт).`);
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error(`Ошибка при удалении контакта ${contactId}:`, error);
     return false;
@@ -129,6 +168,9 @@ export const addContactIfMissing = async (db: any, helia: any, peerId: string) =
   try {
     const contact = await getContact(db, peerId);
 
+    // Автодобавляем только если контакта вообще нет в базе.
+    // Если он есть, но isDeleted === true, мы его НЕ воскрешаем автоматически при получении сообщения 
+    // (ведь юзер сам его удалил). Он воскреснет только через handleAdd.
     if (!contact) {
       const newContact: ContactItem = {
         id: peerId,
@@ -137,7 +179,8 @@ export const addContactIfMissing = async (db: any, helia: any, peerId: string) =
         nickname: `${peerId.substring(0, 6)}...`,
         avatarCid: '',
         updatedAt: Date.now(),
-        unreadCount: 0
+        unreadCount: 0,
+        isDeleted: false
       };
       
       await saveContact(db, newContact);
@@ -162,6 +205,11 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
       contact.chatDbAddress = address;
       await db.put(peerId, contact);
       console.log(`🎯 [ContactsDB] Сохранен адрес базы чата: ${address}`);
+
+      // 👇 КОНТАКТ ПОЛУЧИЛ АДРЕС БД! СРАЗУ КАЧАЕМ ИСТОРИЮ!
+      setTimeout(async () => {
+        await syncContactHistory(contact, db);
+      }, 200);
     }
   } catch (error) {
     console.error(`❌ [ContactsDB] Ошибка при сохранении адреса:`, error);
@@ -169,9 +217,13 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
 }
 
 export async function syncContactHistory(contact: any, contactsDb: any) {
+  // Игнорируем заблокированных при холодном старте
+  if (contact.isBlocked) return;
+
   if (!contact.chatDbAddress) return;
 
   const chatDb = await getOrOpenDb(contact.chatDbAddress);
+
   if (!chatDb) return;
 
   await new Promise<void>((resolve) => {
@@ -235,7 +287,7 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
 
     // 🚀 СТАРТОВЫЙ ПИНОК: Если за 400мс сеть вообще ничего не прислала,
     // значит, новых данных у релея нет. Читаем локальный кэш и выходим.
-    idleTimer = setTimeout(finalizeSync, 400);
+    idleTimer = setTimeout(finalizeSync, 500);
   });
 }
 
@@ -246,7 +298,7 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
 export async function syncAllContactsHistory(contactsDb: any) {
   console.log('🔄 [Контакты] Запуск проверки пропущенных сообщений...');
   try {
-    const contacts = await getAllContacts(contactsDb);
+    const contacts = await getAllContacts(contactsDb); // getAllContacts уже вернет только не удаленные
     await Promise.all(contacts.map(c => syncContactHistory(c, contactsDb)));
     console.log('✅ [Контакты] Проверка истории завершена.');
   } catch (error) {
