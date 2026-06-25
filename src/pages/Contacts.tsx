@@ -7,13 +7,13 @@ import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 import HeaderActionButton from '../components/HeaderActionButton.tsx';
 
 const ContactList = () => {
-  // Достаем абсолютно всё из нашего умного хука
   const {
     navigate, isLoading, isProfileOpen, setIsProfileOpen,
-    myNickname, myBio, myAvatarUrl, peerId, contacts, dialogConfig, 
+    myNickname, myBio, myAvatarUrl, peerId, contacts, filteredContacts, dialogConfig, 
     toastMessage, showToast, isNetworkReady,
     
-    // Стейты UI
+    // Стейты UI и поиска
+    searchQuery, setSearchQuery,
     activeMenuId, setActiveMenuId,
     isHeaderMenuOpen, setIsHeaderMenuOpen,
     isShareModalOpen, setIsShareModalOpen,
@@ -49,12 +49,12 @@ const ContactList = () => {
         </div>
         
         <div className="header-actions" onClick={(e) => e.stopPropagation()}>
-            <HeaderActionButton 
-              onClick={toggleHeaderMenu}
-              icon={ <Share2 size={22} />} 
-              title="Обменяться контактом" 
-              disabled={isLoading}
-            />
+          <HeaderActionButton 
+            onClick={toggleHeaderMenu}
+            icon={<Share2 size={22} />} 
+            title="Обменяться контактом" 
+            disabled={isLoading}
+          />
 
           {isHeaderMenuOpen && (
             <div className="header-context-menu">
@@ -74,17 +74,22 @@ const ContactList = () => {
       <div className="contacts-search">
         <div className="search-input-container">
           <Search size={18} className="search-icon" />
-          <input placeholder="Поиск чатов..." className="bg-transparent outline-none w-full text-sm" disabled={isLoading} />
+          <input 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Поиск чатов..." 
+            className="bg-transparent outline-none w-full text-sm" 
+            disabled={isLoading} 
+          />
         </div>
       </div>
 
       <div className="contacts-list">
-      { !isNetworkReady ? (
+      {!isNetworkReady ? (
         <div className="empty-state">
-          {/* Сюда можно добавить иконку "Нет сети" */}
+          {/* Иконка "Нет сети" */}
         </div>
-      ) : (
-        isLoading ? (
+      ) : isLoading ? (
         <div className="empty-state">
           <div className="animate-spin" style={{ marginBottom: '8px' }}>⏳</div>
           Синхронизация локальной базы...
@@ -93,8 +98,12 @@ const ContactList = () => {
         <div className="empty-state">
           Список контактов пуст.
         </div>
+      ) : filteredContacts.length === 0 ? (
+        <div className="empty-state">
+          Ничего не найдено
+        </div>
       ) : (
-          contacts.map((contact) => (
+          filteredContacts.map((contact) => (
             <div
               key={contact.id}
               className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
@@ -165,7 +174,7 @@ const ContactList = () => {
             </div>
           ))
         )
-      )}
+      }
       </div>
 
       {isShareModalOpen && (
@@ -197,7 +206,6 @@ const ContactList = () => {
             <h3 className="modal-title">Добавить по Peer ID</h3>
             
             <div className="modal-camera-wrapper">
-              {/* Передаем реф, пришедший из хука! */}
               <video ref={addVideoRef} autoPlay playsInline muted className="modal-camera-video" />
             </div>
 

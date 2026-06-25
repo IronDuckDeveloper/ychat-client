@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
@@ -23,6 +23,9 @@ export const useContactsLogic = () => {
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [contacts, setContacts] = useState<ContactItem[]>([]);
+
+  // --- СТЕЙТ ПОИСКА ---
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // --- UI СТЕЙТЫ И ТОСТЫ ---
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -54,6 +57,19 @@ export const useContactsLogic = () => {
   };
   
   const closeDialog = () => setDialogConfig(prev => ({ ...prev, isOpen: false }));
+
+  // ==========================================
+  // ЛОГИКА ФИЛЬТРАЦИИ ПОИСКА
+  // ==========================================
+  const filteredContacts = useMemo(() => {
+    if (!searchQuery.trim()) return contacts;
+    const query = searchQuery.toLowerCase();
+    return contacts.filter(contact => {
+      const nameMatch = contact.nickname?.toLowerCase().includes(query);
+      const idMatch = contact.id.toLowerCase().includes(query);
+      return nameMatch || idMatch;
+    });
+  }, [contacts, searchQuery]);
 
   // ==========================================
   // ЭФФЕКТЫ И СИНХРОНИЗАЦИЯ
@@ -254,13 +270,15 @@ export const useContactsLogic = () => {
   // ==========================================
   // МЕТОДЫ ВЗАИМОДЕЙСТВИЯ (UI + Данные)
   // ==========================================
-  const toggleContactMenu = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setActiveMenuId(activeMenuId === id ? null : id);
+  const toggleContactMenu = (e?: React.MouseEvent, id?: string) => {
+    e?.stopPropagation();
+    if (id) {
+      setActiveMenuId(activeMenuId === id ? null : id);
+    }
   };
 
-  const toggleHeaderMenu = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleHeaderMenu = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setIsHeaderMenuOpen(!isHeaderMenuOpen);
   };
 
@@ -513,8 +531,9 @@ export const useContactsLogic = () => {
   };
 
   return {
-    navigate, isLoading, dbInstance, contacts, peerId, dialogConfig, toastMessage,
+    navigate, isLoading, dbInstance, contacts, filteredContacts, peerId, dialogConfig, toastMessage,
     
+    searchQuery, setSearchQuery,
     isProfileOpen, setIsProfileOpen,
     activeMenuId, setActiveMenuId,
     isHeaderMenuOpen, setIsHeaderMenuOpen,
