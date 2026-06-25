@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CID } from 'multiformats/cid';
+import jsQR from 'jsqr';
 
 import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById } from '../lib/p2p/services/contactsService.ts';
@@ -8,42 +9,101 @@ import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/
 import { CONFIG, type ContactItem } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
 import { requestPeerProfile } from '../lib/p2p/services/profileService.ts';
+import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine';
 
 export const useContactsLogic = () => {
   const navigate = useNavigate();
   
+  // --- БАЗОВЫЕ СТЕЙТЫ ПРОФИЛЯ И БАЗЫ ---
   const [myNickname, setMyNickname] = useState<string>('Загрузка...');
   const [myBio, setMyBio] = useState<string>(''); 
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
-
   const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
-  
   const [contacts, setContacts] = useState<ContactItem[]>([]);
 
+  // --- UI СТЕЙТЫ И ТОСТЫ ---
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addPeerId, setAddPeerId] = useState('');
 
-  // Хелпер для показа тоста (чтобы не писать setTimeout в каждом методе)
+  // --- СЕТЬ ---
+  const [netState, setNetState] = useState<string>(globalNetworkState?.state || 'DISCONNECTED');
+  const isNetworkReady = netState === 'CONNECTED';
+
+  // --- РЕФЫ КАМЕРЫ ---
+  const addVideoRef = useRef<HTMLVideoElement>(null);
+  const addStreamRef = useRef<MediaStream | null>(null);
+  const addCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  // --- ДИАЛОГ ---
+  const [dialogConfig, setDialogConfig] = useState({
+    isOpen: false, title: '', message: '', confirmText: 'Да', isDanger: false, onConfirm: () => {}
+  });
+  
   const showToast = (message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 3000);
   };
-
-  // Cтейт для управления окном
-  const [dialogConfig, setDialogConfig] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    confirmText: 'Да',
-    isDanger: false,
-    onConfirm: () => {}
-  });
-  // Хелпер для закрытия
+  
   const closeDialog = () => setDialogConfig(prev => ({ ...prev, isOpen: false }));
 
+  // ==========================================
+  // ЭФФЕКТЫ И СИНХРОНИЗАЦИЯ
+  // ==========================================
+
+  // Следим за сетью
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    let checkTimer: any = null;
+
+    const trySubscribe = () => {
+      if (globalNetworkState) {
+        setNetState(globalNetworkState.state);
+        unsubscribe = globalNetworkState.subscribe(setNetState);
+        if (checkTimer) clearInterval(checkTimer);
+        return true;
+      }
+      return false;
+    };
+
+    if (!trySubscribe()) checkTimer = setInterval(trySubscribe, 50);
+
+    return () => {
+      if (checkTimer) clearInterval(checkTimer);
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Закрытие меню при клике вне
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setActiveMenuId(null);
+      setIsHeaderMenuOpen(false);
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  // Управление камерой при открытии/закрытии модалки
+  useEffect(() => {
+    if (isAddModalOpen) {
+      setAddPeerId('');
+      startAddCamera();
+    } else {
+      stopAddCamera();
+    }
+    return () => stopAddCamera();
+  }, [isAddModalOpen]);
+
+  // Обновление контактов
   useEffect(() => {
     const handleContactsUpdate = async () => {
       if (globalContactsDb) {
@@ -55,93 +115,170 @@ export const useContactsLogic = () => {
     return () => window.removeEventListener('onContactsUpdated', handleContactsUpdate);
   }, []);
 
+  // Защита роута
   useEffect(() => {
     if (!isAuthenticated()) navigate('/', { replace: true });
   }, [navigate]);
 
+  // Получение своего Peer ID
   useEffect(() => {
-    // Безопасно достаем ID только когда компонент уже отрендерился
     if (globalHelia?.libp2p?.peerId) {
-    setPeerId(globalHelia.libp2p.peerId.toString());
-  }
-}, [globalHelia]);
+      setPeerId(globalHelia.libp2p.peerId.toString());
+    }
+  }, [globalHelia]);
 
+  // Загрузка первичных данных
   useEffect(() => {
-  if (!isAuthenticated()) return;
+    if (!isAuthenticated()) return;
+    let isMounted = true;
+    
+    const loadData = async (profileDb: any) => {
+      try {
+        const name = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+        const bio = await profileDb.get(CONFIG.PROFILE.KEY_BIO);
+        const avatarCID = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
 
-  let isMounted = true; // Защита от обновления стейта убитого компонента
-
-  const loadData = async (profileDb: any) => {
-    try {
-      const name = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-      const bio = await profileDb.get(CONFIG.PROFILE.KEY_BIO);
-      const avatarCID = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
-
-      // СИНХРОНИЗАЦИЯ БЛЭКЛИСТА
-      const encryptedBlacklist = await profileDb.get(CONFIG.PROFILE.DB_BLACKLIST_KEY);
-      if (encryptedBlacklist) {
-        try {
-          const decryptedList = await decryptBlacklist(encryptedBlacklist);
-          const localListStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
-          const remoteListStr = JSON.stringify(decryptedList);
-          
-          if (localListStr !== remoteListStr) {
-            localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, remoteListStr);
-            console.log('🔄 Черный список синхронизирован с P2P-сетью');
+        const encryptedBlacklist = await profileDb.get(CONFIG.PROFILE.DB_BLACKLIST_KEY);
+        if (encryptedBlacklist) {
+          try {
+            const decryptedList = await decryptBlacklist(encryptedBlacklist);
+            const localListStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
+            const remoteListStr = JSON.stringify(decryptedList);
+            
+            if (localListStr !== remoteListStr) {
+              localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, remoteListStr);
+            }
+          } catch (e) {
+            console.error('Не удалось расшифровать блэклист', e);
           }
-        } catch (e) {
-          console.error('Не удалось расшифровать блэклист (неверный ключ?)', e);
         }
-      }
-      
-      if (isMounted) {
-        setMyNickname(name || 'Аноним');
-        setMyBio(bio || '');
-      }
+        
+        if (isMounted) {
+          setMyNickname(name || 'Аноним');
+          setMyBio(bio || '');
+        }
 
-      if (avatarCID && globalHelia && isMounted) { 
-        const url = await fetchAvatarFromHelia(globalHelia, avatarCID);
-        if (isMounted) setMyAvatarUrl(url);
-      }
+        if (avatarCID && globalHelia && isMounted) { 
+          const url = await fetchAvatarFromHelia(globalHelia, avatarCID);
+          if (isMounted) setMyAvatarUrl(url);
+        }
 
-      if (globalContactsDb && isMounted) {
-        const rawContacts = await getAllContacts(globalContactsDb);
-        if (isMounted) setContacts(rawContacts);
+        if (globalContactsDb && isMounted) {
+          const rawContacts = await getAllContacts(globalContactsDb);
+          if (isMounted) setContacts(rawContacts);
+        }
+      } catch (error) {
+        if (isMounted) setMyNickname('Ошибка');
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Ошибка при чтении данных:', error);
-      if (isMounted) setMyNickname('Ошибка');
-    } finally {
-      if (isMounted) setIsLoading(false);
+    };
+
+    if (globalProfileDb && globalContactsDb) {
+      setDbInstance(globalProfileDb);
+      loadData(globalProfileDb);
+    } else {
+      const networkTimeout = setTimeout(() => {
+        if (isMounted) setIsLoading(false);
+      }, 3000);
+
+      onDbReady(() => {
+        clearTimeout(networkTimeout); 
+        if (isMounted) {
+          setDbInstance(globalProfileDb);
+          loadData(globalProfileDb);
+        }
+      });
+    }
+
+    return () => { isMounted = false; };
+  }, [navigate]);
+
+  // ==========================================
+  // ЛОГИКА КАМЕРЫ (QR)
+  // ==========================================
+  const startAddCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      addStreamRef.current = stream;
+      if (addVideoRef.current) {
+        addVideoRef.current.srcObject = stream;
+        addVideoRef.current.onloadedmetadata = () => {
+          addVideoRef.current?.play();
+          animationFrameRef.current = requestAnimationFrame(scanQRCode);
+        };
+      }
+    } catch (err) {
+      console.error("❌ Нет доступа к камере", err);
     }
   };
 
-  if (globalProfileDb && globalContactsDb) {
-    setDbInstance(globalProfileDb);
-    loadData(globalProfileDb);
-  } else {
-    // 🚨 ПРЕДОХРАНИТЕЛЬ: Даем нетворкингу 3 секунды. 
-    // Если onDbReady не наступил, принудительно снимаем лоадер.
-    const networkTimeout = setTimeout(() => {
-      if (isMounted) {
-        console.warn('⚠️ [Network] onDbReady задерживается. Снимаем лоадер принудительно.');
-        setIsLoading(false);
-      }
-    }, 3000);
+  const scanQRCode = () => {
+    const video = addVideoRef.current;
+    if (!addCanvasRef.current) addCanvasRef.current = document.createElement('canvas');
+    const canvas = addCanvasRef.current;
 
-    onDbReady(() => {
-      clearTimeout(networkTimeout); // Успели подключиться - отменяем предохранитель
-      if (isMounted) {
-        setDbInstance(globalProfileDb);
-        loadData(globalProfileDb);
-      }
-    });
-  }
+    if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
 
-  return () => {
-    isMounted = false; 
+        if (code && code.data) {
+          setAddPeerId(code.data);
+          stopAddCamera(); 
+          return;
+        }
+      }
+    }
+
+    if (addStreamRef.current && video && !video.paused && !video.ended) {
+      animationFrameRef.current = requestAnimationFrame(scanQRCode);
+    }
   };
-}, [navigate]);
+
+  const stopAddCamera = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (addStreamRef.current) {
+      addStreamRef.current.getTracks().forEach(track => track.stop());
+      addStreamRef.current = null;
+    }
+  };
+
+  // ==========================================
+  // МЕТОДЫ ВЗАИМОДЕЙСТВИЯ (UI + Данные)
+  // ==========================================
+  const toggleContactMenu = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setActiveMenuId(activeMenuId === id ? null : id);
+  };
+
+  const toggleHeaderMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsHeaderMenuOpen(!isHeaderMenuOpen);
+  };
+
+  const handleCopyPeerId = async () => {
+    if (!peerId) return;
+    try {
+      await navigator.clipboard.writeText(peerId);
+      showToast('📋 Peer ID скопирован в буфер!'); 
+    } catch (err) {
+      showToast('❌ Ошибка при копировании');
+    }
+  };
+
+  const onSubmitAddContact = () => {
+    if (!addPeerId.trim()) return;
+    handleAdd(addPeerId.trim()); 
+    setIsAddModalOpen(false);
+  };
 
   const handleRefreshContact = async (e: React.MouseEvent, targetPeerId: string) => {
     e.stopPropagation();
@@ -209,200 +346,188 @@ export const useContactsLogic = () => {
       onConfirm: () => {
         localStorage.clear();
         navigate('/', { replace: true });
-        closeDialog(); // Не забываем закрыть окно
+        closeDialog();
       }
     });
   };
 
   const handleAdd = async (inputData: string) => {
-  if (!inputData) return;
+    if (!inputData) return;
 
-  try {
-    let targetId = inputData.trim();
-    let profileAddress = '';
-
-    // Пытаемся раскодировать токен
     try {
-      const decoded = JSON.parse(atob(inputData));
-      if (decoded.id) {
-        targetId = decoded.id;
-        profileAddress = decoded.profile || '';
-      }
-    } catch (e) {
-      // Если это не base64 токен (ошибка парсинга), 
-      // значит в поле ввели просто чистый Peer ID с нашего QR-кода или камеры
-      targetId = inputData;
-    }
+      let targetId = inputData.trim();
+      let profileAddress = '';
 
-    // Проверяем, что это похоже на ID, а не на кусок логов или поэму
-    if (targetId.length > 100 || targetId.includes(' ') || targetId.includes('\n')) {
-      return showToast('⚠️ Неверный формат кода или Peer ID!');
-    }
-
-    if (globalHelia && targetId === globalHelia.libp2p.peerId.toString()) {
-      return showToast('👤 Нельзя добавить самого себя');
-    }
-
-    const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
-    const localBlacklist = localBlacklistStr ? JSON.parse(localBlacklistStr) : [];
-    const isActuallyBlocked = localBlacklist.includes(targetId);
-
-    // 👇 Ищем контакт в базе (он может быть там со статусом isDeleted: true)
-    const existingContact = await getContactById(globalContactsDb, targetId);
-
-    if (existingContact) {
-      // ♻️ ВОСКРЕШЕНИЕ: Контакт был у нас раньше
-      existingContact.isDeleted = false; 
-      existingContact.isBlocked = isActuallyBlocked; 
-      existingContact.updatedAt = Date.now();
-      
-      if (profileAddress) {
-        existingContact.profileDbAddress = profileAddress;
+      try {
+        const decoded = JSON.parse(atob(inputData));
+        if (decoded.id) {
+          targetId = decoded.id;
+          profileAddress = decoded.profile || '';
+        }
+      } catch (e) {
+        targetId = inputData;
       }
 
-      await saveContact(globalContactsDb, existingContact);
-      console.log(`♻️ [Contacts] Контакт ${existingContact.nickname} восстановлен!`);
-      showToast('♻️ Контакт восстановлен из удаленных');
+      if (targetId.length > 100 || targetId.includes(' ') || targetId.includes('\n')) {
+        return showToast('⚠️ Неверный формат кода или Peer ID!');
+      }
 
-      // 👇 ПОДТЯГИВАЕМ ИСТОРИЮ (в фоне, чтобы не блочить UI)
-      if (existingContact.chatDbAddress) {
-        console.log(`🔄 [Воскрешение] Запуск синхронизации истории для ${existingContact.nickname}`);
+      if (globalHelia && targetId === globalHelia.libp2p.peerId.toString()) {
+        return showToast('👤 Нельзя добавить самого себя');
+      }
+
+      const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
+      const localBlacklist = localBlacklistStr ? JSON.parse(localBlacklistStr) : [];
+      const isActuallyBlocked = localBlacklist.includes(targetId);
+
+      const existingContact = await getContactById(globalContactsDb, targetId);
+
+      if (existingContact) {
+        existingContact.isDeleted = false; 
+        existingContact.isBlocked = isActuallyBlocked; 
+        existingContact.updatedAt = Date.now();
         
-        // Отпускаем основной поток, даем UI отрендериться, и через 100мс дергаем базу
-        setTimeout(async () => {
-          await syncContactHistory(existingContact, globalContactsDb);
-          // Внутри syncContactHistory уже есть window.dispatchEvent('onContactsUpdated'),
-          // если найдутся новые сообщения, так что руками здесь можно не дублировать, 
-          // но для верности (чтобы обновить счетчики Unread) оставим:
-          window.dispatchEvent(new Event('onContactsUpdated')); 
-        }, 200);
+        if (profileAddress) {
+          existingContact.profileDbAddress = profileAddress;
+        }
+
+        await saveContact(globalContactsDb, existingContact);
+        console.log(`♻️ [Contacts] Контакт ${existingContact.nickname} восстановлен!`);
+        showToast('♻️ Контакт восстановлен из удаленных');
+
+        if (existingContact.chatDbAddress) {
+          console.log(`🔄 [Воскрешение] Запуск синхронизации истории для ${existingContact.nickname}`);
+          
+          setTimeout(async () => {
+            await syncContactHistory(existingContact, globalContactsDb);
+            window.dispatchEvent(new Event('onContactsUpdated')); 
+          }, 200);
+        }
+
+      } else {
+        const newContact: ContactItem = {
+          id: targetId,
+          profileDbAddress: profileAddress,
+          chatDbAddress: '', 
+          nickname: `Пир: ${targetId.slice(0, 8)}...`, 
+          avatarCid: '',
+          updatedAt: Date.now(),
+          isBlocked: isActuallyBlocked,
+          isDeleted: false 
+        };
+        await saveContact(globalContactsDb, newContact);
+        showToast('✅ Контакт успешно добавлен');
       }
 
-    } else {
-      // ✨ НОВЫЙ КОНТАКТ: Создаем с чистого листа
-      const newContact: ContactItem = {
-        id: targetId,
-        profileDbAddress: profileAddress,
-        chatDbAddress: '', 
-        nickname: `Пир: ${targetId.slice(0, 8)}...`, 
-        avatarCid: '',
-        updatedAt: Date.now(),
-        isBlocked: isActuallyBlocked,
-        isDeleted: false 
-      };
-      await saveContact(globalContactsDb, newContact);
-      showToast('✅ Контакт успешно добавлен');
+      setContacts(await getAllContacts(globalContactsDb));
+
+      if (globalHelia){ 
+        await requestPeerProfile(globalHelia, targetId);
+      }
+
+    } catch (error) {
+      console.error('Ошибка добавления контакта:', error);
+      showToast('❌ Ошибка при добавлении контакта');
+    }
+  };
+
+  const handleBlockContact = async (e: any, id: string) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
     }
 
-    setContacts(await getAllContacts(globalContactsDb));
+    const targetContact = contacts.find(c => c.id === id);
+    if (!targetContact) return;
 
-    if (globalHelia){ 
-      await requestPeerProfile(globalHelia, targetId);
-    }
+    const updatedContact = { ...targetContact, isBlocked: true };
 
-  } catch (error) {
-    console.error('Ошибка добавления контакта:', error);
-    showToast('❌ Ошибка при добавлении контакта');
-  }
-};
-
-// Блокировка контакта
-const handleBlockContact = async (e: any, id: string) => {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  const targetContact = contacts.find(c => c.id === id);
-  if (!targetContact) return;
-
-  // 1. Ставим флаг для локальной базы контактов (чтобы сразу отработал фаервол)
-  const updatedContact = { ...targetContact, isBlocked: true };
-
-  try {
-    await saveContact(globalContactsDb, updatedContact); 
-    
-    // 2. Записываем в вечную память localStorage текущего браузера
-    const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
-    const localBlacklist: string[] = localBlacklistStr ? JSON.parse(localBlacklistStr) : [];
-    
-    if (!localBlacklist.includes(id)) {
-      localBlacklist.push(id);
-      localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, JSON.stringify(localBlacklist));
+    try {
+      await saveContact(globalContactsDb, updatedContact); 
       
-      // 3. ЖЕЛЕЗОБЕТОННО пушим в OrbitDB профиля, чтобы улетело на другие девайсы
+      const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
+      const localBlacklist: string[] = localBlacklistStr ? JSON.parse(localBlacklistStr) : [];
+      
+      if (!localBlacklist.includes(id)) {
+        localBlacklist.push(id);
+        localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, JSON.stringify(localBlacklist));
+        
+        if (dbInstance) {
+          const encrypted = await encryptBlacklist(localBlacklist);
+          await dbInstance.put(CONFIG.PROFILE.DB_BLACKLIST_KEY, encrypted);
+          console.log('📡 Блэклист зашифрован и успешно синхронизирован с OrbitDB профиля');
+        }
+      }
+
+      window.dispatchEvent(new Event('onContactsUpdated'));
+      
+    } catch (error) {
+      console.error("❌ Ошибка при блокировке контакта:", error);
+      showToast('❌ Ошибка при сохранении блокировки');
+    }
+  };
+
+  const handleUnblockAndRefresh = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+
+    const targetContact = contacts.find(c => c.id === id);
+    if (!targetContact || !targetContact.isBlocked) return;
+
+    const updatedContact = { ...targetContact, isBlocked: false };
+
+    try {
+      await saveContact(globalContactsDb, updatedContact); 
+      
+      const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
+      let localBlacklist: string[] = localBlacklistStr ? JSON.parse(localBlacklistStr) : [];
+      
+      localBlacklist = localBlacklist.filter(bId => bId !== id);
+      localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, JSON.stringify(localBlacklist));
+
       if (dbInstance) {
         const encrypted = await encryptBlacklist(localBlacklist);
         await dbInstance.put(CONFIG.PROFILE.DB_BLACKLIST_KEY, encrypted);
-        console.log('📡 Блэклист зашифрован и успешно синхронизирован с OrbitDB профиля');
+        console.log('📡 Обновленный блэклист синхронизирован с OrbitDB профиля (бан снят)');
       }
-    }
 
-    // Обновляем UI
-    window.dispatchEvent(new Event('onContactsUpdated'));
-    
-  } catch (error) {
-    console.error("❌ Ошибка при блокировке контакта:", error);
-    showToast('❌ Ошибка при сохранении блокировки');
-  }
-};
-
-const handleUnblockAndRefresh = async (e: React.MouseEvent, id: string) => {
-  e.stopPropagation();
-
-  const targetContact = contacts.find(c => c.id === id);
-  if (!targetContact || !targetContact.isBlocked) return;
-
-  // 1. Снимаем блокировку в локальной ContactsDB
-  const updatedContact = { ...targetContact, isBlocked: false };
-
-  try {
-    await saveContact(globalContactsDb, updatedContact); 
-    
-    // 2. Вычищаем ID из локального localStorage
-    const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
-    let localBlacklist: string[] = localBlacklistStr ? JSON.parse(localBlacklistStr) : [];
-    
-    localBlacklist = localBlacklist.filter(bId => bId !== id);
-    localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, JSON.stringify(localBlacklist));
-
-    // 3. ЖЕЛЕЗОБЕТОННО обновляем OrbitDB, чтобы остальные девайсы тоже сняли бан
-    if (dbInstance) {
-      const encrypted = await encryptBlacklist(localBlacklist);
-      await dbInstance.put(CONFIG.PROFILE.DB_BLACKLIST_KEY, encrypted);
-      console.log('📡 Обновленный блэклист синхронизирован с OrbitDB профиля (бан снят)');
-    }
-
-    // Обновляем UI
-    window.dispatchEvent(new Event('onContactsUpdated'));
-    
-    // Пытаемся запросить профиль заново, так как пир теперь разблокирован
-    if (globalHelia) {
-      await requestPeerProfile(globalHelia, id);
-    }
-
-    // Подтягиваем историю, если адрес базы у нас уже был
-    if (updatedContact.chatDbAddress) {
-      console.log(`🔄 [Разблокировка] Тянем последнюю историю в фоне для ${id}`);
+      window.dispatchEvent(new Event('onContactsUpdated'));
       
-      setTimeout(async () => {
-        await syncContactHistory(updatedContact, globalContactsDb);
-        // Второе событие, чтобы обновить счетчики непрочитанных (unreadCount), 
-        // если в фоне реально нашлись новые сообщения
-        window.dispatchEvent(new Event('onContactsUpdated')); 
-      }, 200);
-    }
-    showToast('🔓 Контакт разблокирован');
+      if (globalHelia) {
+        await requestPeerProfile(globalHelia, id);
+      }
 
-  } catch (error) {
-    console.error("❌ Ошибка при разблокировке контакта:", error);
-    showToast('❌ Ошибка при разблокировке контакта');
-  }
-};
+      if (updatedContact.chatDbAddress) {
+        console.log(`🔄 [Разблокировка] Тянем последнюю историю в фоне для ${id}`);
+        
+        setTimeout(async () => {
+          await syncContactHistory(updatedContact, globalContactsDb);
+          window.dispatchEvent(new Event('onContactsUpdated')); 
+        }, 200);
+      }
+      showToast('🔓 Контакт разблокирован');
+
+    } catch (error) {
+      console.error("❌ Ошибка при разблокировке контакта:", error);
+      showToast('❌ Ошибка при разблокировке контакта');
+    }
+  };
 
   return {
-    navigate, isLoading, dbInstance, isProfileOpen, setIsProfileOpen,
-    myNickname, myBio, myAvatarUrl, contacts, peerId, dialogConfig, closeDialog, toastMessage, showToast,
+    navigate, isLoading, dbInstance, contacts, peerId, dialogConfig, toastMessage,
+    
+    isProfileOpen, setIsProfileOpen,
+    activeMenuId, setActiveMenuId,
+    isHeaderMenuOpen, setIsHeaderMenuOpen,
+    isShareModalOpen, setIsShareModalOpen,
+    isAddModalOpen, setIsAddModalOpen,
+    addPeerId, setAddPeerId,
+    
+    myNickname, myBio, myAvatarUrl,
+    isNetworkReady, netState,
+    
+    addVideoRef,
+    
+    closeDialog, showToast, toggleContactMenu, toggleHeaderMenu, handleCopyPeerId, onSubmitAddContact,
     handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleAdd,
     handleBlockContact, handleUnblockAndRefresh
   };

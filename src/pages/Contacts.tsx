@@ -1,220 +1,30 @@
-import jsQR from 'jsqr';
-import { useState, useEffect, useRef, type MouseEvent } from 'react';
 import { User, Search, Share2, Plus, Trash2, RefreshCcw, MoreVertical, Ban, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import ProfileDrawer from '../components/ProfileDrawer';
 import ContactAvatar from '../components/ContactAvatar.tsx';
-import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine';
 import { ConfirmModal } from '../components/ConfirmModal';
-
-
-// Импортируем нашу логику
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 
 const ContactList = () => {
+  // Достаем абсолютно всё из нашего умного хука
   const {
-    navigate,
-    isLoading,
-    dbInstance,
-    isProfileOpen,
-    setIsProfileOpen,
-    myNickname,
-    myBio,
-    myAvatarUrl,
-    peerId,
-    contacts,
-    dialogConfig,
-    closeDialog,
-    toastMessage, 
-    showToast,
-    handleRefreshContact,
-    handleDeleteContact,
-    handleSaveProfile,
-    handleLogout,
-    handleAdd,
-    handleBlockContact,
-    handleUnblockAndRefresh,
-  } = useContactsLogic();
-
-  // Состояния для меню контактов и хедера
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
-
-  // Состояния для Share-модалки, Add-модалки и тоста
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [addPeerId, setAddPeerId] = useState('');
-
-  // Рефы для камеры в модалке добавления
-  const addVideoRef = useRef<HTMLVideoElement>(null);
-  const addStreamRef = useRef<MediaStream | null>(null);
-
-  const addCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-
-// ОДИН стейт для сети, который сразу проверяет текущее состояние
-  const [netState, setNetState] = useState<string>(
-    globalNetworkState?.state || 'DISCONNECTED'
-  );
-
-  // Вычисляемая переменная, всегда актуальна
-  const isNetworkReady = netState === 'CONNECTED';
-
-  useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-    let checkTimer: any = null;
-
-    const trySubscribe = () => {
-      if (globalNetworkState) {
-        setNetState(globalNetworkState.state);
-        unsubscribe = globalNetworkState.subscribe((state) => {
-          setNetState(state);
-        });
-        if (checkTimer) clearInterval(checkTimer);
-        return true;
-      }
-      return false;
-    };
-
-    if (!trySubscribe()) {
-      checkTimer = setInterval(trySubscribe, 50);
-    }
-
-    return () => {
-      if (checkTimer) clearInterval(checkTimer);
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
-
-  // Закрытие ВСЕХ меню при клике вне их области
-  useEffect(() => {
-    const handleClickOutside = () => {
-      setActiveMenuId(null);
-      setIsHeaderMenuOpen(false);
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  // Управление камерой модалки добавления при её открытии/закрытии
-  useEffect(() => {
-    if (isAddModalOpen) {
-      setAddPeerId('');
-      startAddCamera();
-    } else {
-      stopAddCamera();
-    }
-    return () => stopAddCamera();
-  }, [isAddModalOpen]);
-
-  // Логика запуска камеры для добавления (facingMode: 'environment' для задней камеры)
-  const startAddCamera = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: 'environment' } 
-    });
-    addStreamRef.current = stream;
+    navigate, isLoading, isProfileOpen, setIsProfileOpen,
+    myNickname, myBio, myAvatarUrl, peerId, contacts, dialogConfig, 
+    toastMessage, showToast, isNetworkReady,
     
-    if (addVideoRef.current) {
-      addVideoRef.current.srcObject = stream;
-      // Как только видео начнет воспроизводиться, запускаем цикл сканирования
-      addVideoRef.current.onloadedmetadata = () => {
-        addVideoRef.current?.play();
-        animationFrameRef.current = requestAnimationFrame(scanQRCode);
-      };
-    }
-  } catch (err) {
-    console.error("❌ [Camera] Нет доступа к камере для сканирования:", err);
-  }
-};
-
-// Функция циклического анализа кадров
-const scanQRCode = () => {
-  const video = addVideoRef.current;
-  
-  // Создаем canvas в памяти, если еще не создали
-  if (!addCanvasRef.current) {
-    addCanvasRef.current = document.createElement('canvas');
-  }
-  const canvas = addCanvasRef.current;
-
-  if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      // 1. Рисуем текущий кадр видео на canvas
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // 2. Забираем массив пикселей
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      
-      // 3. Сканируем пиксели на наличие QR-кода
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: "dontInvert",
-      });
-
-      // 4. Если код найден — профит!
-      if (code && code.data) {
-        console.log("✅ [QR Scanner] Распознан код:", code.data);
-        
-        // Записываем распознанный Peer ID в инпут
-        setAddPeerId(code.data);
-        
-        // Опционально: можно сразу автоматически вызывать onSubmitAddContact, 
-        // но безопаснее просто подставить в инпут, чтобы юзер видел, что считалось, и нажал "Добавить"
-        
-        stopAddCamera(); // Останавливаем камеру, раз код уже считан
-        return;
-      }
-    }
-  }
-
-  // Если код не найден, продолжаем сканировать следующий кадр
-  if (addStreamRef.current && video && !video.paused && !video.ended) {
-    animationFrameRef.current = requestAnimationFrame(scanQRCode);
-  }
-};
-
-// Не забываем подчищать за собой анимацию при остановке
-const stopAddCamera = () => {
-  if (animationFrameRef.current) {
-    cancelAnimationFrame(animationFrameRef.current);
-    animationFrameRef.current = null;
-  }
-  if (addStreamRef.current) {
-    addStreamRef.current.getTracks().forEach(track => track.stop());
-    addStreamRef.current = null;
-  }
-};
-
-  const toggleContactMenu = (e: MouseEvent, id: string) => {
-    e.stopPropagation();
-    setActiveMenuId(activeMenuId === id ? null : id);
-  };
-
-  const toggleHeaderMenu = (e: MouseEvent) => {
-    e.stopPropagation();
-    setIsHeaderMenuOpen(!isHeaderMenuOpen);
-  };
-
-  const handleCopyPeerId = async () => {
-      if (!peerId) return;
-      try {
-        await navigator.clipboard.writeText(peerId);
-        showToast('📋 Peer ID скопирован в буфер!'); // 👈 Изящно в одну строчку
-      } catch (err) {
-        showToast('❌ Ошибка при копировании');
-      }
-    };
-
-  const onSubmitAddContact = () => {
-    if (!addPeerId.trim()) return;
-    // Передаем введенный ID
-    handleAdd(addPeerId.trim()); 
-    setIsAddModalOpen(false);
-  };
+    // Стейты UI
+    activeMenuId, setActiveMenuId,
+    isHeaderMenuOpen, setIsHeaderMenuOpen,
+    isShareModalOpen, setIsShareModalOpen,
+    isAddModalOpen, setIsAddModalOpen,
+    addPeerId, setAddPeerId,
+    
+    // Рефы и методы
+    addVideoRef, closeDialog, toggleContactMenu, toggleHeaderMenu, 
+    handleCopyPeerId, onSubmitAddContact, handleRefreshContact, 
+    handleDeleteContact, handleSaveProfile, handleLogout, 
+    handleBlockContact, handleUnblockAndRefresh,
+  } = useContactsLogic();
 
   return (
     <div className="contacts-container">
@@ -226,6 +36,7 @@ const stopAddCamera = () => {
         avatarUrl={myAvatarUrl}
         onSave={handleSaveProfile}
         onLogout={handleLogout}
+        showToast={showToast}
       />
       
       <div className="contacts-header">
@@ -240,7 +51,7 @@ const stopAddCamera = () => {
           <button 
             className={`header-action-button ${isHeaderMenuOpen ? 'active' : ''}`}
             onClick={toggleHeaderMenu} 
-            disabled={isLoading} // Выключаем кнопку на время загрузки базы
+            disabled={isLoading}
             aria-label="Управление" 
             title="Управление"
           >
@@ -265,16 +76,14 @@ const stopAddCamera = () => {
       <div className="contacts-search">
         <div className="search-input-container">
           <Search size={18} className="search-icon" />
-          <input placeholder="Поиск чатов..." className="bg-transparent outline-none w-full text-sm" 
-          disabled={isLoading} // Блокируем инпут пока базы спят
-          />
+          <input placeholder="Поиск чатов..." className="bg-transparent outline-none w-full text-sm" disabled={isLoading} />
         </div>
       </div>
 
       <div className="contacts-list">
       { !isNetworkReady ? (
         <div className="empty-state">
-          
+          {/* Сюда можно добавить иконку "Нет сети" */}
         </div>
       ) : (
         isLoading ? (
@@ -295,17 +104,12 @@ const stopAddCamera = () => {
                 if (contact.isBlocked) {
                   e.preventDefault(); 
                   e.stopPropagation();
-                  console.log('Попытка войти в заблокированный чат отбита UI.');
                   return;
                 }
-
                 navigate(`/chat/${contact.id}`, { 
-                  state: { 
-                    contactName: contact.nickname || contact.id,
-                    contact: contact
-                  } 
+                  state: { contactName: contact.nickname || contact.id, contact: contact } 
                 });
-          }}
+              }}
             >
               <div className="contact-avatar">
                 <ContactAvatar cid={contact.avatarCid} />
@@ -340,8 +144,6 @@ const stopAddCamera = () => {
 
                 {activeMenuId === contact.id && (
                   <div className="context-menu">
-                    
-                    {/* 1. Если НЕ в блоке: показываем "Обновить" и "Заблокировать" */}
                     {!contact.isBlocked ? (
                       <>
                         <button onClick={(e) => { e.stopPropagation(); handleRefreshContact(e, contact.id); setActiveMenuId(null); }}>
@@ -352,13 +154,10 @@ const stopAddCamera = () => {
                         </button>
                       </>
                     ) : (
-                      /* 2. Если В БЛОКЕ: показываем только "Разблокировать и обновить" */
                       <button onClick={(e) => { e.stopPropagation(); handleUnblockAndRefresh(e, contact.id); setActiveMenuId(null); }}>
                         <RefreshCcw size={16} /><span>Разблокировать и обновить</span>
                       </button>
                     )}
-
-                    {/* 3. Кнопка "Удалить" видна всегда */}
                     <button className="delete-option" onClick={(e) => { e.stopPropagation(); handleDeleteContact(e, contact.id); setActiveMenuId(null); }}>
                       <Trash2 size={16} /><span>Удалить</span>
                     </button>
@@ -371,9 +170,6 @@ const stopAddCamera = () => {
       )}
       </div>
 
-      {/* ========================================== */}
-      {/* МОДАЛЬНОЕ ОКНО "РАСШАРИТЬ" */}
-      {/* ========================================== */}
       {isShareModalOpen && (
         <div className="modal-overlay" onClick={() => setIsShareModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -393,9 +189,6 @@ const stopAddCamera = () => {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* НОВОЕ МОДАЛЬНОЕ ОКНО "ДОБАВИТЬ КОНТАКТ" */}
-      {/* ========================================== */}
       {isAddModalOpen && (
         <div className="modal-overlay" onClick={() => setIsAddModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -405,12 +198,11 @@ const stopAddCamera = () => {
             
             <h3 className="modal-title">Добавить по Peer ID</h3>
             
-            {/* Окно камеры вместо QR-кода */}
             <div className="modal-camera-wrapper">
+              {/* Передаем реф, пришедший из хука! */}
               <video ref={addVideoRef} autoPlay playsInline muted className="modal-camera-video" />
             </div>
 
-            {/* Группа инпута из ProfileDrawer */}
             <div className="modal-inputs-group">
               <div className="modal-input-wrapper">
                 <User size={18} className="modal-input-icon" />
@@ -424,7 +216,6 @@ const stopAddCamera = () => {
               </div>
             </div>
 
-            {/* Кнопка действия снизу */}
             <button 
               className="modal-submit-btn" 
               onClick={onSubmitAddContact}
@@ -436,19 +227,17 @@ const stopAddCamera = () => {
         </div>
       )}
 
-      {/* ТОСТ */}
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
 
-      {/* Модальное окно */}
-    <ConfirmModal 
-      isOpen={dialogConfig.isOpen}
-      title={dialogConfig.title}
-      message={dialogConfig.message}
-      confirmText={dialogConfig.confirmText}
-      isDanger={dialogConfig.isDanger}
-      onConfirm={dialogConfig.onConfirm}
-      onCancel={closeDialog}
-    />
+      <ConfirmModal 
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        confirmText={dialogConfig.confirmText}
+        isDanger={dialogConfig.isDanger}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={closeDialog}
+      />
     </div>
   );
 };

@@ -1,10 +1,7 @@
 import { RefreshCw, Eye, EyeOff, User, HelpCircle } from 'lucide-react';
-
-// Импортируем нашу логику
 import { useAuthLogic } from '../hooks/useAuthLogic.ts';
 
 const AuthScreen = () => {
-  // Достаем все стейты и функции из хука
   const {
     isRegister,
     setIsRegister,
@@ -15,7 +12,8 @@ const AuthScreen = () => {
     words,
     handleWordChange,
     generateWords,
-    handleLoginOrRegister
+    handleLoginOrRegister,
+    toastMessage // 👈 Достаем сообщение тоста
   } = useAuthLogic();
 
   return (
@@ -96,6 +94,9 @@ const AuthScreen = () => {
             : 'Нет аккаунта? Создать профиль'}
         </button>
       </div>
+
+      {/* ТОСТ: отображаем поверх всего, если есть сообщение */}
+      {toastMessage && <div className="toast-notification">{toastMessage}</div>}
     </div>
   );
 };
