@@ -1,5 +1,6 @@
-import { User, Edit2, Check, X, Info, LogOut, Upload, MonitorPlay, ArrowLeftFromLine } from 'lucide-react';
+import { User, Edit2, Check, X, Info, LogOut, Upload, Camera, ArrowLeftFromLine } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+import HeaderActionButton from './HeaderActionButton.tsx';
 
 interface ProfileDrawerProps {
   isOpen: boolean;
@@ -8,22 +9,18 @@ interface ProfileDrawerProps {
   bio: string;
   avatarUrl: string | null; 
   onSave: (newNickname: string, newBio: string, newAvatarFile: Blob | null) => Promise<void> | void;
-  onLogout?: () => void;
-  showToast: (message: string) => void; // 👈 Добавили функцию тоста в пропсы
+  onLogout: () => void;
+  showToast: (message: string) => void;
 }
 
 const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLogout, showToast }: ProfileDrawerProps) => {
   const [isEditing, setIsEditing] = useState(false);
-  
   const [editNickname, setEditNickname] = useState(nickname);
   const [editBio, setEditBio] = useState(bio);
-  
-  // Стейты для работы с аватаром
   const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | null>(avatarUrl);
   const [draftAvatarBlob, setDraftAvatarBlob] = useState<Blob | null>(null);
-  
-  // Стейты камеры
   const [isCameraActive, setIsCameraActive] = useState(false);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -42,26 +39,6 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
     }
   }, [isOpen, nickname, bio, avatarUrl]);
 
-  // --- ЛОГИКА ВЕБ-КАМЕРЫ ---
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-      streamRef.current = stream;
-      
-      setIsCameraActive(true); 
-
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      }, 50);
-
-    } catch (err) {
-      console.error("Нет доступа к камере", err);
-      showToast("⚠️ Не удалось получить доступ к камере.");
-    }
-  };
-
   const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -70,22 +47,26 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
     setIsCameraActive(false);
   };
 
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
+      setIsCameraActive(true);
+      setTimeout(() => { if (videoRef.current) videoRef.current.srcObject = stream; }, 50);
+    } catch (err) {
+      showToast("⚠️ Не удалось получить доступ к камере.");
+    }
+  };
+
   const takePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      
       const size = Math.min(video.videoWidth, video.videoHeight);
-      canvas.width = size;
-      canvas.height = size;
-      
+      canvas.width = size; canvas.height = size;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        const startX = (video.videoWidth - size) / 2;
-        const startY = (video.videoHeight - size) / 2;
-        
-        ctx.drawImage(video, startX, startY, size, size, 0, 0, size, size);
-        
+        ctx.drawImage(video, (video.videoWidth - size) / 2, (video.videoHeight - size) / 2, size, size, 0, 0, size, size);
         canvas.toBlob((blob) => {
           if (blob) {
             setDraftAvatarBlob(blob);
@@ -97,19 +78,12 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
     }
   };
 
-  // --- ЛОГИКА ФАЙЛА ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setDraftAvatarBlob(file);
       setDraftAvatarUrl(URL.createObjectURL(file));
     }
-  };
-
-  const handleClose = () => {
-    stopCamera();
-    setIsEditing(false);
-    onClose();
   };
 
   const handleCancelEdit = () => {
@@ -122,8 +96,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
   };
 
   const handleSave = async () => {
-    const blobToSave = draftAvatarBlob; 
-    await onSave(editNickname, editBio, blobToSave);
+    await onSave(editNickname, editBio, draftAvatarBlob);
     setIsEditing(false);
   };
 
@@ -131,36 +104,48 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
 
   return (
     <>
-      <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={handleClose}/>
+      <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}/>
       <div className={`profile-drawer ${isOpen ? 'open' : ''}`}>
         
-        {isEditing ? (
-          <button className="close-btn" 
-            onClick={handleCancelEdit} 
-            aria-label="Отменить редактирование" 
-            title="Отменить редактирование">
-            <X size={24} />
-          </button>
-        ) : (
-          <button 
-            className="close-btn" 
-            onClick={handleClose} 
-            aria-label="Закрыть" 
-            title="Закрыть">
-            <ArrowLeftFromLine size={24} />
-          </button>
-        )}
+        {/* ВЕРХНЯЯ ПАНЕЛЬ (как в Contacts) */}
+        <div className="drawer-header">
+          <div className="header-left">
+            {!isEditing && (
+              <HeaderActionButton 
+                onClick={onLogout} 
+                icon={<LogOut size={20} />} 
+                title="Выйти" 
+                variant="logout" 
+              />  
+            )}
+          </div>
 
-        <div className="drawer-top">
-          <div className="avatar-container">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileSelect}
-              style={{ display: 'none' }} 
-              placeholder="Выберите изображение"
-              accept="image/*" 
+          <div className="header-actions">
+            {!isEditing ? (
+              <HeaderActionButton 
+                onClick={() => setIsEditing(true)} 
+                icon={<Edit2 size={20} />} 
+                title="Редактировать" 
+              />
+            ) : (
+              <HeaderActionButton 
+                onClick={handleSave} 
+                icon={<Check size={20} />} 
+                title="Сохранить" 
+              />
+            )}
+            <HeaderActionButton 
+              onClick={isEditing ? handleCancelEdit : onClose} 
+              icon={isEditing ? <X size={20} /> : <ArrowLeftFromLine size={20} />} 
+              title="Закрыть" 
             />
+          </div>
+        </div>
+
+        {/* ОСНОВНОЙ КОНТЕНТ */}
+        <div className="drawer-content">
+          <div className="avatar-container">
+            <input title='Био' type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*" />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
 
             {isCameraActive ? (
@@ -170,33 +155,14 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
               </div>
             ) : (
               <div className="drawer-avatar">
-                {displayUrl ? (
-                  <img src={displayUrl} alt="Avatar" className="user-avatar-image" />
-                ) : (
-                  <User size={64} className="user-icon" />
-                )}
+                {displayUrl ? <img src={displayUrl} alt="Avatar" className="user-avatar-image" /> : <User size={64} className="user-icon" />}
               </div>
             )}
             
             {!isCameraActive && isEditing && (
               <div className="avatar-edit-actions">
-                <button 
-                  className="avatar-action-btn"
-                  onClick={() => fileInputRef.current?.click()} 
-                  title="Из файла"
-                  aria-label="Загрузить из файла"
-                >
-                  <Upload size={22} />
-                </button>
-
-                <button 
-                  className="avatar-action-btn"
-                  onClick={startCamera} 
-                  title="С камеры"
-                  aria-label="Сделать фото"
-                >
-                  <MonitorPlay size={22} />
-                </button>
+                <button title='Файл' className="avatar-action-btn" onClick={() => fileInputRef.current?.click()}><Upload size={22} /></button>
+                <button title='Камера' className="avatar-action-btn" onClick={startCamera}><Camera size={22} /></button>
               </div>
             )}
           </div>
@@ -204,29 +170,8 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
           <div className="profile-info-container">
             {isEditing ? (
               <div className="drawer-inputs-group">
-                <div className="drawer-input-wrapper">
-                  <User size={18} className="drawer-input-icon" />
-                  <input
-                    type="text"
-                    className="drawer-nickname-input"
-                    value={editNickname}
-                    onChange={(e) => setEditNickname(e.target.value)}
-                    maxLength={32}
-                    placeholder="Ваш никнейм"
-                  />
-                </div>
-                
-                <div className="drawer-input-wrapper alignment-top">
-                  <Info size={18} className="drawer-input-icon textarea-icon" />
-                  <textarea
-                    className="drawer-nickname-input bio-textarea"
-                    value={editBio}
-                    onChange={(e) => setEditBio(e.target.value)}
-                    maxLength={500}
-                    placeholder="Расскажите о себе..."
-                    rows={4}
-                  />
-                </div>
+                <div className="drawer-input-wrapper"><User size={18} className="drawer-input-icon" /><input type="text" className="drawer-nickname-input" value={editNickname} onChange={(e) => setEditNickname(e.target.value)} maxLength={32} placeholder="Ваш никнейм" /></div>
+                <div className="drawer-input-wrapper alignment-top"><Info size={18} className="drawer-input-icon textarea-icon" /><textarea className="drawer-nickname-input bio-textarea" value={editBio} onChange={(e) => setEditBio(e.target.value)} maxLength={500} placeholder="Расскажите о себе..." rows={4} /></div>
               </div>
             ) : (
               <div className="info-display">
@@ -235,36 +180,6 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
               </div>
             )}
           </div>
-        </div>
-
-        <div className="drawer-bottom">
-          <button 
-            className="round-action-btn logout-btn" 
-            onClick={onLogout}
-            aria-label="Выйти из аккаунта"
-            title="Выйти из аккаунта"
-          >
-            <LogOut size={24} />
-          </button>
-          {isEditing ? (
-            <button 
-              className="round-action-btn save-btn" 
-              onClick={handleSave}
-              aria-label="Применить изменения"
-              title="Применить изменения"
-            >
-              <Check size={24} />
-            </button>
-          ) : (
-            <button 
-              className="round-action-btn edit-btn" 
-              onClick={() => setIsEditing(true)}
-              aria-label="Редактировать профиль"
-              title="Редактировать профиль"
-            >
-              <Edit2 size={24} />
-            </button>
-          )}
         </div>
       </div>
     </>

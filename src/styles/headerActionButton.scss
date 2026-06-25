@@ -1,0 +1,35 @@
+
+@import './variables.scss';
+
+.header-action-btn {
+  background: none;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: $radius;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $text_variant; // Цвет иконок по умолчанию (белый)
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: rgba($text_variant, 0.15);
+    transform: scale(1.05);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  // Вариант Logout: меняем цвет на черный
+  &.logout-btn {
+    color: #000000; 
+    background-color: transparent;
+
+    &:hover {
+      background-color: rgba(#000000, 0.1);
+    }
+  }
+}

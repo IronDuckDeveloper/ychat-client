@@ -4,6 +4,7 @@ import ProfileDrawer from '../components/ProfileDrawer';
 import ContactAvatar from '../components/ContactAvatar.tsx';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
+import HeaderActionButton from '../components/HeaderActionButton.tsx';
 
 const ContactList = () => {
   // Достаем абсолютно всё из нашего умного хука
@@ -48,15 +49,12 @@ const ContactList = () => {
         </div>
         
         <div className="header-actions" onClick={(e) => e.stopPropagation()}>
-          <button 
-            className={`header-action-button ${isHeaderMenuOpen ? 'active' : ''}`}
-            onClick={toggleHeaderMenu} 
-            disabled={isLoading}
-            aria-label="Управление" 
-            title="Управление"
-          >
-            <Share2 size={22} />
-          </button>
+            <HeaderActionButton 
+              onClick={toggleHeaderMenu}
+              icon={ <Share2 size={22} />} 
+              title="Обменяться контактом" 
+              disabled={isLoading}
+            />
 
           {isHeaderMenuOpen && (
             <div className="header-context-menu">

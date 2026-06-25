@@ -1,6 +1,6 @@
 @import './variables.scss';
 
-// Оверлей (затемнение заднего фона)
+// --- ОВЕРЛЕЙ ---
 .drawer-overlay {
   position: fixed;
   inset: 0;
@@ -16,23 +16,21 @@
   }
 }
 
-// Боковое меню
+// --- БОКОВОЕ МЕНЮ ---
 .profile-drawer {
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  width: calc(100vw * 2 / 3); // 2/3 экрана на мобилках
+  width: calc(100vw * 2 / 3);
   background-color: $bg;
   z-index: 100;
   transform: translateX(-100%);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   box-shadow: 4px 0 15px rgba($chat-bg-dark, 0.15);
 
-  // 1/3 экрана на десктопах
   @media (min-width: 768px) {
     width: calc(100vw / 3);
   }
@@ -41,32 +39,31 @@
     transform: translateX(0);
   }
 
-  // Крестик закрытия меню
-  .close-btn {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: none;
-    border: none;
-    color: $hint;
-    cursor: pointer;
+  // --- НОВАЯ ВЕРХНЯЯ ПАНЕЛЬ (ХЕДЕР) ---
+  .drawer-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: color 0.2s;
-
-    &:hover {
-      color: $text;
-    }
+    justify-content: space-between;
+    padding: 0 1rem;
+    height: 60px;
+    background-color: $accent-prime;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
   }
 
-  // Контентная верхняя часть
-  .drawer-top {
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  // --- КОНТЕНТ (НИЖЕ ХЕДЕРА) ---
+  .drawer-content {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 3.5rem 1.5rem 1rem;
+    padding: 2rem 1.5rem;
     overflow-y: auto;
     width: 100%;
     box-sizing: border-box;
@@ -75,7 +72,7 @@
       width: 150px; 
       height: 150px;
       margin-bottom: 2rem;
-      position: relative;     // ← Добавь это обязательно
+      position: relative;
       display: flex;
       justify-content: center;
 
@@ -88,39 +85,30 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background-color: #000; // Черный фон пока камера грузится
+        background-color: #000;
 
-    .drawer-avatar-video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover; // Заполняет круг без сплющивания
-      transform: scaleX(-1); // Эффект зеркала (очень важно для селфи-камеры!)
-    }
+        .drawer-avatar-video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          transform: scaleX(-1);
+        }
 
-    .snap-btn {
-      position: absolute;
-      bottom: 10%;
-      background-color: rgba(255, 255, 255, 0.85);
-      border: none;
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: $text;
-      cursor: pointer;
-      z-index: 10;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-      transition: all 0.2s;
-
-      &:hover {
-        background-color: white;
-        transform: scale(1.05);
+        .snap-btn {
+          position: absolute;
+          bottom: 10%;
+          background-color: rgba(255, 255, 255, 0.85);
+          border: none;
+          padding: 6px 16px;
+          border-radius: 20px;
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: $text;
+          cursor: pointer;
+          z-index: 10;
+          transition: all 0.2s;
+        }
       }
-      &:active {
-        transform: scale(0.95);
-      }
-    }
-  }
 
       .drawer-avatar {
         width: 100%;
@@ -131,24 +119,23 @@
         align-items: center;
         justify-content: center;
         color: $accent-prime;
-        position: relative;
         overflow: hidden;
 
         .user-avatar-image {
-        width: 100%;
-        height: 100%;
-        object-fit: cover; // Это ключевое свойство: картинка заполнит контейнер, сохраняя пропорции
-        display: block;
-    }
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
       }
 
       .avatar-edit-actions {
         position: absolute;
-        bottom: -10px;          // чуть ниже аватарки
+        bottom: -10px;
         left: 50%;
         transform: translateX(-50%);
         display: flex;
-        gap: 40px;               // расстояние между кнопками
+        gap: 40px;
         z-index: 5;
       }
 
@@ -172,22 +159,12 @@
           border-color: $accent-prime;
           transform: scale(1.08);
         }
-
-        &:active {
-          transform: scale(0.95);
-        }
-
-        svg {
-          color: inherit;
-        }
       }
     }
 
-    // Блок формы / отображения данных
     .profile-info-container {
       width: 100%;
 
-      // Режим просмотра
       .info-display {
         text-align: center;
         
@@ -206,7 +183,6 @@
         }
       }
 
-      // Режим редактирования (Полная копия стилей auth-screen)
       .drawer-inputs-group {
         display: flex;
         flex-direction: column;
@@ -219,19 +195,14 @@
           align-items: center;
           width: 100%;
 
-          &.alignment-top {
-            align-items: flex-start;
-          }
+          &.alignment-top { align-items: flex-start; }
 
           .drawer-input-icon {
             position: absolute;
             left: 1rem;
             color: $hint;
             pointer-events: none;
-
-            &.textarea-icon {
-              top: 1rem; // Выравнивание иконки bio по верхнему краю
-            }
+            &.textarea-icon { top: 1rem; }
           }
 
           .drawer-nickname-input {
@@ -246,14 +217,8 @@
             transition: border-color 0.2s;
             box-sizing: border-box;
 
-            &:focus {
-              border-color: $accent-prime;
-            }
-
-            &::placeholder {
-              color: $hint;
-            }
-
+            &:focus { border-color: $accent-prime; }
+            &::placeholder { color: $hint; }
             &.bio-textarea {
               resize: none;
               min-height: 120px;
@@ -262,76 +227,6 @@
             }
           }
         }
-      }
-    }
-  }
-
-  // Нижняя панель с кнопками
-  .drawer-bottom {
-    padding: 1.5rem;
-    display: flex;
-    justify-content: space-between; // Разносит кнопки по краям (Выход слева, Изменить справа)
-    align-items: center;
-    border-top: 1px solid rgba($accent-prime, 0.1);
-    background-color: $bg;
-
-    .round-action-btn {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      cursor: pointer;
-      box-shadow: 0 4px 12px rgba($chat-bg-dark, 0.1);
-      transition: transform 0.1s, background-color 0.2s, color 0.2s;
-
-      &:hover {
-        transform: scale(1.05);
-      }
-
-      &:active {
-        transform: scale(0.98);
-      }
-
-      // Кнопка выхода (Красная / Нейтральная деструктивная)
-      &.logout-btn {
-        background-color: $text_variant;
-        color: $hint;
-        border: 2px solid rgba($hint, 0.2);
-
-        &:hover {
-          color: $chat-bg-dark;
-          border-color: $chat-bg-dark;
-        }
-      }
-
-      // Кнопка Изменить (Прозрачный фиолетовый стиль)
-      &.edit-btn {
-        background-color: $text_variant;
-        color: $accent-prime;
-        border: 2px solid rgba($accent-prime, 0.3);
-
-        &:hover {
-          background-color: rgba($accent-prime, 0.05);
-          border-color: $accent-prime;
-        }
-      }
-
-      // Кнопка Сохранить (Фиолетовая заливка)
-      &.save-btn {
-        background-color: $accent-prime;
-        color: $text_variant;
-
-        &:hover {
-          background-color: $user-bubble; // Использование более светлого фиолетового при ховере
-        }
-      }
-
-      // Гарантия, что любая иконка внутри кнопки унаследует нужный цвет
-      svg {
-        color: inherit;
       }
     }
   }
