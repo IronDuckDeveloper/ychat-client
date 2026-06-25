@@ -15,7 +15,7 @@ export const useContactsLogic = () => {
   const navigate = useNavigate();
   
   // --- БАЗОВЫЕ СТЕЙТЫ ПРОФИЛЯ И БАЗЫ ---
-  const [myNickname, setMyNickname] = useState<string>('Загрузка...');
+  const [myNickname, setMyNickname] = useState<string>('');
   const [myBio, setMyBio] = useState<string>(''); 
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [peerId, setPeerId] = useState<string | null>(null);
@@ -57,6 +57,30 @@ export const useContactsLogic = () => {
   };
   
   const closeDialog = () => setDialogConfig(prev => ({ ...prev, isOpen: false }));
+
+  // ==========================================
+  // БЛОКИРОВКА КНОПКИ "НАЗАД" (ИМИТАЦИЯ ОЧИСТКИ СТЭКА)
+  // ==========================================
+  useEffect(() => {
+    // 1. Заменяем текущую запись в истории, чтобы убрать привязку к предыдущему роуту
+    window.history.replaceState(null, '', window.location.pathname);
+    
+    // 2. Делаем фиктивный шаг вперед. Это создает "буфер" в истории.
+    window.history.pushState(null, '', window.location.pathname);
+
+    const handlePopState = () => {
+      // 3. Когда юзер жмет "Назад" в браузере или на телефоне,
+      // он падает в наш "буфер". Мы тут же снова кидаем его вперед.
+      // В итоге вернуться в чат становится физически невозможно.
+      window.history.pushState(null, '', window.location.pathname);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   // ==========================================
   // ЛОГИКА ФИЛЬТРАЦИИ ПОИСКА

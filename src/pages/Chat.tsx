@@ -47,7 +47,7 @@ const Chat = () => {
 
   const onBack = async () => {
     if (id) {
-      navigate('/contacts');
+      navigate('/contacts', { replace: true });
     }
   };
 
@@ -58,7 +58,7 @@ const Chat = () => {
           <button
             className="back-button"
             aria-label="Back"
-            onClick={() => navigate('/contacts')}
+            onClick={() => navigate('/contacts', { replace: true })}
           >
             <ArrowLeft size={24} className="back-icon" />
           </button>
