@@ -15,6 +15,7 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
 
+
 export async function initProfileDB(orbitdb: any, nicknameForRegistration?: string) {
   try {
     console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
@@ -71,4 +72,50 @@ export const requestPeerProfile = async (helia: any, targetPeerId: string) => {
   } catch (error) {
     console.error('❌ [PubSub] Ошибка при запросе профиля:', error);
   }
+};
+
+/**
+ * Фильтрация данных профиля перед отправкой в сеть на основе политик приватности.
+ */
+export const getFilteredProfileData = async (profileDb: any, contactsDb: any, requesterPeerId: string) => {
+  if (!profileDb) return null;
+  
+  // Получаем текущий режим приватности из OrbitDB профиля (по умолчанию public)
+  const privacyMode = (await profileDb.get(CONFIG.PROFILE.KEY_PRIVACY)) || 'public';
+  
+  // 🛡️ 1. Режим PRIVATE: Стираем данные «в ноль» для любого запрашивающего
+  if (privacyMode === 'private') {
+    console.log(`🔒 [ProfileService] Профиль в режиме private. Отправляем пустой слепок для ${requesterPeerId}`);
+    return {
+      [CONFIG.PROFILE.KEY_NICKNAME]: 'Скрытый профиль',
+      [CONFIG.PROFILE.KEY_BIO]: '',
+      [CONFIG.PROFILE.KEY_AVATAR_CID]: '',
+      privacyMode
+    };
+  }
+  
+  // 🛡️ 2. Режим CONTACTS_ONLY: Проверяем, есть ли пир в списке одобренных контактов
+  if (privacyMode === 'contacts_only') {
+    const { getContact } = await import('./contactsService.ts');
+    const contact = await getContact(contactsDb, requesterPeerId);
+    
+    // Если контакта нет или он мягко удален — отдаем пустой слепок
+    if (!contact || contact.isDeleted) {
+      console.log(`🔒 [ProfileService] Пира ${requesterPeerId} нет в контактах. Отправляем пустой слепок.`);
+      return {
+        [CONFIG.PROFILE.KEY_NICKNAME]: 'Только для контактов',
+        [CONFIG.PROFILE.KEY_BIO]: '',
+        [CONFIG.PROFILE.KEY_AVATAR_CID]: '',
+        privacyMode
+      };
+    }
+  }
+  
+  // 🌐 3. Режим PUBLIC (или успешный проход проверки контактов): Отдаем реальные данные
+  return {
+    [CONFIG.PROFILE.KEY_NICKNAME]: await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME),
+    [CONFIG.PROFILE.KEY_BIO]: await profileDb.get(CONFIG.PROFILE.KEY_BIO),
+    [CONFIG.PROFILE.KEY_AVATAR_CID]: await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID),
+    privacyMode
+  };
 };

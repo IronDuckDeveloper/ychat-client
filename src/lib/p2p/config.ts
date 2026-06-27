@@ -46,6 +46,8 @@ export interface ContactItem {
   isDeleted?: boolean; // Флаг удаления
 }
 
+export type PrivacyType = 'public' | 'contacts_only' | 'private';
+
 export const CONFIG = {
   TOPIC_DISCOVERY: '_peer-discovery._p2p._pubsub', // Топик для обнаружения пиров
   ORBITDB_BLOCKS_DIR: './data/blocks.level', // Директория для хранения блоков OrbitDB
@@ -59,6 +61,7 @@ export const CONFIG = {
     KEY_BIO: 'user_bio', // Ключ для хранения биографии пользователя в базе профиля
     KEY_LAST_UPDATED: 'lastUpdated', // Ключ для хранения даты последнего обновления профиля
     KEY_AVATAR_CID: 'avatarCID', // Ключ для хранения CID аватара
+    KEY_PRIVACY: 'privacy_mode', // Режим приватности профиля (public, contacts_only, private)
     MSG_PROFILE_UPDATED: 'PROFILE_UPDATED', // Сообщение об обновлении профиля
     MSG_PROFILE_REQUEST: 'PROFILE_REQUEST', // Сообщение об прозьбе обновить профиль
     BLACKLIST_KEY : 'ychat_blocked_peers', // Ключ для хранения черного списка

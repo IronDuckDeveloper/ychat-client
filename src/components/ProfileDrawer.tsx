@@ -1,6 +1,7 @@
 import { User, Edit2, Check, X, Info, LogOut, Upload, Camera, ArrowLeftFromLine } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import HeaderActionButton from './HeaderActionButton.tsx';
+import type { PrivacyType } from '../lib/p2p/config.ts';
 
 interface ProfileDrawerProps {
   isOpen: boolean;
@@ -8,15 +9,17 @@ interface ProfileDrawerProps {
   nickname: string;
   bio: string;
   avatarUrl: string | null; 
-  onSave: (newNickname: string, newBio: string, newAvatarFile: Blob | null) => Promise<void> | void;
+  privacy: PrivacyType;
+  onSave: (newNickname: string, newBio: string, newAvatarFile: Blob | null, newPrivacy: PrivacyType) => Promise<void> | void;
   onLogout: () => void;
   showToast: (message: string) => void;
 }
 
-const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLogout, showToast }: ProfileDrawerProps) => {
+const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'public', onSave, onLogout, showToast }: ProfileDrawerProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editNickname, setEditNickname] = useState(nickname);
   const [editBio, setEditBio] = useState(bio);
+  const [editPrivacy, setEditPrivacy] = useState<PrivacyType>(privacy);
   const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | null>(avatarUrl);
   const [draftAvatarBlob, setDraftAvatarBlob] = useState<Blob | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -30,6 +33,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
     if (isOpen) {
       setEditNickname(nickname);
       setEditBio(bio);
+      setEditPrivacy(privacy);
       setDraftAvatarUrl(avatarUrl);
       setDraftAvatarBlob(null);
       setIsEditing(false);
@@ -90,13 +94,20 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
     stopCamera();
     setEditNickname(nickname);
     setEditBio(bio);
+    setEditPrivacy(privacy);
     setDraftAvatarUrl(avatarUrl);
     setDraftAvatarBlob(null);
     setIsEditing(false);
   };
 
+  const [privacyLabels] = useState({
+    public: 'Все',
+    contacts_only: 'Список контактов',
+    private: 'Только ВЫ'
+  });
+
   const handleSave = async () => {
-    await onSave(editNickname, editBio, draftAvatarBlob);
+    await onSave(editNickname, editBio, draftAvatarBlob, editPrivacy);
     setIsEditing(false);
   };
 
@@ -120,7 +131,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
             )}
           </div>
 
-          <div className="header-actions">
+<div className="header-actions">
             {!isEditing ? (
               <HeaderActionButton 
                 onClick={() => setIsEditing(true)} 
@@ -128,22 +139,56 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, onSave, onLo
                 title="Редактировать" 
               />
             ) : (
-              <HeaderActionButton 
-                onClick={handleSave} 
-                icon={<Check size={20} />} 
-                title="Сохранить" 
-              />
+              // Показываем кнопку "Сохранить" только если камера ВЫКЛЮЧЕНА
+              !isCameraActive && (
+                <HeaderActionButton 
+                  onClick={handleSave} 
+                  icon={<Check size={20} />} 
+                  title="Сохранить" 
+                />
+              )
             )}
+            
+            {/* Умная кнопка "Закрыть" */}
             <HeaderActionButton 
-              onClick={isEditing ? handleCancelEdit : onClose} 
+              onClick={() => {
+                if (isCameraActive) {
+                  stopCamera(); // Если включена камера - просто вырубаем её, оставаясь в режиме редактирования
+                } else if (isEditing) {
+                  handleCancelEdit(); // Если просто редактируем - сбрасываем всё
+                } else {
+                  onClose(); // Если просто смотрим профиль - закрываем шторку
+                }
+              }} 
               icon={isEditing ? <X size={20} /> : <ArrowLeftFromLine size={20} />} 
-              title="Закрыть" 
+              title={isCameraActive ? "Остановить камеру" : "Закрыть"} 
             />
           </div>
         </div>
 
         {/* ОСНОВНОЙ КОНТЕНТ */}
         <div className="drawer-content">
+
+          {/* НАСТРОЙКА ПРИВАТНОСТИ ПРОФИЛЯ */}
+          <div className="profile-privacy-badge">
+            <span className="privacy-label">Кто видит профиль:</span>
+            {isEditing ? (
+              <select 
+                title="Кто видит профиль"
+                className="privacy-select"
+                value={editPrivacy} 
+                onChange={(e) => setEditPrivacy(e.target.value as PrivacyType)}
+              >
+                <option value="public">Все</option>
+                <option value="contacts_only">Список контактов</option>
+                <option value="private">Только ВЫ</option>
+              </select>
+            ) : (
+              <span className="privacy-value">{privacyLabels[privacy] || 'Все'}</span>
+            )}
+          </div>
+
+          {/* АВАТАРКА */}
           <div className="avatar-container">
             <input title='Био' type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*" />
             <canvas ref={canvasRef} style={{ display: 'none' }} />

@@ -1,7 +1,7 @@
 // Добавляем импорт relayManager из твоего клиента!
 import { createBrowserHelia, relayManager } from '../networking/heliaClient.ts';
 import { getOrbitDB } from '../orbit/client.ts';
-import { initProfileDB } from './profileService.ts';
+import { getFilteredProfileData, initProfileDB } from './profileService.ts';
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
@@ -71,7 +71,7 @@ export async function getOrOpenDb(address: string | undefined | null) {
  * Рассылает текущий профиль пользователя (ник и аватар) в общую сеть PubSub.
  * Используется как при обновлении своего профиля, так и в ответ на PROFILE_REQUEST.
  */
-export async function broadcastMyProfile() {
+export async function broadcastMyProfile(customProfileData?: any) {
   if (!globalHelia || !globalProfileDb) {
     console.warn('⚠️ broadcastMyProfile: Нода или база профиля не инициализированы.');
     return;
@@ -80,9 +80,15 @@ export async function broadcastMyProfile() {
   try {
     const myPeerId = globalHelia.libp2p.peerId.toString();
     
-    // Достаем актуальные данные из OrbitDB
-    const nickname = await globalProfileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-    const avatarCid = await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+    // Если передали отфильтрованные данные (customProfileData), берем их. 
+    // Если нет (например, юзер просто обновил профиль) - достаем реальные из БД.
+    const nickname = customProfileData 
+      ? customProfileData[CONFIG.PROFILE.KEY_NICKNAME] 
+      : await globalProfileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+      
+    const avatarCid = customProfileData 
+      ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_CID] 
+      : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
 
     const updateMsg = {
       type: CONFIG.PROFILE.MSG_PROFILE_UPDATED,
@@ -216,13 +222,20 @@ export async function initializeApp(nicknameForRegistration?: string) {
       // 4. Кто-то просит НАС представиться (PROFILE_REQUEST)
       if (msg.type === CONFIG.PROFILE.MSG_PROFILE_REQUEST) {
         if (msg.targetId === myPeerId) {
-          console.log(`📡 [PubSub] Получен PROFILE_REQUEST. Отправляю свой актуальный профиль в сеть...`);
-          await broadcastMyProfile(); 
+            console.log(`📡 [PubSub] Получен PROFILE_REQUEST от ${senderId}. Проверяем приватность...`);
+            
+            // 1. Получаем отфильтрованный профиль. Передаем senderId (тот, кто просит!)
+            const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, senderId);
 
-          if (globalContactsDb && senderId) {
-            addContactIfMissing(globalContactsDb, globalHelia, senderId);
+            if (filteredProfile) {
+              // 2. Отправляем в сеть именно отфильтрованные данные
+              await broadcastMyProfile(filteredProfile); 
+            }
+
+            if (globalContactsDb && senderId) {
+              addContactIfMissing(globalContactsDb, globalHelia, senderId);
+            }
           }
-        }
       }
     });
 

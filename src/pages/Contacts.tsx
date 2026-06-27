@@ -9,7 +9,7 @@ import HeaderActionButton from '../components/HeaderActionButton.tsx';
 const ContactList = () => {
   const {
     navigate, isLoading, isProfileOpen, setIsProfileOpen,
-    myNickname, myBio, myAvatarUrl, peerId, contacts, filteredContacts, dialogConfig, 
+    myNickname, myBio, myAvatarUrl, myPrivacy, peerId, contacts, filteredContacts, dialogConfig, 
     toastMessage, showToast, isNetworkReady,
     
     // Стейты UI и поиска
@@ -35,6 +35,7 @@ const ContactList = () => {
         nickname={myNickname}
         bio={myBio}
         avatarUrl={myAvatarUrl}
+        privacy={myPrivacy || 'public'}
         onSave={handleSaveProfile}
         onLogout={handleLogout}
         showToast={showToast}

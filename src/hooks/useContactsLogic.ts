@@ -6,7 +6,7 @@ import jsQR from 'jsqr';
 import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
-import { CONFIG, type ContactItem } from '../lib/p2p/config.ts';
+import { CONFIG, type ContactItem, type PrivacyType } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
 import { requestPeerProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine';
@@ -18,6 +18,7 @@ export const useContactsLogic = () => {
   const [myNickname, setMyNickname] = useState<string>('');
   const [myBio, setMyBio] = useState<string>(''); 
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+  const [myPrivacy, setMyPrivacy] = useState<PrivacyType>('public');
   const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
@@ -177,6 +178,8 @@ export const useContactsLogic = () => {
         const name = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
         const bio = await profileDb.get(CONFIG.PROFILE.KEY_BIO);
         const avatarCID = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+        const privacy = (await profileDb.get(CONFIG.PROFILE.KEY_PRIVACY)) || 'public';
+        setMyPrivacy(privacy);
 
         const encryptedBlacklist = await profileDb.get(CONFIG.PROFILE.DB_BLACKLIST_KEY);
         if (encryptedBlacklist) {
@@ -347,7 +350,7 @@ export const useContactsLogic = () => {
     });
   };
 
-  const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarBlob: Blob | null) => {
+  const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarBlob: Blob | null, newPrivacy: PrivacyType) => {
     if (!dbInstance) return;
     try {
       const timestamp = Date.now();
@@ -369,6 +372,11 @@ export const useContactsLogic = () => {
       
       setMyNickname(newNickname);
       setMyBio(newBio);
+      
+      // Используем dbInstance вместо profileDb
+      await dbInstance.put(CONFIG.PROFILE.KEY_PRIVACY, newPrivacy);
+      setMyPrivacy(newPrivacy);
+      
       if (globalHelia) await broadcastMyProfile();
 
       showToast('✨ Профиль успешно сохранен!');
@@ -555,7 +563,7 @@ export const useContactsLogic = () => {
   };
 
   return {
-    navigate, isLoading, dbInstance, contacts, filteredContacts, peerId, dialogConfig, toastMessage,
+    navigate, isLoading, dbInstance, contacts, filteredContacts, myPrivacy, peerId, dialogConfig, toastMessage,
     
     searchQuery, setSearchQuery,
     isProfileOpen, setIsProfileOpen,
