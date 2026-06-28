@@ -9,11 +9,12 @@ import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/
 import { CONFIG, type ContactItem, type PrivacyType } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
 import { requestPeerProfile } from '../lib/p2p/services/profileService.ts';
-import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine';
+import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
+import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts'; 
 
 export const useContactsLogic = () => {
   const navigate = useNavigate();
-  
+
   // --- БАЗОВЫЕ СТЕЙТЫ ПРОФИЛЯ И БАЗЫ ---
   const [myNickname, setMyNickname] = useState<string>('');
   const [myBio, setMyBio] = useState<string>(''); 
@@ -58,6 +59,14 @@ export const useContactsLogic = () => {
   };
   
   const closeDialog = () => setDialogConfig(prev => ({ ...prev, isOpen: false }));
+
+  // --- ОЧЕРЕДЬ ДЛЯ ЗАГРУЗКИ КОНТАКТОВ ---
+  const syncContactInQueue = (contact: ContactItem) => {
+    // Простая проверка: если адрес есть, шлем в очередь
+    if (contact.chatDbAddress && !contact.isBlocked) {
+      globalSyncQueue.add(contact, globalContactsDb);
+    }
+  };
 
   // ==========================================
   // БЛОКИРОВКА КНОПКИ "НАЗАД" (ИМИТАЦИЯ ОЧИСТКИ СТЭКА)
@@ -146,15 +155,36 @@ export const useContactsLogic = () => {
 
   // Обновление контактов
   useEffect(() => {
-    const handleContactsUpdate = async () => {
-      if (globalContactsDb) {
-        const updatedList = await getAllContacts(globalContactsDb);
-        setContacts(updatedList);
-      }
-    };
-    window.addEventListener('onContactsUpdated', handleContactsUpdate);
-    return () => window.removeEventListener('onContactsUpdated', handleContactsUpdate);
-  }, []);
+  const refreshContactsList = async () => {
+    if (!globalContactsDb) return;
+    try {
+      const freshContacts = await getAllContacts(globalContactsDb);
+      // Используем функциональное обновление, чтобы гарантированно получить свежий список
+      setContacts(prev => {
+        // Если данные идентичны, не меняем стейт (чтобы не дергать ререндер)
+        if (JSON.stringify(prev) === JSON.stringify(freshContacts)) return prev;
+        return freshContacts;
+      });
+    } catch (err) {
+      console.error('❌ Ошибка обновления:', err);
+    }
+  };
+
+  // Слушаем события
+  window.addEventListener('onContactsUpdated', refreshContactsList);
+  if (globalContactsDb) {
+    globalContactsDb.events.on('replicated', refreshContactsList);
+    globalContactsDb.events.on('write', refreshContactsList);
+  }
+
+  return () => {
+    window.removeEventListener('onContactsUpdated', refreshContactsList);
+    if (globalContactsDb) {
+      globalContactsDb.events.off('replicated', refreshContactsList);
+      globalContactsDb.events.off('write', refreshContactsList);
+    }
+  };
+}, [globalContactsDb]); // Зависимость от базы, а не пустой массив!
 
   // Защита роута
   useEffect(() => {
@@ -578,6 +608,7 @@ export const useContactsLogic = () => {
     
     addVideoRef,
     
+    syncContactInQueue,
     closeDialog, showToast, toggleContactMenu, toggleHeaderMenu, handleCopyPeerId, onSubmitAddContact,
     handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleAdd,
     handleBlockContact, handleUnblockAndRefresh

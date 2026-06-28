@@ -9,7 +9,7 @@ import { isAuthenticated } from './lib/p2p/crypto/crypto.ts';
 import { initializeApp, globalHelia, globalRelayManager, broadcastMyProfile, globalContactsDb } from './lib/p2p/services/authService.ts';
 import { NetworkOverlay } from './components/NetworkOverlay.tsx';
 import { initNetworkStateMachine } from '../src/lib/p2p/networking/NetworkStateMachine.ts';
-import { syncAllContactsHistory } from './lib/p2p/services/contactsService.ts';
+import { syncTopContactsHistory } from './lib/p2p/services/contactsService.ts';
 import { startGlobalNotificationListener, startBackgroundProfileWatcher } from './lib/p2p/services/backgroundServices.ts';
 
 function App() {
@@ -39,7 +39,7 @@ initializeApp()
 
         console.log(`🚀 [Cold Start] Сеть стабилизировалась. Запускаем синхронизацию историй... db: ${globalContactsDb}`);
         
-        syncAllContactsHistory(globalContactsDb)
+        syncTopContactsHistory(globalContactsDb, 10)
           .then(() => console.log("✅ [Cold Start] Синк историй успешно завершен на горячем канале!"))
           .catch(err => console.error("❌ Ошибка синка историй:", err));
     }

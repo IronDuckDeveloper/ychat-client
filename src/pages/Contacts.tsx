@@ -5,6 +5,7 @@ import ContactAvatar from '../components/ContactAvatar.tsx';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 import HeaderActionButton from '../components/HeaderActionButton.tsx';
+import { useCallback, useRef, useEffect } from 'react';
 
 const ContactList = () => {
   const {
@@ -26,6 +27,67 @@ const ContactList = () => {
     handleDeleteContact, handleSaveProfile, handleLogout, 
     handleBlockContact, handleUnblockAndRefresh,
   } = useContactsLogic();
+
+  const { syncContactInQueue, /* другие методы */ } = useContactsLogic();
+  
+  // --- ОЧЕРЕДЬ ДЛЯ ЗАГРУЗКИ КОНТАКТОВ ---
+  const observer = useRef<IntersectionObserver | null>(null);
+  // Храним связь: DOM-элемент -> данные контакта
+  const elementsMap = useRef(new Map<Element, any>());
+  // Хранит таймеры для каждого элемента на экране
+  const scrollTimers = useRef(new Map<Element, NodeJS.Timeout>());
+  
+  // 1. Создаем обсервер ОДИН РАЗ при монтировании
+  useEffect(() => {
+    observer.current = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        const target = entry.target;
+        const contact = elementsMap.current.get(target);
+
+        if (entry.isIntersecting) {
+          // 1. Контакт появился на экране. 
+          // Не бежим сразу в базу! Запускаем таймер на 500 мс.
+          if (contact && contact.id) {
+            const timer = setTimeout(() => {
+              console.log(`⏱️ [Smart Render] ${contact.nickname} задержался на экране. Добавляем в очередь.`);
+              syncContactInQueue(contact);
+              // Очищаем отработавший таймер
+              scrollTimers.current.delete(target); 
+            }, 500); // <-- Те самые 500 мс задержки
+            
+            // Сохраняем таймер, привязанный к DOM-элементу
+            scrollTimers.current.set(target, timer);
+          }
+        } else {
+          // 2. Контакт ушел с экрана.
+          // Если таймер еще тикает (прошло меньше 500 мс), убиваем его!
+          if (scrollTimers.current.has(target)) {
+            clearTimeout(scrollTimers.current.get(target)!);
+            scrollTimers.current.delete(target);
+            // Раскомментируй для дебага, чтобы увидеть, как отсекается мусор:
+            // console.log(`💨 [Smart Render] Фаст-скролл! Отменили синк для: ${contact?.nickname}`);
+          }
+        }
+      });
+    }, { threshold: 0.1 });
+
+    return () => {
+      if (observer.current) observer.current.disconnect();
+      
+      // Очищаем все таймеры при размонтировании компонента
+      scrollTimers.current.forEach(timer => clearTimeout(timer));
+      scrollTimers.current.clear();
+      elementsMap.current.clear();
+    };
+  }, [syncContactInQueue]);
+
+// 2. Эта функция просто привязывает элемент к обсерверу
+const contactRef = useCallback((node: HTMLDivElement | null, contact: any) => {
+  if (node) {
+    elementsMap.current.set(node, contact);
+    if (observer.current) observer.current.observe(node);
+  }
+}, []);
 
   return (
     <div className="contacts-container">
@@ -107,6 +169,8 @@ const ContactList = () => {
           filteredContacts.map((contact) => (
             <div
               key={contact.id}
+              // Привязываем реф к каждому элементу
+              ref={(el) => contactRef(el, contact)}
               className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
               onClick={(e) => {
                 if (contact.isBlocked) {

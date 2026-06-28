@@ -3,6 +3,31 @@ import { CONFIG, type ContactItem } from '../config.ts';
 import { requestPeerProfile } from './profileService'; 
 import { getOrOpenDb } from './authService.ts';
 
+  // Глобальный кэш для защиты от двойной синхронизации 
+  const syncCooldowns = new Map<string, number>();
+
+// 🧠 Локальный кэш контактов для мгновенного UI и дедупликатор запросов
+let cachedContacts: ContactItem[] = [];
+let getAllContactsPromise: Promise<ContactItem[]> | null = null;
+let isSubscribedToUpdates = false;
+
+/**
+ * Вспомогательная функция для синхронизации локального кэша с физической БД.
+ * Вызывается автоматически при успешном чтении или изменениях.
+ */
+function updateLocalCache(allRecords: any[]) {
+  if (!Array.isArray(allRecords)) {
+    console.warn('⚠️ [ContactsDB] OrbitDB вернул не массив записей:', allRecords);
+    return;
+  }
+
+  cachedContacts = allRecords
+    .map((record: any) => record.value as ContactItem)
+    // Проверяем c.id, чтобы убрать "undefined" из UI и починить ключи React
+    .filter((c: ContactItem) => !!c && !!c.id && !c.isDeleted)
+    .sort((a: ContactItem, b: ContactItem) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
 export async function initContactsDB(orbitdb: any) {
   console.log(`📇 [ContactsDB] Открываем базу контактов...`);
 
@@ -28,20 +53,18 @@ export const getContactById = async (contactsDb: any, id: string): Promise<Conta
 
 // 🛡️ Хелпер для быстрой проверки блокировки пира
 export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<boolean> => {
-  // 1. ГЛАВНАЯ ЗАЩИТА: Сначала проверяем вечный бан в памяти браузера (даже если контакт удален)
   const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
   if (localBlacklistStr) {
     try {
       const localBlacklist: string[] = JSON.parse(localBlacklistStr);
       if (localBlacklist.includes(peerId)) {
-        return true; // Заблокирован железобетонно
+        return true; 
       }
     } catch (e) {
       console.error('Ошибка парсинга блэклиста:', e);
     }
   }
 
-  // 2. ВТОРИЧНАЯ ЗАЩИТА: Проверяем базу контактов (на случай рассинхрона)
   if (contactsDb) {
     try {
       const contact = await getContact(contactsDb, peerId);
@@ -53,11 +76,26 @@ export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<bo
     }
   }
 
-  return false; // Чист, пропускаем
+  return false; 
 };
 
 export const saveContact = async (contactsDb: any, contact: ContactItem) => {
   if (!contactsDb) throw new Error("База контактов не инициализирована");
+  
+  // 1. 🔥 ОПЕРЕЖАЮЩЕЕ ОБНОВЛЕНИЕ: Мгновенно обновляем кэш ДО записи в базу.
+  // Это гарантирует, что если юзер мгновенно выйдет из чата, React уже получит 0 непрочитанных.
+  let newCache = [...cachedContacts];
+  const idx = newCache.findIndex(c => c.id === contact.id);
+  if (contact.isDeleted) {
+    if (idx !== -1) newCache.splice(idx, 1);
+  } else {
+    if (idx !== -1) newCache[idx] = contact;
+    else newCache.push(contact);
+    newCache.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+  cachedContacts = newCache; 
+
+  // 2. Асинхронно сохраняем на диск (React не будет ждать эту операцию)
   await contactsDb.put(contact.id, contact); 
   console.log(`💾 [ContactsDB] Контакт ${contact.nickname || contact.id} сохранен.`);
 };
@@ -71,21 +109,58 @@ export const getContact = async (contactsDb: any, peerId: string): Promise<Conta
   }
 };
 
+/**
+ * ⚡ Оптимизированное получение всех контактов.
+ * Предотвращает множественные параллельные запросы к Safari IndexedDB.
+ */
 export const getAllContacts = async (contactsDb: any): Promise<ContactItem[]> => {
   if (!contactsDb) return [];
   
-  const allRecords = await contactsDb.all();
-  return allRecords
-    .map((record: any) => record.value as ContactItem)
-    // 👇 Фильтруем: отдаем в UI только тех, кто реально существует и НЕ удален
-    .filter((c: ContactItem) => !!c && !c.isDeleted)
-    .sort((a: ContactItem, b: ContactItem) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  // Если данные уже есть в кэше — отдаем их мгновенно (0ms)
+  if (cachedContacts.length > 0) {
+    return [...cachedContacts]; 
+  }
+
+  // Если запрос к БД прямо сейчас ЗАДЕНЯН (уже выполняется другим компонентом),
+  // возвращаем этот же Promise, не создавая новую транзакцию в Safari.
+  if (getAllContactsPromise) {
+    return getAllContactsPromise;
+  }
+
+  // Подписываемся на живые обновления репликации OrbitDB (один раз за сессию)
+  if (!isSubscribedToUpdates && contactsDb.events) {
+    isSubscribedToUpdates = true;
+    contactsDb.events.on('update', async () => {
+      try {
+        const allRecords = await contactsDb.all();
+        updateLocalCache(allRecords);
+        window.dispatchEvent(new Event('onContactsUpdated'));
+      } catch (err) {
+        console.error('❌ [ContactsDB] Ошибка автообновления кэша:', err);
+      }
+    });
+  }
+
+  getAllContactsPromise = (async () => {
+    try {
+      const allRecords = await contactsDb.all();
+      updateLocalCache(allRecords);
+      return cachedContacts;
+    } catch (error) {
+      console.error('❌ [ContactsDB] Критическая ошибка чтения `.all()`:', error);
+      return [];
+    } finally {
+      // Обязательно очищаем промис дедупликатора, когда операция завершена
+      getAllContactsPromise = null;
+    }
+  })();
+
+  return getAllContactsPromise;
 };
 
 export const deleteContact = async (contactsDb: any, contactId: string): Promise<boolean> => {
   if (!contactsDb) return false;
   try {
-    // 👇 МЯГКОЕ УДАЛЕНИЕ: Вместо физического contactsDb.del() ставим флаг
     const contact = await getContact(contactsDb, contactId);
     if (contact) {
       contact.isDeleted = true;
@@ -101,9 +176,6 @@ export const deleteContact = async (contactsDb: any, contactId: string): Promise
   }
 };
 
-/**
- * Универсальное и безопасное обновление превью последнего сообщения
- */
 export const updateLastMessage = async (
   db: any, 
   peerId: string, 
@@ -125,7 +197,6 @@ export const updateLastMessage = async (
       lastMessageTime: 0
     };
 
-    // Железная защита от перезаписи свежих данных старыми из истории
     if (timestamp < (contact.lastMessageTime || 0)) {
       return; 
     }
@@ -139,8 +210,6 @@ export const updateLastMessage = async (
     }
 
     await saveContact(db, contact);
-    
-    // Оповещаем интерфейс React о необходимости перерисовать список
     window.dispatchEvent(new Event('onContactsUpdated'));
     
   } catch (error) {
@@ -168,9 +237,6 @@ export const addContactIfMissing = async (db: any, helia: any, peerId: string) =
   try {
     const contact = await getContact(db, peerId);
 
-    // Автодобавляем только если контакта вообще нет в базе.
-    // Если он есть, но isDeleted === true, мы его НЕ воскрешаем автоматически при получении сообщения 
-    // (ведь юзер сам его удалил). Он воскреснет только через handleAdd.
     if (!contact) {
       const newContact: ContactItem = {
         id: peerId,
@@ -203,10 +269,9 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
     if (contact) {
       if (contact.chatDbAddress === address) return;
       contact.chatDbAddress = address;
-      await db.put(peerId, contact);
+      await saveContact(db, contact); // Используем saveContact чтобы обновить кэш
       console.log(`🎯 [ContactsDB] Сохранен адрес базы чата: ${address}`);
 
-      // 👇 КОНТАКТ ПОЛУЧИЛ АДРЕС БД! СРАЗУ КАЧАЕМ ИСТОРИЮ!
       setTimeout(async () => {
         await syncContactHistory(contact, db);
       }, 200);
@@ -217,26 +282,35 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
 }
 
 export async function syncContactHistory(contact: any, contactsDb: any) {
-  // Игнорируем заблокированных при холодном старте
   if (contact.isBlocked) return;
-
   if (!contact.chatDbAddress) return;
 
-  const chatDb = await getOrOpenDb(contact.chatDbAddress);
+  // 🛡️ ТАМОЖНЯ: Проверяем, не проверяли ли мы этот чат только что
+  const now = Date.now();
+  const lastSynced = syncCooldowns.get(contact.id) || 0;
 
+  if (now - lastSynced < CONFIG.COOLDOWN_TIME) {
+    // Тихо выходим, не трогая базу данных. Observer идет лесом.
+    // console.log(`🛡️ [Sync] Контакт ${contact.nickname} уже проверен App.tsx. Скипаем.`);
+    return;
+  }
+
+  // Записываем время текущей проверки
+  syncCooldowns.set(contact.id, now);
+
+  const chatDb = await getOrOpenDb(contact.chatDbAddress);
   if (!chatDb) return;
 
   await new Promise<void>((resolve) => {
     let idleTimer: NodeJS.Timeout;
     let isFinished = false;
 
-    // Функция завершения: чистит за собой и запускает твой оригинальный код
     const finalizeSync = async () => {
       if (isFinished) return;
       isFinished = true;
 
       clearTimeout(idleTimer);
-      chatDb.events.off('update', onUpdate); // Снимаем слушатель, чтобы не копить память
+      chatDb.events.off('update', onUpdate); 
 
       try {
         const records = [];
@@ -251,7 +325,7 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
         
         const latestMsg = messages[messages.length - 1];
         const contactLastTime = contact.lastMessageTime || 0;
-        
+
         const newMessages = messages.filter((msg: any) => msg.ts > contactLastTime);
 
         if (newMessages.length > 0) {
@@ -260,7 +334,7 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
           const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
           let newUnreadCount = !isCurrentlyInThisChat ? (contact.unreadCount || 0) + newMessages.length : 0;
 
-          await contactsDb.put(contact.id, {
+          await saveContact(contactsDb, {
             ...contact,
             lastMessage: latestMsg.text,
             lastMessageTime: latestMsg.ts,
@@ -268,7 +342,10 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
             unreadCount: newUnreadCount 
           });
 
-          window.dispatchEvent(new Event('onContactsUpdated'));
+          setTimeout(() => {
+            window.dispatchEvent(new Event('onContactsUpdated'));
+            console.log("⚡ [Sync] UI триггер отправлен");
+          }, 300);
         }
       } catch (dbError) {
         console.error(`❌ Ошибка чтения истории ${contact.nickname}:`, dbError);
@@ -277,30 +354,35 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
       }
     };
 
-    // 🔥 СЛУШАТЕЛЬ: Релей прислал блок -> сбрасываем таймер и ждем еще 300мс
     const onUpdate = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(finalizeSync, 300); 
     };
     
     chatDb.events.on('update', onUpdate);
-
-    // 🚀 СТАРТОВЫЙ ПИНОК: Если за 400мс сеть вообще ничего не прислала,
-    // значит, новых данных у релея нет. Читаем локальный кэш и выходим.
     idleTimer = setTimeout(finalizeSync, 500);
   });
 }
 
 /**
  * Пакетная проверка истории для всех контактов. 
- * Идеально для вызова один раз при запуске приложения.
+ * Безопасна для Safari (выполняется последовательно).
  */
-export async function syncAllContactsHistory(contactsDb: any) {
-  console.log('🔄 [Контакты] Запуск проверки пропущенных сообщений...');
+export async function syncTopContactsHistory(contactsDb: any, limit = 10) {
+  console.log(`🔄 [Холодный старт] Проверка пропущенных сообщений для ТОП-${limit} активных чатов...`);
   try {
-    const contacts = await getAllContacts(contactsDb); // getAllContacts уже вернет только не удаленные
-    await Promise.all(contacts.map(c => syncContactHistory(c, contactsDb)));
-    console.log('✅ [Контакты] Проверка истории завершена.');
+    const allContacts = await getAllContacts(contactsDb); // Уже отсортированы и отфильтрованы
+    
+    // Берем только первые N контактов
+    const topContacts = allContacts.slice(0, limit);
+    
+    // 🚨 ТАБУ НА Promise.all ДЛЯ СИНХРОНИЗАЦИИ БД В SAFARI!
+    // Открываем базы чатов строго один за другим, чтобы не вешать поток IndexedDB
+    for (const contact of topContacts) {
+      await syncContactHistory(contact, contactsDb);
+    }
+    
+    console.log(`✅ [Холодный старт] Синхронизация первых ${topContacts.length} контактов завершена.`);
   } catch (error) {
     console.error('❌ [Контакты] Ошибка при пакетной проверке истории:', error);
   }
