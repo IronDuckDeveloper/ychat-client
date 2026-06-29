@@ -103,7 +103,7 @@ const Chat = () => {
               </div>
             ))}
             {!messages.length && !isLoadingMore && (
-              <div className="message system">Ожидание сообщений в комнате...</div>
+              <div className="message received">Привет!</div>
             )}
           </div>
 

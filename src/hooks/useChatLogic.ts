@@ -3,7 +3,7 @@ import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useIPFS } from './useIPFS.ts';
 import { getDeterministicRoomName } from '../lib/p2p/services/roomService.ts';
-import { type ChatMessage, CONFIG } from '../lib/p2p/config.ts';
+import { type ChatMessage, type RoomActions, CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
 
@@ -12,25 +12,19 @@ export const useChatLogic = () => {
   const { peerId } = useParams(); 
   const location = useLocation();
   const routerState = location.state as any;
-  // Сделать routerState для всего contact
-  const [displayName, setDisplayName] = useState(routerState.contactName || 'Загрузка...');
+  
+  const [displayName, setDisplayName] = useState(routerState?.contactName || 'Загрузка...');
   const { isReady, nodeId, joinRoom, helia } = useIPFS();
+  
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  
   const isUserScrolledUp = useRef(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const isLoadingRef = useRef(false);
-
-  const [roomHandle, setRoomHandle] = useState<{
-    sendMessage: (message: string) => Promise<void>;
-    leaveRoom: () => void;
-    pingRoom?: () => void;
-    dbAddress?: string;
-    loadMoreHistory: () => Promise<void>;
-    hasMoreHistory: () => boolean;
-  } | null>(null);
-
+  
+  const [roomHandle, setRoomHandle] = useState<RoomActions | null>(null);
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
 
@@ -38,8 +32,6 @@ export const useChatLogic = () => {
     if (globalContactsDb && peerId) {
       contactsService.clearUnread(globalContactsDb, peerId);
     }
-
-    // Очищаем при размонтировании (выходе из чата)
     return () => {
       if (globalContactsDb && peerId) {
         contactsService.clearUnread(globalContactsDb, peerId);
@@ -72,6 +64,7 @@ export const useChatLogic = () => {
 
     const subscribe = async () => {
       setIsRoomConnected(false);
+      setMessages([]);
 
       try {
         const resolvedRoomDbId = (nodeId && peerId && peerId !== 'global-chat')
@@ -84,26 +77,17 @@ export const useChatLogic = () => {
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === message.id)) return prev;
-            // Добавляем и жестко сортируем по времени, чтобы сообщения всегда стояли по порядку
-            const updated = [...prev, message];
-            return updated.sort((a, b) => a.ts - b.ts);
+            const updated = [message, ...prev];
+            // Сортировка по убыванию времени: свежие в начале массива, старые в конце
+            return updated.sort((a, b) => (b.ts || Date.now()) - (a.ts || Date.now()));
           });
 
-          // Любое прилетевшее сообщение прокидываем в превью. Метод внутри сам проверит ts.
           if (peerId && globalContactsDb && peerId !== 'global-chat') {
             const isCurrentlyInThisChat = window.location.pathname.includes(peerId);
             const shouldIncrement = !isCurrentlyInThisChat && !isBackgroundSync && message.type !== 'sent';
 
-            contactsService.updateLastMessage(
-              globalContactsDb, 
-              peerId, 
-              message.text, 
-              message.ts || Date.now(), 
-              shouldIncrement
-            );
+            contactsService.updateLastMessage(globalContactsDb, peerId, message.text, message.ts || Date.now(), shouldIncrement);
 
-            // Если мы сидим в этом чате, принудительно гасим индикатор
-            // при любом новом сообщении, чтобы он не зависал
             if (isCurrentlyInThisChat) {
               contactsService.clearUnread(globalContactsDb, peerId);
             }
@@ -140,41 +124,26 @@ export const useChatLogic = () => {
 
   const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
-    if (isLoadingRef.current) return;
+    if (isLoadingRef.current || !roomHandle) return;
 
-    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    isUserScrolledUp.current = distanceFromBottom > 50;
+    const scrollOffset = Math.abs(target.scrollTop);
+    isUserScrolledUp.current = scrollOffset > 50;
 
-    if (target.scrollTop <= 1 && roomHandle?.hasMoreHistory()) {
+    const isAtTop = scrollOffset + target.clientHeight >= target.scrollHeight - 10;
+
+    if (isAtTop && roomHandle.hasMoreHistory && roomHandle.hasMoreHistory()) {
       isLoadingRef.current = true;
       setIsLoadingMore(true);
-      const previousScrollHeight = target.scrollHeight;
-      
       try {
         await roomHandle.loadMoreHistory();
-        requestAnimationFrame(() => {
-          if (messagesContainerRef.current) {
-            const newScrollHeight = messagesContainerRef.current.scrollHeight;
-            messagesContainerRef.current.scrollTop = newScrollHeight - previousScrollHeight;
-          }
-          setTimeout(() => {
-            isLoadingRef.current = false;
-            setIsLoadingMore(false);
-          }, 100); 
-        });
-      } catch {
+      } catch (err) {
+        console.error("Ошибка при подгрузке истории:", err);
+      } finally {
         isLoadingRef.current = false;
         setIsLoadingMore(false);
       }
     }
   };
-
-  useEffect(() => {
-    if (!messagesContainerRef.current) return;
-    if (!isLoadingMore && !isUserScrolledUp.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    }
-  }, [messages, isLoadingMore]);
 
   const handleSendMessage = async () => {
     const text = draft.trim();
@@ -225,7 +194,7 @@ export const useChatLogic = () => {
     setDraft(textarea.value);
   };
 
-return {
+  return {
     navigate,
     displayName,
     messages,

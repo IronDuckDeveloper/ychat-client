@@ -83,7 +83,7 @@
   flex: 1;
   padding: 1rem;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 1rem;
   min-height: 0; /* ВАЖНО для корректной работы flex и overflow */
 
