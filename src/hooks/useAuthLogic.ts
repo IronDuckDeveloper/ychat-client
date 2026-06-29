@@ -92,7 +92,8 @@ export const useAuthLogic = () => {
         console.log('✅ Вход выполнен, профиль восстановлен.');
       }
       
-      navigate('/contacts', { replace: true });
+      // Заставляем браузер полностью перезагрузить страницу и запустить App.tsx как при F5
+      window.location.href = '/contacts';
 
     } catch (error: any) {
       console.error('Ошибка авторизации:', error);

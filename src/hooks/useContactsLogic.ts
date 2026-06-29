@@ -23,6 +23,7 @@ export const useContactsLogic = () => {
   const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
+  const [contactsDbInstance, setContactsDbInstance] = useState<any>(globalContactsDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [contacts, setContacts] = useState<ContactItem[]>([]);
 
@@ -155,36 +156,31 @@ export const useContactsLogic = () => {
 
   // Обновление контактов
   useEffect(() => {
-  const refreshContactsList = async () => {
-    if (!globalContactsDb) return;
-    try {
-      const freshContacts = await getAllContacts(globalContactsDb);
-      // Используем функциональное обновление, чтобы гарантированно получить свежий список
-      setContacts(prev => {
-        // Если данные идентичны, не меняем стейт (чтобы не дергать ререндер)
-        if (JSON.stringify(prev) === JSON.stringify(freshContacts)) return prev;
-        return freshContacts;
-      });
-    } catch (err) {
-      console.error('❌ Ошибка обновления:', err);
-    }
-  };
+    const refreshContactsList = async () => {
+      if (!contactsDbInstance) return; 
+      try {
+        const freshContacts = await getAllContacts(contactsDbInstance);
+        setContacts(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(freshContacts)) return prev;
+          return freshContacts;
+        });
+      } catch (err) {
+        console.error('❌ Ошибка обновления:', err);
+      }
+    };
 
-  // Слушаем события
-  window.addEventListener('onContactsUpdated', refreshContactsList);
-  if (globalContactsDb) {
-    globalContactsDb.events.on('replicated', refreshContactsList);
-    globalContactsDb.events.on('write', refreshContactsList);
-  }
-
-  return () => {
-    window.removeEventListener('onContactsUpdated', refreshContactsList);
-    if (globalContactsDb) {
-      globalContactsDb.events.off('replicated', refreshContactsList);
-      globalContactsDb.events.off('write', refreshContactsList);
+    // 1. Слушаем твой кастомный ивент, который дергается от 'update' в сервисе
+    window.addEventListener('onContactsUpdated', refreshContactsList);
+    
+    // 2. Если база есть в стейте — делаем ПЕРВИЧНЫЙ запрос мгновенно!
+    if (contactsDbInstance) {
+      refreshContactsList();
     }
-  };
-}, [globalContactsDb]); // Зависимость от базы, а не пустой массив!
+
+    return () => {
+      window.removeEventListener('onContactsUpdated', refreshContactsList);
+    };
+  }, [contactsDbInstance]);
 
   // Защита роута
   useEffect(() => {
@@ -249,6 +245,7 @@ export const useContactsLogic = () => {
 
     if (globalProfileDb && globalContactsDb) {
       setDbInstance(globalProfileDb);
+      setContactsDbInstance(globalContactsDb);
       loadData(globalProfileDb);
     } else {
       const networkTimeout = setTimeout(() => {
@@ -259,6 +256,7 @@ export const useContactsLogic = () => {
         clearTimeout(networkTimeout); 
         if (isMounted) {
           setDbInstance(globalProfileDb);
+          setContactsDbInstance(globalContactsDb);
           loadData(globalProfileDb);
         }
       });

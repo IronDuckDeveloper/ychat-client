@@ -39,14 +39,18 @@ export function createBrowserHelia(): Promise<any> {
       privateKey.public.bytes,
       privateKey.bytes,
     );
+    
+    // Получаем строковое представление PeerID для создания уникальных папок
+    const peerIdStr = peerId.toString();
 
-    const blockstore = new LevelBlockstore(CONFIG.ORBITDB_BLOCKS_DIR);
-    const datastore = new LevelDatastore(CONFIG.DATA_DIR);
+    // ИЗОЛЯЦИЯ: Добавляем PeerID к путям хранилищ, чтобы аккаунты не конфликтовали
+    const blockstore = new LevelBlockstore(`${CONFIG.ORBITDB_BLOCKS_DIR}-${peerIdStr}`);
+    const datastore = new LevelDatastore(`${CONFIG.DATA_DIR}-${peerIdStr}`);
 
     await blockstore.open();
     await datastore.open();
 
-    console.log('📦 [Client IPFS] Хранилища IndexedDB успешно открыты.');
+    console.log(`📦 [Client IPFS] Хранилища IndexedDB (${peerIdStr.slice(-6)}) успешно открыты.`);
 
     let heliaNode: any = null;
     let currentRelayIndex = 0;

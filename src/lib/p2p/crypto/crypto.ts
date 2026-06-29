@@ -8,11 +8,19 @@ import * as bip39 from 'bip39';
 export async function saveSeedFromAuth(seed: Uint8Array) {
   if (seed.length !== CONFIG.SEED_LENGTH) throw new Error('Invalid seed length');
 
-  // Очищаем старые базы OrbitDB/Helia, так как заходит (или регистрируется) новый профиль
-  await clearHeliaDatastore();
+  const newSeedB64 = uint8ArrayToString(seed, 'base64');
+  const oldSeedB64 = localStorage.getItem(CONFIG.STORAGE_KEY);
+
+  // Очищаем старые базы ОНЛИ если сид реально изменился (зашел другой профиль)
+  if (oldSeedB64 && oldSeedB64 !== newSeedB64) {
+    console.warn('🧹 Обнаружен новый аккаунт. Очищаем старую базу Helia...');
+    await clearHeliaDatastore();
+  } else {
+    console.log('🔄 Сид совпадает со старым или это первый вход. Локальный кэш сохранен.');
+  }
 
   // Сохраняем seed в localStorage
-  localStorage.setItem(CONFIG.STORAGE_KEY, uint8ArrayToString(seed, 'base64'));
+  localStorage.setItem(CONFIG.STORAGE_KEY, newSeedB64);
   console.log('💾 Seed из мнемоники успешно сохранен в хранилище');
 }
 

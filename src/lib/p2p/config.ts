@@ -52,6 +52,7 @@ export const CONFIG = {
   TOPIC_DISCOVERY: '_peer-discovery._p2p._pubsub', // Топик для обнаружения пиров
   ORBITDB_BLOCKS_DIR: './data/blocks.level', // Директория для хранения блоков OrbitDB
   DATA_DIR: './data', // Директория для хранения данных Helia (включая ключи)
+  ORBITDB_DIR: './orbitdb', // Директория для хранения баз OrbitDB
       
   PROFILE: {
     DB_PROFILE: 'user-profile',// Строка 'user-profile' создаст базу локально и привяжет к текущей Identity.

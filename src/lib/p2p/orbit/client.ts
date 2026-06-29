@@ -1,5 +1,6 @@
 import { createOrbitDB, Identities } from '@orbitdb/core';
 import { HeliaIdentityProvider } from './identity.ts';
+import { CONFIG } from '../config.ts';
 
 // Храним синглтон инстанса OrbitDB, чтобы не создавать его заново при смене комнат
 let orbitdbInstance: any = null;
@@ -29,6 +30,7 @@ export async function getOrbitDB(helia: any) {
     orbitdbInstance = await createOrbitDB({ 
       ipfs: helia,
       identity: identity, 
+      directory: `${CONFIG.ORBITDB_DIR}/${peerIdString}`
     });
 
     return orbitdbInstance;
