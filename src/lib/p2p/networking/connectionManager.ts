@@ -13,7 +13,7 @@ export async function notifyArchivist(
   if (!libp2p || !peerId) return;
 
   const myIdStr = libp2p.peerId.toString();
-  const targetIdStr = peerId.toString(); // Убедитесь, что правильно извлекаете строку
+  const targetIdStr = peerId.toString();
 
   // 🔥 Защита от ошибки "Tried to dial self"
   if (targetIdStr === myIdStr) {

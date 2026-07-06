@@ -1,20 +1,24 @@
-import { useState, useEffect } from 'react'; // 👈 Добавили импорт хуков
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, Settings, Send, Paperclip } from 'lucide-react';
+import { ArrowLeft, Send, Paperclip } from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
 import { isPeerBlocked } from '../lib/p2p/services/contactsService';
+import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx'; // 👈 Добавили импорт
+import Avatar from '../components/Avatar.tsx';
 
 const Chat = () => {
   const { id } = useParams(); 
   
-  // 👈 1. Создаем состояние для статуса блокировки (по умолчанию false)
   const [isBlocked, setIsBlocked] = useState(false);
+  const [isContactProfileOpen, setIsContactProfileOpen] = useState(false); // 👈 Стейт шторки
 
   const {
     navigate,
+    avatarUrl,
     displayName,
+    contact,
     messages,
     draft,
     messagesContainerRef,
@@ -28,22 +32,20 @@ const Chat = () => {
     handleInput
   } = useChatLogic();
 
-  // 👈 2. Используем useEffect для асинхронной проверки при открытии чата
   useEffect(() => {
     const checkBlockStatus = async () => {
       if (!id || !globalContactsDb) return;
       
       const blockedStatus = await isPeerBlocked(globalContactsDb, id);
-      setIsBlocked(blockedStatus); // Сохраняем результат в стейт
+      setIsBlocked(blockedStatus); 
 
       if (blockedStatus) {
         console.warn(`🚫 Доступ в чат ${id} ограничен: пользователь заблокирован.`);
-        // Редирект мы отсюда убрали! Иначе юзер не увидит твою кнопку "Разблокировать и удалить"
       }
     };
 
     checkBlockStatus();
-  }, [id]); // Эффект сработает каждый раз, когда меняется id в URL
+  }, [id]); 
 
   const onBack = async () => {
     if (id) {
@@ -53,23 +55,33 @@ const Chat = () => {
 
   return (
     <div className="chat-container">
-      <div className="chat-header">
+    {/* Разворот профиля контакта */}
+    {isContactProfileOpen && (
+      <ContactProfileDrawer 
+        isOpen={isContactProfileOpen}
+        onClose={() => setIsContactProfileOpen(false)}
+        nickname={contact?.nickname || displayName || 'Неизвестный'}
+        bio={contact?.bio || ''}
+        avatarUrl={avatarUrl}
+      />
+    )}
+      <header className="chat-header">
         <div className="header-left">
-          <button
-            className="back-button"
-            aria-label="Back"
-            onClick={() => navigate('/contacts', { replace: true })}
-          >
-            <ArrowLeft size={24} className="back-icon" />
+          <button className="back-button" onClick={() => navigate('/contacts', { replace: true })}>
+            <ArrowLeft className="back-icon" size={20} /> {/* Или твоя иконка стрелки */}
           </button>
-          <div className="contact-name">{displayName || 'IPFS Chat'}</div>
+          {/* Имя контакта — теперь просто статичный текст, без onClick */}
+          <span className="contact-name">{contact?.nickname || displayName || 'Неизвестный'}</span>
         </div>
-        <button className="settings-button" aria-label="Settings">
-          <Settings size={22} className="settings-icon" />
-        </button>
-      </div>
 
-      {/* 👈 3. Теперь React берет статус из стейта и решает, что показать */}
+        {/*  Аватар собеседника */}
+        <Avatar 
+          url={avatarUrl} 
+          size={32} 
+          onClick={() => setIsContactProfileOpen(true)} 
+        />
+      </header>
+
       {isBlocked ? (
         <div className="blocked-dialog-overlay">
           <p>Пользователь заблокирован</p>

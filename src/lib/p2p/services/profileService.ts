@@ -14,7 +14,14 @@
 
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
+import { getOrOpenDb } from './authService.ts';
+import { saveContact } from './contactsService.ts';
 
+export interface SyncResult {
+  success: boolean;
+  status: 'SUCCESS' | 'TRANSIENT_FAILURE' | 'ERROR' | 'UP_TO_DATE';
+  reason?: string;
+}
 
 export async function initProfileDB(orbitdb: any, nicknameForRegistration?: string) {
   try {
@@ -52,7 +59,9 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
   }
 }
 /**
- * Функция запроса профиля
+ * Функция запроса профиля в сети через PubSub. Она отправляет сообщение с типом PROFILE_REQUEST и ID запрашиваемого пира.
+ * @param helia - экземпляр Helia, через который будет отправлен запрос
+ * @param targetPeerId - PeerID пользователя, чей профиль мы хотим запросить
  */
 export const requestPeerProfile = async (helia: any, targetPeerId: string) => {
   if (!helia) {
@@ -71,6 +80,60 @@ export const requestPeerProfile = async (helia: any, targetPeerId: string) => {
     console.log(`📤 [PubSub] Отправлен запрос профиля (PROFILE_REQUEST) для: ${targetPeerId}`);
   } catch (error) {
     console.error('❌ [PubSub] Ошибка при запросе профиля:', error);
+  }
+};
+
+/**
+ * Принудительная синхронизация профиля контакта напрямую через OrbitDB.
+ * Вызывать при клике на кнопку "Обновить профиль".
+ */
+
+export const forceSyncContactProfile = async (contactsDb: any, contact: any): Promise<SyncResult> => {
+  if (!contact || !contact.profileDbAddress) {
+    return { success: false, status: 'ERROR', reason: 'Invalid contact data' };
+  }
+
+  console.log(`🔄 [ProfileSync] Открываем БД профиля для ${contact.nickname || contact.id}...`);
+  
+  try {
+    // Твоя текущая логика открытия удаленной базы данных
+    // Предположим, тут идет проверка на доступность пиров или таймаут
+    const remoteDb = await getOrOpenDb(contact.profileDbAddress);
+    
+    if (!remoteDb) {
+      // Если база не открылась из-за проблем с маршрутами (transient connection)
+      console.warn(`⏳ [ProfileSync] Сеть занята (transient connection) для ${contact.id}. Нужен повтор.`);
+      return { success: false, status: 'TRANSIENT_FAILURE', reason: 'Transient network state' };
+    }
+
+    // Читаем свежие данные
+    const freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+    const freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+    const freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
+
+    // Проверяем, изменилось ли что-то по сравнению с тем, что есть в контакте
+    const hasChanges = freshName !== contact.nickname || 
+                      freshAvatar !== contact.avatarCid || 
+                      freshBio !== contact.bio;
+
+    if (hasChanges) {
+      const cleanProfile = sanitizeForIPLD({
+        nickname: freshName || 'Аноним', 
+        avatarCid: freshAvatar || '', 
+        bio: freshBio || '', 
+        updatedAt: Date.now() 
+      });
+      await saveContact(contactsDb, { 
+        ...contact, 
+        ...cleanProfile
+      });
+      return { success: true, status: 'SUCCESS' };
+    }
+
+    return { success: true, status: 'UP_TO_DATE' };
+  } catch (error: any) {
+    console.error(`❌ [ProfileSync] Критическая ошибка синка профиля ${contact.id}:`, error);
+    return { success: false, status: 'ERROR', reason: error.message };
   }
 };
 
@@ -112,10 +175,19 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
   }
   
   // 🌐 3. Режим PUBLIC (или успешный проход проверки контактов): Отдаем реальные данные
-  return {
+  const rawData = {
     [CONFIG.PROFILE.KEY_NICKNAME]: await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME),
     [CONFIG.PROFILE.KEY_BIO]: await profileDb.get(CONFIG.PROFILE.KEY_BIO),
     [CONFIG.PROFILE.KEY_AVATAR_CID]: await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID),
     privacyMode
   };
+
+  // Прогоняем через санитайзер, чтобы вычистить возможные undefined из БД
+  return sanitizeForIPLD(rawData);
 };
+
+// Утилита для очистки объекта от undefined (оставляем null и валидные данные)
+function sanitizeForIPLD<T>(obj: T): T {
+  // Самый надежный и быстрый способ нативно отбросить все undefined поля:
+  return JSON.parse(JSON.stringify(obj));
+}

@@ -310,6 +310,7 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
       isFinished = true;
 
       clearTimeout(idleTimer);
+      // Обязательно отписываемся от событий
       chatDb.events.off('update', onUpdate); 
 
       try {
@@ -318,49 +319,72 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
           records.push(record);
         }
         
-        if (records.length === 0) return;
-
-        const messages = records.map((r: any) => r.payload?.value || r.value || r);
-        messages.sort((a: any, b: any) => a.ts - b.ts);
-        
-        const latestMsg = messages[messages.length - 1];
-        const contactLastTime = contact.lastMessageTime || 0;
-
-        const newMessages = messages.filter((msg: any) => msg.ts > contactLastTime);
-
-        if (newMessages.length > 0) {
-          console.log(`📥 [Холодный старт] Нашли ${newMessages.length} сообщений от ${contact.nickname}`);
+        if (records.length > 0) {
+          const messages = records.map((r: any) => r.payload?.value || r.value || r);
+          messages.sort((a: any, b: any) => a.ts - b.ts);
           
-          const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
-          let newUnreadCount = !isCurrentlyInThisChat ? (contact.unreadCount || 0) + newMessages.length : 0;
+          const latestMsg = messages[messages.length - 1];
+          const contactLastTime = contact.lastMessageTime || 0;
 
-          await saveContact(contactsDb, {
-            ...contact,
-            lastMessage: latestMsg.text,
-            lastMessageTime: latestMsg.ts,
-            updatedAt: latestMsg.ts,
-            unreadCount: newUnreadCount 
-          });
+          const newMessages = messages.filter((msg: any) => msg.ts > contactLastTime);
 
-          setTimeout(() => {
-            window.dispatchEvent(new Event('onContactsUpdated'));
-            console.log("⚡ [Sync] UI триггер отправлен");
-          }, 300);
+          if (newMessages.length > 0) {
+            console.log(`📥 [Холодный старт] Нашли ${newMessages.length} сообщений от ${contact.nickname}`);
+            
+            const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
+            let newUnreadCount = !isCurrentlyInThisChat ? (contact.unreadCount || 0) + newMessages.length : 0;
+
+            await saveContact(contactsDb, {
+              ...contact,
+              lastMessage: latestMsg.text,
+              lastMessageTime: latestMsg.ts,
+              updatedAt: latestMsg.ts,
+              unreadCount: newUnreadCount 
+            });
+
+            setTimeout(() => {
+              window.dispatchEvent(new Event('onContactsUpdated'));
+              console.log("⚡ [Sync] UI триггер отправлен");
+            }, 300);
+          }
         }
       } catch (dbError) {
         console.error(`❌ Ошибка чтения истории ${contact.nickname}:`, dbError);
       } finally {
+        // 🛑 ИСПРАВЛЕНИЕ ЗДЕСЬ: Не закрываем БД, если юзер сейчас в этом чате
+        try {
+          // 🛑 Читаем URL в самую последнюю секунду перед закрытием
+          const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
+          
+          // Проверяем только по contact.id и contact.room (dbAddress убрали, так как он undefined)
+          const isCurrentlyInThisChat = currentUrl.includes(contact.id) || 
+            (contact.room && currentUrl.includes(contact.room));
+
+          if (isCurrentlyInThisChat) {
+            console.log(`👀 [Sync] Чат ${contact.nickname} сейчас открыт на экране. Оставляем БД открытой.`);
+          } else {
+            await chatDb.close();
+            console.log(`🧹 [Sync] База ${contact.nickname} закрыта, ресурсы освобождены.`);
+          }
+        } catch (closeErr) {
+          console.error(`❌ Ошибка при закрытии БД ${contact.nickname}:`, closeErr);
+        }
+        
         resolve();
       }
     };
 
     const onUpdate = () => {
       clearTimeout(idleTimer);
+      // Если пошли пакеты обновлений, ждем 300мс тишины перед финализацией
       idleTimer = setTimeout(finalizeSync, 300); 
     };
     
     chatDb.events.on('update', onUpdate);
-    idleTimer = setTimeout(finalizeSync, 500);
+    
+    // ⏳ Увеличиваем стартовый таймаут ожидания Архивариуса до 1.5 - 2 секунд.
+    // 500мс для установки прямого потока в libp2p и стягивания DAG'ов часто не хватает.
+    idleTimer = setTimeout(finalizeSync, 2000);
   });
 }
 

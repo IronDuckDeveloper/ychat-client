@@ -3,18 +3,27 @@ import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useIPFS } from './useIPFS.ts';
 import { getDeterministicRoomName } from '../lib/p2p/services/roomService.ts';
-import { type ChatMessage, type RoomActions, CONFIG } from '../lib/p2p/config.ts';
+import { type ChatMessage, type RoomActions, CONFIG, type ContactItem } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
-import { globalContactsDb } from '../lib/p2p/services/authService.ts';
+import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
+import { globalContactsDb, globalHelia } from '../lib/p2p/services/authService.ts';
+
+interface RouterState {
+  contactName?: string;
+  contact?: ContactItem;
+}
 
 export const useChatLogic = () => {
   const navigate = useNavigate();
   const { peerId } = useParams(); 
   const location = useLocation();
-  const routerState = location.state as any;
+  const routerState = location.state as RouterState | null; 
   
   const [displayName, setDisplayName] = useState(routerState?.contactName || 'Загрузка...');
-  const { isReady, nodeId, joinRoom, helia } = useIPFS();
+  const [contact, setContact] = useState<ContactItem | null>(routerState?.contact || null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  const { isReady, nodeId, joinRoom } = useIPFS();
   
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -28,6 +37,7 @@ export const useChatLogic = () => {
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
 
+  // Очистка уведомлений
   useEffect(() => {
     if (globalContactsDb && peerId) {
       contactsService.clearUnread(globalContactsDb, peerId);
@@ -39,23 +49,65 @@ export const useChatLogic = () => {
     };
   }, [peerId]);
 
+  // Функция получения и обновления данных контакта из локальной базы
+  const refreshContactData = async () => {
+    if (!peerId || !globalContactsDb) return;
+    try {
+      const fetchedContact = await contactsService.getContactById(globalContactsDb, peerId);
+      if (fetchedContact) {
+        setContact(fetchedContact);
+        setDisplayName(fetchedContact.nickname || fetchedContact.id);
+      } else if (displayName === 'Загрузка...') {
+        setDisplayName(`${peerId.slice(0, 6)}...${peerId.slice(-4)}`);
+      }
+    } catch (err) {
+      console.error('❌ Ошибка при получении контакта в чате:', err);
+      if (displayName === 'Загрузка...') setDisplayName('Неизвестный');
+    }
+  };
+
+  // Подписываемся на событие обновления контактов, чтобы ловить прилетающие био/аватарки в реалтайме
   useEffect(() => {
-    const fetchNameFallback = async () => {
-      if (displayName !== 'Загрузка...' || !peerId || !globalContactsDb) return;
+    window.addEventListener('onContactsUpdated', refreshContactData);
+    
+    if (globalContactsDb && peerId) {
+      refreshContactData();
+    }
+
+    return () => {
+      window.removeEventListener('onContactsUpdated', refreshContactData);
+    };
+  }, [peerId, globalContactsDb]);
+
+  // Логика получения аватара из Helia FS
+  useEffect(() => {
+    if (!globalHelia || !contact?.avatarCid) {
+      setAvatarUrl(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchAvatar = async () => {
       try {
-        const contact = await contactsService.getContactById(globalContactsDb, peerId);
-        if (contact) {
-          setDisplayName(contact.nickname || contact.id);
-        } else {
-          setDisplayName(`${peerId.slice(0, 6)}...${peerId.slice(-4)}`);
+        const url = await fetchAvatarFromHelia(globalHelia, contact.avatarCid);
+        if (isMounted) {
+          setAvatarUrl(url);
         }
-      } catch {
-        setDisplayName('Неизвестный');
+      } catch (err) {
+        console.error('❌ Ошибка при загрузке аватара в чате:', err);
+        if (isMounted) setAvatarUrl(null);
       }
     };
-    fetchNameFallback();
-  }, [peerId, displayName]);
 
+    fetchAvatar();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [contact?.avatarCid]);
+
+  // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
     if (!isReady || !joinRoom) return;
 
@@ -78,7 +130,6 @@ export const useChatLogic = () => {
           setMessages((prev) => {
             if (prev.some((m) => m.id === message.id)) return prev;
             const updated = [message, ...prev];
-            // Сортировка по убыванию времени: свежие в начале массива, старые в конце
             return updated.sort((a, b) => (b.ts || Date.now()) - (a.ts || Date.now()));
           });
 
@@ -120,7 +171,7 @@ export const useChatLogic = () => {
       setRoomHandle(null);
       setIsRoomConnected(false);
     };
-  }, [isReady, joinRoom, helia, nodeId, peerId]);
+  }, [isReady, joinRoom, nodeId, peerId]);
 
   const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
@@ -156,13 +207,13 @@ export const useChatLogic = () => {
       await roomHandle.sendMessage(text);
       setDraft('');
 
-      if (helia && peerId) {
+      if (globalHelia && peerId) {
         try {
-          const myPeerId = (helia as any).libp2p.peerId.toString();
+          const myPeerId = (globalHelia as any).libp2p.peerId.toString();
           const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
           const notificationData = { from: myPeerId, text, ts: now };
           const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
-          await (helia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
+          await (globalHelia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
         } catch (err) {
           console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
         }
@@ -197,6 +248,8 @@ export const useChatLogic = () => {
   return {
     navigate,
     displayName,
+    contact,           
+    avatarUrl, 
     messages,
     draft,
     messagesContainerRef,

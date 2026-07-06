@@ -6,6 +6,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 import HeaderActionButton from '../components/HeaderActionButton.tsx';
 import { useCallback, useRef, useEffect } from 'react';
+import Avatar from '../components/Avatar.tsx';
 
 const ContactList = () => {
   const {
@@ -105,9 +106,12 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: any) => {
       
       <div className="contacts-header">
         <div className="header-left">
-          <div className="avatar" onClick={() => !isLoading && setIsProfileOpen(true)}>
-            {myAvatarUrl ? <img src={myAvatarUrl} alt="Avatar" /> : <User size={24} />}
-          </div>
+          {/*  Аватар собеседника */}
+          <Avatar 
+            url={myAvatarUrl} 
+            size={24}
+            onClick={() => !isLoading && setIsProfileOpen(true)} 
+          />
           <span className="username">{myNickname}</span>
         </div>
         

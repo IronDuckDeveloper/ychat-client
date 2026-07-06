@@ -20,7 +20,7 @@ import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
 import { kadDHT } from '@libp2p/kad-dht';
-import { broadcastMyProfile } from '../services/authService.ts.ts';
+import { broadcastMyProfile } from '../services/authService.ts';
 
 let initializationPromise: Promise<any> | null = null;
 
@@ -93,7 +93,19 @@ export function createBrowserHelia(): Promise<any> {
             },
             connectionEncryption: [noise()],
             streamMuxers: [yamux()],
-            connectionGater: { denyDialMultiaddr: () => false },
+            
+            // 🟢 ИЗМЕНЕНО: Подключаем вахтера (Connection Gater) к нашему карантину
+            connectionGater: { 
+              denyDialMultiaddr: (multiaddr) => {
+                const targetPeerId = multiaddr.getPeerId();
+                if (targetPeerId && relayManager.isRelayFailed(targetPeerId)) {
+                  // Отменяем дозвон до релея, который сейчас в карантине
+                  return true; 
+                }
+                return false; 
+              } 
+            },
+            
             services: {
               identify: identify(),
               ping: ping(),
@@ -137,6 +149,10 @@ export function createBrowserHelia(): Promise<any> {
 
       } catch (error: any) {
         console.warn(`⚠️ [HeliaInit] Не удалось подключиться к релею ${relay.name || relay.peerId.slice(-6)}. Ошибка: ${error.message}`);
+        
+        // 🟢 ДОБАВЛЕНО: Если при старте релей лежит, сразу кидаем его в карантин
+        relayManager.markRelayFailed(relay.peerId);
+        
         currentRelayIndex++; 
 
         if (heliaNode) {

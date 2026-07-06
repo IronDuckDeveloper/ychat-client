@@ -8,7 +8,7 @@ import { getAllContacts, saveContact, deleteContact, syncContactHistory, getCont
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG, type ContactItem, type PrivacyType } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
-import { requestPeerProfile } from '../lib/p2p/services/profileService.ts';
+import { requestPeerProfile, forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
 import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts'; 
 
@@ -356,8 +356,19 @@ export const useContactsLogic = () => {
   const handleRefreshContact = async (e: React.MouseEvent, targetPeerId: string) => {
     e.stopPropagation();
     if (globalHelia) {
-      await requestPeerProfile(globalHelia, targetPeerId);
-      showToast('Запрос на обновление профиля отправлен');
+      const targetContact = contacts.find(c => c.id === targetPeerId);
+      
+      if (targetContact) {
+        showToast('🔄 Запрос на обновление отправлен...');
+        
+        // 🚀 Канал 1: Пробуем стянуть напрямую через OrbitDB (если сеть позволяет)
+        forceSyncContactProfile(globalContactsDb, targetContact);
+        
+        // 🚀 Канал 2: Пинаем пира через PubSub (пробивает transient-соединения!)
+        await requestPeerProfile(globalHelia, targetPeerId);
+      } else {
+        showToast('❌ Ошибка: контакт не найден');
+      }
     }
   };
 
@@ -378,13 +389,16 @@ export const useContactsLogic = () => {
     });
   };
 
-  const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarBlob: Blob | null, newPrivacy: PrivacyType) => {
+const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarBlob: Blob | null, newPrivacy: PrivacyType) => {
     if (!dbInstance) return;
     try {
       const timestamp = Date.now();
       await dbInstance.put(CONFIG.PROFILE.KEY_NICKNAME, newNickname);
       await dbInstance.put(CONFIG.PROFILE.KEY_BIO, newBio);
       await dbInstance.put(CONFIG.PROFILE.KEY_LAST_UPDATED, timestamp);
+
+      // Запоминаем текущий CID аватарки, чтобы правильно отправить его в сеть
+      let currentAvatarCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_CID);
 
       if (newAvatarBlob && globalHelia) {
         const cid = await uploadAvatarToHelia(globalHelia, newAvatarBlob);
@@ -395,17 +409,25 @@ export const useContactsLogic = () => {
           }
         } catch {}
         await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, cid);
+        currentAvatarCid = cid; // Обновляем CID на свежезагруженный
         setMyAvatarUrl(URL.createObjectURL(newAvatarBlob));
       }
       
       setMyNickname(newNickname);
       setMyBio(newBio);
       
-      // Используем dbInstance вместо profileDb
       await dbInstance.put(CONFIG.PROFILE.KEY_PRIVACY, newPrivacy);
       setMyPrivacy(newPrivacy);
       
-      if (globalHelia) await broadcastMyProfile();
+      // 🚀 ФИКС САФАРИ: Передаем 100% свежие данные напрямую в функцию,
+      // чтобы она не пыталась читать их из тормозящей локальной базы
+      if (globalHelia) {
+        await broadcastMyProfile({
+          [CONFIG.PROFILE.KEY_NICKNAME]: newNickname,
+          [CONFIG.PROFILE.KEY_BIO]: newBio,
+          [CONFIG.PROFILE.KEY_AVATAR_CID]: currentAvatarCid
+        });
+      }
 
       showToast('✨ Профиль успешно сохранен!');
     } catch (error) {
@@ -489,6 +511,7 @@ export const useContactsLogic = () => {
           chatDbAddress: '', 
           nickname: `Пир: ${targetId.slice(0, 8)}...`, 
           avatarCid: '',
+          bio: '',
           updatedAt: Date.now(),
           isBlocked: isActuallyBlocked,
           isDeleted: false 
@@ -499,8 +522,16 @@ export const useContactsLogic = () => {
 
       setContacts(await getAllContacts(globalContactsDb));
 
-      if (globalHelia){ 
+      if (globalHelia) {
+        const freshContact = await getContactById(globalContactsDb, targetId);
+        
+        // 🚀 Всегда шлем PubSub запрос для мгновенного отклика
         await requestPeerProfile(globalHelia, targetId);
+        
+        // Параллельно запускаем OrbitDB синхронизацию
+        if (freshContact && freshContact.profileDbAddress) {
+          await forceSyncContactProfile(globalContactsDb, freshContact);
+        }
       }
 
     } catch (error) {
@@ -571,7 +602,11 @@ export const useContactsLogic = () => {
       window.dispatchEvent(new Event('onContactsUpdated'));
       
       if (globalHelia) {
-        await requestPeerProfile(globalHelia, id);
+        if (updatedContact.profileDbAddress) {
+          await forceSyncContactProfile(globalContactsDb, targetContact);
+        } else {
+          await requestPeerProfile(globalHelia, id);
+        }
       }
 
       if (updatedContact.chatDbAddress) {
@@ -612,3 +647,5 @@ export const useContactsLogic = () => {
     handleBlockContact, handleUnblockAndRefresh
   };
 };
+
+

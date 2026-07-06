@@ -38,6 +38,7 @@ export interface ContactItem {
   chatDbAddress: string;    // Адрес вашей общей базы сообщений (eventlog)
   nickname: string;         // Кэш никнейма для моментального UI
   avatarCid: string;        // Кэш аватара для моментального UI
+  bio?: string;             // Кэш био для моментального UI
   updatedAt: number;        // Таймстемп (для сортировки списка чатов)
   lastMessage?: string; // Текст последнего сообщения
   lastMessageTime?: number; // Таймстемп последнего сообщения

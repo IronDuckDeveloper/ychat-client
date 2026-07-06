@@ -1,0 +1,31 @@
+@import './variables.scss';
+
+.ui-avatar {
+  width: 3rem; 
+  height: 3rem;
+  background-color: rgba($text_variant, 0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $text_variant; 
+  overflow: hidden;
+  transition: all 0.2s ease;
+  flex-shrink: 0; // Запрещаем аватару сжиматься во flex-контейнерах
+
+  &.clickable {
+    cursor: pointer;
+
+    &:hover {
+      background-color: rgba($text_variant, 0.25);
+      transform: scale(1.04);
+    }
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block; 
+  }
+}

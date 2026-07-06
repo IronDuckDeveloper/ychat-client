@@ -24,32 +24,6 @@
     align-items: center;
     gap: 0.75rem;
 
-    .avatar {
-      width: 3rem; 
-      height: 3rem;
-      background-color: rgba($text_variant, 0.15);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: $text_variant; 
-      overflow: hidden;
-      transition: all 0.2s ease;
-
-      &:hover {
-        background-color: rgba($text_variant, 0.25);
-        transform: scale(1.02);
-      }
-
-      img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block; 
-      }
-    }
-
     .username {
       font-weight: 600;
       color: $text_variant;

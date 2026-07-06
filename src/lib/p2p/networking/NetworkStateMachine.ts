@@ -129,48 +129,69 @@ private startWatchdog() {
     }
   }
 
-  // src/network/NetworkStateMachine.ts
-
   public async recoverNetwork() {
     if (this.state === NET_STATE.RECOVERING) return;
     this.transitionTo(NET_STATE.RECOVERING);
 
+    // 🧹 АМНИСТИЯ: Сбрасываем карантин перед попытками дозвона!
+    // Это предотвратит блокировку рабочих релеев Connection Gater'ом.
+    if (this.relayManager && typeof this.relayManager.clearQuarantine === 'function') {
+      this.relayManager.clearQuarantine();
+    }
+
     try {
       const activeRelay = this.relayManager.getPool()[this.relayManager.getActiveIndex() || 0];
       
-      // 1. Не ждем результатов сети! Запускаем пинг и дайлинг в фоне.
-      // Пусть libp2p сам разбирается с соединением, не блокируя стейт-машину.
       if (activeRelay) {
-        this.libp2p.services.ping.ping(peerIdFromString(activeRelay.peerId))
-          .catch(async () => {
-            console.warn('⚠️ [Network] Пинг релея не прошел, пробуем переподключиться в фоне...');
-            const { multiaddr } = await import('@multiformats/multiaddr');
-            const targetStr = `${activeRelay.address}/p2p/${activeRelay.peerId}`;
+        try {
+          // 1. Сначала пробуем просто пингануть (быстрая проверка)
+          await this.libp2p.services.ping.ping(peerIdFromString(activeRelay.peerId));
+        } catch (pingErr) {
+          console.warn('⚠️ [Network] Пинг релея не прошел, пробуем переподключиться...');
+          const { multiaddr } = await import('@multiformats/multiaddr');
+          const targetStr = `${activeRelay.address}/p2p/${activeRelay.peerId}`;
+          
+          try {
+            // 2. ЖДЕМ результата дозвона. Это критически важно!
+            await this.libp2p.dial(multiaddr(targetStr));
+          } catch (dialErr: any) {
+            console.warn('⚠️ [Network] Фоновый dial не удался:', dialErr.message);
             
-            // Фоновый dial без await
-            this.libp2p.dial(multiaddr(targetStr)).catch((e: any) => {
-              console.warn('⚠️ [Network] Фоновый dial не удался:', e.message);
-            });
-          });
+            // 3. ❌ РЕЛЕЙ МЕРТВ. Сбрасываем стейт и заставляем менеджер искать новый!
+            this.transitionTo(NET_STATE.DISCONNECTED);
+            
+            if (this.relayManager.switchToNextRelay) {
+              await this.relayManager.switchToNextRelay();
+              
+              // 🔥 ИСПРАВЛЕНИЕ ЗДЕСЬ:
+              // Релей успешно сменился. Запускаем рекавери заново, 
+              // чтобы пройти процесс с новым рабочим релеем!
+              this.recoverNetwork();
+            }
+            
+            // Прерываем текущий цикл, так как мы запустили новый круг восстановления
+            return; 
+          }
+        }
       }
 
-      // 2. Мгновенно подписываемся на топики (это локальная операция, она быстрая)
+      // --- ЕСЛИ МЫ ДОШЛИ СЮДА, ЗНАЧИТ СВЯЗЬ С РЕЛЕЕМ УСТАНОВЛЕНА ---
+
+      // 4. Подписываемся на топики
       try {
         this.libp2p.services.pubsub.subscribe(this.pubsubTopic);
       } catch (e) { /* Игнорируем */ }
 
-      // 3. Отправляем профиль и дергаем БД СРАЗУ, без таймаутов. 
-      // Если сети еще нет - OrbitDB запишет все в локальный IndexedDB и отправит позже.
+      // 5. Отправляем профиль
       if (this.broadcastMyProfile) this.broadcastMyProfile().catch(() => {});
 
-      // 4. Пытаемся кинуть WAKEUP, но не ждем его
+      // 6. Пытаемся кинуть WAKEUP
       try {
         const wakeupMsg = new TextEncoder().encode(JSON.stringify({ type: CONFIG.MSG?.WAKEUP || 'WAKEUP' }));
-        // Убираем await, чтобы не висеть на transient connection
         this.libp2p.services.pubsub.publish(this.pubsubTopic, wakeupMsg).catch(() => {});
       } catch (e) {}
 
-      // Мгновенно возвращаем состояние CONNECTED, чтобы UI мог нормально работать с локальной БД
+      // 7. Только теперь честно переходим в CONNECTED
       this.transitionTo(NET_STATE.CONNECTED);
 
     } catch (error) {

@@ -1,4 +1,3 @@
-// Добавляем импорт relayManager из твоего клиента!
 import { createBrowserHelia, relayManager } from '../networking/heliaClient.ts';
 import { getOrbitDB } from '../orbit/client.ts';
 import { getFilteredProfileData, initProfileDB } from './profileService.ts';
@@ -80,21 +79,27 @@ export async function broadcastMyProfile(customProfileData?: any) {
   try {
     const myPeerId = globalHelia.libp2p.peerId.toString();
     
-    // Если передали отфильтрованные данные (customProfileData), берем их. 
-    // Если нет (например, юзер просто обновил профиль) - достаем реальные из БД.
-    const nickname = customProfileData 
+    // 🔥 ФИКС: Явные проверки наличия ключа. Если в customProfileData ключа нет, 
+    // обязательно тянем его из базы профиля.
+    const nickname = customProfileData && customProfileData[CONFIG.PROFILE.KEY_NICKNAME] !== undefined
       ? customProfileData[CONFIG.PROFILE.KEY_NICKNAME] 
       : await globalProfileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
       
-    const avatarCid = customProfileData 
+    const avatarCid = customProfileData && customProfileData[CONFIG.PROFILE.KEY_AVATAR_CID] !== undefined
       ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_CID] 
       : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
 
+    const bio = customProfileData && customProfileData[CONFIG.PROFILE.KEY_BIO] !== undefined
+      ? customProfileData[CONFIG.PROFILE.KEY_BIO]
+      : await globalProfileDb.get(CONFIG.PROFILE.KEY_BIO);
+
     const updateMsg = {
       type: CONFIG.PROFILE.MSG_PROFILE_UPDATED,
-      senderId: myPeerId,
+      senderId: myPeerId || '',
       nickname: nickname || 'Аноним',
-      avatarCid: avatarCid || '' // Если авы нет, шлем пустую строку
+      avatarCid: avatarCid || '',
+      bio: bio || '',
+      profileDbAddress: globalProfileDb.address.toString() || '',
     };
 
     const encoded = new TextEncoder().encode(JSON.stringify(updateMsg));
@@ -168,7 +173,9 @@ export async function initializeApp(nicknameForRegistration?: string) {
       }
 
       const myPeerId = globalHelia.libp2p.peerId.toString();
-      const senderId = evt.detail.from.toString();
+      
+      // evt.detail.from.toString() может содержать ID релея, через который прошло сообщение.
+      const senderId = msg.senderId || evt.detail.from.toString();
       
       // Игнорируем эхо от собственных сообщений
       if (senderId === myPeerId) return;
@@ -186,7 +193,15 @@ export async function initializeApp(nicknameForRegistration?: string) {
       if (currentTopic === CONFIG.TOPICS.WAKEUP_SYNC_TOPIC) {
         try {
           if (msg.type === CONFIG.MSG.WAKEUP) {
-            console.log(`🔔 [PubSub] Пир ${senderId.slice(-6)} проснулся! Синхронизация превью делегирована топику ANNOUNCE_NEW_MESSAGE.`);
+            console.log(`🔔 [PubSub] Пир ${senderId.slice(-6)} проснулся! Отправляем ему наш профиль для синхронизации.`);
+            
+            // Прогоняем профиль через твой фильтр приватности для конкретного пира, который проснулся
+            const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, senderId);
+
+            if (filteredProfile) {
+              // Рассылаем ему свежие данные, чтобы он обновил свою записную книжку
+              await broadcastMyProfile(filteredProfile); 
+            }
           }
         } catch (e) {
           console.error('❌ Ошибка при обработке WAKEUP_PING:', e);
@@ -196,25 +211,39 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
       // 3. Обработка PROFILE_UPDATED
       if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {  
-        console.log(`📩 [PubSub Сеть] Получено обновление профиля от ${msg.senderId.slice(0,8)}`);
+        console.log(`📩 [PubSub Сеть] Получено обновление профиля от ${senderId.slice(0,8)}`);
         
-        const contact = await getContact(globalContactsDb, msg.senderId);
+        const contact = await getContact(globalContactsDb, senderId);
         
         if (contact) {
           let isChanged = false;
 
-          // Проверяем исключительно данные профиля: ник и аватар
-          if (contact.avatarCid !== msg.avatarCid || contact.nickname !== msg.nickname) {
+          // 🔥 ИСПРАВЛЕНО: Добавлена проверка изменения profileDbAddress
+          if (
+            contact.avatarCid !== msg.avatarCid || 
+            contact.nickname !== msg.nickname ||
+            contact.bio !== msg.bio ||
+            contact.profileDbAddress !== msg.profileDbAddress
+          ) {
             contact.avatarCid = msg.avatarCid;
             contact.nickname = msg.nickname;
+            contact.bio = msg.bio || '';
+            
+            // Записываем адрес БД, только если он реально пришел
+            if (msg.profileDbAddress) {
+              contact.profileDbAddress = msg.profileDbAddress;
+            }
+            
             isChanged = true;
           }
 
           if (isChanged) {
-            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}`);
+            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}, адрес БД: ${contact.profileDbAddress}`);
             contact.updatedAt = Date.now();
             await saveContact(globalContactsDb, contact);
-            window.dispatchEvent(new Event('onContactsUpdated'));
+            window.dispatchEvent(new CustomEvent('onContactsUpdated', { 
+              detail: { peerId: senderId } 
+            }));
           }
         }
       }
@@ -320,6 +349,54 @@ export async function initializeApp(nicknameForRegistration?: string) {
     }
 
     console.log('✅ [Init] Инициализация успешно завершена!');
+    
+    // 🔥 СМАРТ-ФИКС: Циклический запуск WAKEUP с контролем пиров и версионированием
+    let wakeupAttempts = 0;
+    const maxWakeupAttempts = 10; // Пробуем в течение 30 секунд
+
+    const trySendWakeup = setInterval(async () => {
+      wakeupAttempts++;
+      
+      if (wakeupAttempts > maxWakeupAttempts) {
+        console.warn('❌ [Mesh] Не удалось дождаться появления PubSub пиров. WAKEUP отменен.');
+        clearInterval(trySendWakeup);
+        return;
+      }
+
+      try {
+        const pubsub = globalHelia?.libp2p?.services?.pubsub;
+        if (!pubsub) return;
+
+        const peers = pubsub.getPeers();
+
+        if (peers.length > 0) {
+          console.log(`📢 [Mesh] Сеть ожила (пиров: ${peers.length}). Отправляем WAKEUP с таймстемпом на попытке ${wakeupAttempts}...`);
+          
+          // Достаем метку последнего обновления нашего профиля
+          const myPeerId = globalHelia.libp2p.peerId.toString();
+          const lastUpdated = await globalProfileDb.get(CONFIG.PROFILE.KEY_LAST_UPDATED) || Date.now();
+
+          const wakeupMsg = { 
+            type: CONFIG.MSG.WAKEUP,
+            senderId: myPeerId,
+            updatedAt: lastUpdated // 🧠 Твоя идея: шлем версию (время) нашего профиля
+          };
+
+          await pubsub.publish(
+            CONFIG.TOPICS.WAKEUP_SYNC_TOPIC,
+            new TextEncoder().encode(JSON.stringify(wakeupMsg))
+          );
+
+          clearInterval(trySendWakeup); // Успешно отправили — выключаем таймер!
+        } else {
+          console.log(`⏳ [Mesh] Ожидание PubSub пиров для отправки WAKEUP... (попытка ${wakeupAttempts}/${maxWakeupAttempts})`);
+        }
+      } catch (err) {
+        console.error('❌ Ошибка при попытке отправить WAKEUP:', err);
+      }
+    }, 3000); // Опрашиваем каждые 3 секунды
+
+    // return { helia, profileDb, contactsDb, sessionToken: password };
 
     dbReadyCallbacks.forEach(cb => cb());
     dbReadyCallbacks = []; 
@@ -351,8 +428,6 @@ export async function initializeApp(nicknameForRegistration?: string) {
     isInitializing = false;
   }
 }
-
-// Добавь в конец файла инициализации P2P-ноды (например, authService.ts)
 
 if (import.meta.hot) {
   import.meta.hot.dispose(async () => {
