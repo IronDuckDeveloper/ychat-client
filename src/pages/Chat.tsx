@@ -56,7 +56,6 @@ const Chat = () => {
   return (
     <div className="chat-container">
     {/* Разворот профиля контакта */}
-    {isContactProfileOpen && (
       <ContactProfileDrawer 
         isOpen={isContactProfileOpen}
         onClose={() => setIsContactProfileOpen(false)}
@@ -64,7 +63,7 @@ const Chat = () => {
         bio={contact?.bio || ''}
         avatarUrl={avatarUrl}
       />
-    )}
+
       <header className="chat-header">
         <div className="header-left">
           <button className="back-button" onClick={() => navigate('/contacts', { replace: true })}>

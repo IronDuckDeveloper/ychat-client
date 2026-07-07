@@ -3,8 +3,8 @@ import { CONFIG, type ContactItem } from '../config.ts';
 import { requestPeerProfile } from './profileService'; 
 import { getOrOpenDb } from './authService.ts';
 
-  // Глобальный кэш для защиты от двойной синхронизации 
-  const syncCooldowns = new Map<string, number>();
+// Глобальный кэш для защиты от двойной синхронизации 
+const syncCooldowns = new Map<string, number>();
 
 // 🧠 Локальный кэш контактов для мгновенного UI и дедупликатор запросов
 let cachedContacts: ContactItem[] = [];
@@ -82,22 +82,29 @@ export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<bo
 export const saveContact = async (contactsDb: any, contact: ContactItem) => {
   if (!contactsDb) throw new Error("База контактов не инициализирована");
   
+  // 🧹 Санитизация объекта: удаляем любые свойства со значением undefined, чтобы IPLD модель не падала
+  const sanitizedContact = { ...contact };
+  Object.keys(sanitizedContact).forEach(key => {
+    if ((sanitizedContact as any)[key] === undefined) {
+      delete (sanitizedContact as any)[key];
+    }
+  });
+
   // 1. 🔥 ОПЕРЕЖАЮЩЕЕ ОБНОВЛЕНИЕ: Мгновенно обновляем кэш ДО записи в базу.
-  // Это гарантирует, что если юзер мгновенно выйдет из чата, React уже получит 0 непрочитанных.
   let newCache = [...cachedContacts];
-  const idx = newCache.findIndex(c => c.id === contact.id);
-  if (contact.isDeleted) {
+  const idx = newCache.findIndex(c => c.id === sanitizedContact.id);
+  if (sanitizedContact.isDeleted) {
     if (idx !== -1) newCache.splice(idx, 1);
   } else {
-    if (idx !== -1) newCache[idx] = contact;
-    else newCache.push(contact);
+    if (idx !== -1) newCache[idx] = sanitizedContact;
+    else newCache.push(sanitizedContact);
     newCache.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
   cachedContacts = newCache; 
 
   // 2. Асинхронно сохраняем на диск (React не будет ждать эту операцию)
-  await contactsDb.put(contact.id, contact); 
-  console.log(`💾 [ContactsDB] Контакт ${contact.nickname || contact.id} сохранен.`);
+  await contactsDb.put(sanitizedContact.id, sanitizedContact); 
+  console.log(`💾 [ContactsDB] Контакт ${sanitizedContact.nickname || sanitizedContact.id} сохранен.`);
 };
 
 export const getContact = async (contactsDb: any, peerId: string): Promise<ContactItem | null> => {
@@ -111,23 +118,18 @@ export const getContact = async (contactsDb: any, peerId: string): Promise<Conta
 
 /**
  * ⚡ Оптимизированное получение всех контактов.
- * Предотвращает множественные параллельные запросы к Safari IndexedDB.
  */
 export const getAllContacts = async (contactsDb: any): Promise<ContactItem[]> => {
   if (!contactsDb) return [];
   
-  // Если данные уже есть в кэше — отдаем их мгновенно (0ms)
   if (cachedContacts.length > 0) {
     return [...cachedContacts]; 
   }
 
-  // Если запрос к БД прямо сейчас ЗАДЕНЯН (уже выполняется другим компонентом),
-  // возвращаем этот же Promise, не создавая новую транзакцию в Safari.
   if (getAllContactsPromise) {
     return getAllContactsPromise;
   }
 
-  // Подписываемся на живые обновления репликации OrbitDB (один раз за сессию)
   if (!isSubscribedToUpdates && contactsDb.events) {
     isSubscribedToUpdates = true;
     contactsDb.events.on('update', async () => {
@@ -150,7 +152,6 @@ export const getAllContacts = async (contactsDb: any): Promise<ContactItem[]> =>
       console.error('❌ [ContactsDB] Критическая ошибка чтения `.all()`:', error);
       return [];
     } finally {
-      // Обязательно очищаем промис дедупликатора, когда операция завершена
       getAllContactsPromise = null;
     }
   })();
@@ -201,7 +202,7 @@ export const updateLastMessage = async (
       return; 
     }
 
-    contact.lastMessage = text;
+    contact.lastMessage = text || '';
     contact.lastMessageTime = timestamp;
     contact.updatedAt = Math.max(contact.updatedAt, timestamp);
 
@@ -269,7 +270,7 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
     if (contact) {
       if (contact.chatDbAddress === address) return;
       contact.chatDbAddress = address;
-      await saveContact(db, contact); // Используем saveContact чтобы обновить кэш
+      await saveContact(db, contact); 
       console.log(`🎯 [ContactsDB] Сохранен адрес базы чата: ${address}`);
 
       setTimeout(async () => {
@@ -285,17 +286,13 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
   if (contact.isBlocked) return;
   if (!contact.chatDbAddress) return;
 
-  // 🛡️ ТАМОЖНЯ: Проверяем, не проверяли ли мы этот чат только что
   const now = Date.now();
   const lastSynced = syncCooldowns.get(contact.id) || 0;
 
   if (now - lastSynced < CONFIG.COOLDOWN_TIME) {
-    // Тихо выходим, не трогая базу данных. Observer идет лесом.
-    // console.log(`🛡️ [Sync] Контакт ${contact.nickname} уже проверен App.tsx. Скипаем.`);
     return;
   }
 
-  // Записываем время текущей проверки
   syncCooldowns.set(contact.id, now);
 
   const chatDb = await getOrOpenDb(contact.chatDbAddress);
@@ -310,7 +307,6 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
       isFinished = true;
 
       clearTimeout(idleTimer);
-      // Обязательно отписываемся от событий
       chatDb.events.off('update', onUpdate); 
 
       try {
@@ -332,13 +328,18 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
             console.log(`📥 [Холодный старт] Нашли ${newMessages.length} сообщений от ${contact.nickname}`);
             
             const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
-            let newUnreadCount = !isCurrentlyInThisChat ? (contact.unreadCount || 0) + newMessages.length : 0;
+            
+            // 🛡️ Фикс гонки: запрашиваем МАКСИМАЛЬНО АКТУАЛЬНЫЙ объект контакта из кэша/БД.
+            // Это предотвратит затирание никнейма (например, Леви4), полученного по PubSub во время ожидания БД.
+            const freshContact = await getContact(contactsDb, contact.id) || contact;
+            
+            let newUnreadCount = !isCurrentlyInThisChat ? (freshContact.unreadCount || 0) + newMessages.length : 0;
 
             await saveContact(contactsDb, {
-              ...contact,
-              lastMessage: latestMsg.text,
-              lastMessageTime: latestMsg.ts,
-              updatedAt: latestMsg.ts,
+              ...freshContact,
+              lastMessage: latestMsg?.text || '',
+              lastMessageTime: latestMsg?.ts || Date.now(),
+              updatedAt: Math.max(freshContact.updatedAt || 0, latestMsg?.ts || Date.now()),
               unreadCount: newUnreadCount 
             });
 
@@ -351,12 +352,8 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
       } catch (dbError) {
         console.error(`❌ Ошибка чтения истории ${contact.nickname}:`, dbError);
       } finally {
-        // 🛑 ИСПРАВЛЕНИЕ ЗДЕСЬ: Не закрываем БД, если юзер сейчас в этом чате
         try {
-          // 🛑 Читаем URL в самую последнюю секунду перед закрытием
           const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
-          
-          // Проверяем только по contact.id и contact.room (dbAddress убрали, так как он undefined)
           const isCurrentlyInThisChat = currentUrl.includes(contact.id) || 
             (contact.room && currentUrl.includes(contact.room));
 
@@ -376,32 +373,20 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
 
     const onUpdate = () => {
       clearTimeout(idleTimer);
-      // Если пошли пакеты обновлений, ждем 300мс тишины перед финализацией
       idleTimer = setTimeout(finalizeSync, 300); 
     };
     
     chatDb.events.on('update', onUpdate);
-    
-    // ⏳ Увеличиваем стартовый таймаут ожидания Архивариуса до 1.5 - 2 секунд.
-    // 500мс для установки прямого потока в libp2p и стягивания DAG'ов часто не хватает.
     idleTimer = setTimeout(finalizeSync, 2000);
   });
 }
 
-/**
- * Пакетная проверка истории для всех контактов. 
- * Безопасна для Safari (выполняется последовательно).
- */
 export async function syncTopContactsHistory(contactsDb: any, limit = 10) {
   console.log(`🔄 [Холодный старт] Проверка пропущенных сообщений для ТОП-${limit} активных чатов...`);
   try {
-    const allContacts = await getAllContacts(contactsDb); // Уже отсортированы и отфильтрованы
-    
-    // Берем только первые N контактов
+    const allContacts = await getAllContacts(contactsDb); 
     const topContacts = allContacts.slice(0, limit);
     
-    // 🚨 ТАБУ НА Promise.all ДЛЯ СИНХРОНИЗАЦИИ БД В SAFARI!
-    // Открываем базы чатов строго один за другим, чтобы не вешать поток IndexedDB
     for (const contact of topContacts) {
       await syncContactHistory(contact, contactsDb);
     }

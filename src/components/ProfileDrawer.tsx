@@ -31,13 +31,20 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
 
   useEffect(() => {
     if (isOpen) {
-      setEditNickname(nickname);
-      setEditBio(bio);
-      setEditPrivacy(privacy);
-      setDraftAvatarUrl(avatarUrl);
-      setDraftAvatarBlob(null);
-      setIsEditing(false);
-      setIsCameraActive(false);
+      // 🏁 ТРЮК ТУТ: Откладываем обновление стейтов на 40мс. 
+      // Этого времени браузеру с запасом хватит, чтобы инициировать плавный transition,
+      // и последующий ререндер формы уже не сможет прервать анимацию движения.
+      const timer = setTimeout(() => {
+        setEditNickname(nickname);
+        setEditBio(bio);
+        setEditPrivacy(privacy);
+        setDraftAvatarUrl(avatarUrl);
+        setDraftAvatarBlob(null);
+        setIsEditing(false);
+        setIsCameraActive(false);
+      }, 40);
+
+      return () => clearTimeout(timer);
     } else {
       stopCamera(); 
     }
@@ -118,7 +125,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
       <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}/>
       <div className={`profile-drawer ${isOpen ? 'open' : ''}`}>
         
-        {/* ВЕРХНЯЯ ПАНЕЛЬ (как в Contacts) */}
+        {/* ВЕРХНЯЯ ПАНЕЛЬ */}
         <div className="drawer-header">
           <div className="header-left">
             {!isEditing && (
@@ -131,7 +138,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
             )}
           </div>
 
-<div className="header-actions">
+          <div className="header-actions">
             {!isEditing ? (
               <HeaderActionButton 
                 onClick={() => setIsEditing(true)} 
@@ -139,7 +146,6 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
                 title="Редактировать" 
               />
             ) : (
-              // Показываем кнопку "Сохранить" только если камера ВЫКЛЮЧЕНА
               !isCameraActive && (
                 <HeaderActionButton 
                   onClick={handleSave} 
@@ -149,15 +155,14 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
               )
             )}
             
-            {/* Умная кнопка "Закрыть" */}
             <HeaderActionButton 
               onClick={() => {
                 if (isCameraActive) {
-                  stopCamera(); // Если включена камера - просто вырубаем её, оставаясь в режиме редактирования
+                  stopCamera(); 
                 } else if (isEditing) {
-                  handleCancelEdit(); // Если просто редактируем - сбрасываем всё
+                  handleCancelEdit(); 
                 } else {
-                  onClose(); // Если просто смотрим профиль - закрываем шторку
+                  onClose(); 
                 }
               }} 
               icon={isEditing ? <X size={20} /> : <ArrowLeftFromLine size={20} />} 
@@ -174,7 +179,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
             <span className="privacy-label">Кто видит профиль:</span>
             {isEditing ? (
               <select 
-                title="Кто видит профиль"
+                title="Who sees profile"
                 className="privacy-select"
                 value={editPrivacy} 
                 onChange={(e) => setEditPrivacy(e.target.value as PrivacyType)}
@@ -190,7 +195,7 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
 
           {/* АВАТАРКА */}
           <div className="avatar-container">
-            <input title='Био' type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*" />
+            <input title='Bio' type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} accept="image/*" />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
 
             {isCameraActive ? (
@@ -206,8 +211,8 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
             
             {!isCameraActive && isEditing && (
               <div className="avatar-edit-actions">
-                <button title='Файл' className="avatar-action-btn" onClick={() => fileInputRef.current?.click()}><Upload size={22} /></button>
-                <button title='Камера' className="avatar-action-btn" onClick={startCamera}><Camera size={22} /></button>
+                <button title='File' className="avatar-action-btn" onClick={() => fileInputRef.current?.click()}><Upload size={22} /></button>
+                <button title='Camera' className="avatar-action-btn" onClick={startCamera}><Camera size={22} /></button>
               </div>
             )}
           </div>
@@ -215,8 +220,14 @@ const ProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl, privacy = 'p
           <div className="profile-info-container">
             {isEditing ? (
               <div className="drawer-inputs-group">
-                <div className="drawer-input-wrapper"><User size={18} className="drawer-input-icon" /><input type="text" className="drawer-nickname-input" value={editNickname} onChange={(e) => setEditNickname(e.target.value)} maxLength={32} placeholder="Ваш никнейм" /></div>
-                <div className="drawer-input-wrapper alignment-top"><Info size={18} className="drawer-input-icon textarea-icon" /><textarea className="drawer-nickname-input bio-textarea" value={editBio} onChange={(e) => setEditBio(e.target.value)} maxLength={500} placeholder="Расскажите о себе..." rows={4} /></div>
+                <div className="drawer-input-wrapper">
+                  <User size={18} className="drawer-input-icon" />
+                  <input type="text" className="drawer-nickname-input" value={editNickname} onChange={(e) => setEditNickname(e.target.value)} maxLength={32} placeholder="Ваш никнейм" />
+                </div>
+                <div className="drawer-input-wrapper alignment-top">
+                  <Info size={18} className="drawer-input-icon textarea-icon" />
+                  <textarea className="drawer-nickname-input bio-textarea" value={editBio} onChange={(e) => setEditBio(e.target.value)} maxLength={500} placeholder="Расскажите о себе..." rows={4} />
+                </div>
               </div>
             ) : (
               <div className="info-display">

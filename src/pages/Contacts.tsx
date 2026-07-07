@@ -26,10 +26,8 @@ const ContactList = () => {
     addVideoRef, closeDialog, toggleContactMenu, toggleHeaderMenu, 
     handleCopyPeerId, onSubmitAddContact, handleRefreshContact, 
     handleDeleteContact, handleSaveProfile, handleLogout, 
-    handleBlockContact, handleUnblockAndRefresh,
+    handleBlockContact, handleUnblockAndRefresh, syncContactInQueue
   } = useContactsLogic();
-
-  const { syncContactInQueue, /* другие методы */ } = useContactsLogic();
   
   // --- ОЧЕРЕДЬ ДЛЯ ЗАГРУЗКИ КОНТАКТОВ ---
   const observer = useRef<IntersectionObserver | null>(null);

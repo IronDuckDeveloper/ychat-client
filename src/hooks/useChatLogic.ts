@@ -66,24 +66,27 @@ export const useChatLogic = () => {
     }
   };
 
-  // Подписываемся на событие обновления контактов, чтобы ловить прилетающие био/аватарки в реалтайме
+// Подписываемся на событие обновления контактов
   useEffect(() => {
     window.addEventListener('onContactsUpdated', refreshContactData);
     
-    if (globalContactsDb && peerId) {
+    // 👈 Проверяем isReady. Как только он станет true, база уже гарантированно открыта
+    if (isReady && globalContactsDb && peerId) {
       refreshContactData();
     }
 
     return () => {
       window.removeEventListener('onContactsUpdated', refreshContactData);
     };
-  }, [peerId, globalContactsDb]);
+  }, [peerId, isReady]); // 👈 ГЛАВНОЕ: добавили isReady в зависимости вместо глобальной переменной
 
-  // Логика получения аватара из Helia FS
+// Логика получения аватара из Helia FS
   useEffect(() => {
-    if (!globalHelia || !contact?.avatarCid) {
-      setAvatarUrl(null);
-      return;
+    // Ждем, пока нода реально поднимется (isReady === true) и появится globalHelia
+    if (!isReady || !globalHelia || !contact?.avatarCid) {
+      // Убрали setAvatarUrl(null), чтобы при F5 аватар не мигал, 
+      // если он придет чуть позже
+      return; 
     }
 
     let isMounted = true;
@@ -105,7 +108,7 @@ export const useChatLogic = () => {
     return () => {
       isMounted = false;
     };
-  }, [contact?.avatarCid]);
+  }, [contact?.avatarCid, isReady]); // 👈 ГЛАВНОЕ: добавили isReady в зависимости
 
   // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
@@ -138,6 +141,10 @@ export const useChatLogic = () => {
             const shouldIncrement = !isCurrentlyInThisChat && !isBackgroundSync && message.type !== 'sent';
 
             contactsService.updateLastMessage(globalContactsDb, peerId, message.text, message.ts || Date.now(), shouldIncrement);
+
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new Event('onContactsUpdated'));
+            }
 
             if (isCurrentlyInThisChat) {
               contactsService.clearUnread(globalContactsDb, peerId);
