@@ -4,9 +4,9 @@ import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
 
 import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
-import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById } from '../lib/p2p/services/contactsService.ts';
+import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
-import { CONFIG, type ContactItem, type PrivacyType } from '../lib/p2p/config.ts';
+import { CONFIG } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
 import { requestPeerProfile, forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';

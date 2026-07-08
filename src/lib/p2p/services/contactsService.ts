@@ -1,7 +1,24 @@
 import { IPFSAccessController } from '@orbitdb/core';
-import { CONFIG, type ContactItem } from '../config.ts';
+import { CONFIG } from '../config.ts';
 import { requestPeerProfile } from './profileService'; 
 import { getOrOpenDb } from './authService.ts';
+
+export interface ContactItem {
+  id: string;               // PeerID контакта
+  profileDbAddress: string; // Адрес его OrbitDB с профилем
+  chatDbAddress: string;    // Адрес вашей общей базы сообщений (eventlog)
+  nickname: string;         // Кэш никнейма для моментального UI
+  avatarCid: string;        // Кэш аватара для моментального UI
+  bio?: string;             // Кэш био для моментального UI
+  updatedAt: number;        // Таймстемп (для сортировки списка чатов)
+  lastMessage?: string; // Текст последнего сообщения
+  lastMessageTime?: number; // Таймстемп последнего сообщения
+  unreadCount?: number; // Количество непрочитанных сообщений
+  isBlocked?: boolean; // Флаг блокировки
+  isDeleted?: boolean; // Флаг удаления
+}
+
+export type PrivacyType = 'public' | 'contacts_only' | 'private';
 
 // Глобальный кэш для защиты от двойной синхронизации 
 const syncCooldowns = new Map<string, number>();

@@ -1,7 +1,7 @@
 import { User, Edit2, Check, X, Info, LogOut, Upload, Camera, ArrowLeftFromLine } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import HeaderActionButton from './HeaderActionButton.tsx';
-import type { PrivacyType } from '../lib/p2p/config.ts';
+import type { PrivacyType } from '../lib/p2p/services/contactsService.ts';
 
 interface ProfileDrawerProps {
   isOpen: boolean;

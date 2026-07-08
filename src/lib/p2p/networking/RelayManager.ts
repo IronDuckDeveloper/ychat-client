@@ -1,10 +1,17 @@
 import { multiaddr } from '@multiformats/multiaddr';
 import type { Libp2p } from '@libp2p/interface';
-import { CONFIG, type RelayConfig } from '../config.ts';
+import { CONFIG } from '../config.ts';
 import { pipe } from 'it-pipe';
 import * as lp from 'it-length-prefixed';
 import { peerIdFromString } from '@libp2p/peer-id';
 import { globalNetworkState } from './NetworkStateMachine.ts';
+
+// Интерфейс для конфигурации релея, который будет использоваться при добавлении релея в пул
+export interface RelayConfig {
+  name: string;
+  peerId: string;
+  address: string;
+}
 
 export class RelayManager {
   private relayPool: RelayConfig[] = [];

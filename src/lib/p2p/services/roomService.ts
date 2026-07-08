@@ -1,10 +1,34 @@
 import type { Helia } from 'helia';
 import type { Libp2p, PeerId } from '@libp2p/interface';
 import { getOrbitDB } from '../orbit/client.ts';
-import { type ChatMessage, type RoomActions, CONFIG } from '../config.ts';
+import { CONFIG } from '../config.ts';
 import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionManager.ts';
 import { relayManager } from '../networking/heliaClient.ts';
 import { OrbitDBAccessController } from '@orbitdb/core';
+import { type FileAttachment } from './fileService.ts';
+
+// Конфигурация приложения и интерфейсы для типов сообщений и действий в комнате чата.
+export type MessageType = 'sent' | 'received' | 'system';
+
+// Интерфейс для сообщений в чате
+export interface ChatMessage {
+  id: string;
+  whoSent: string;
+  text: string; // Может быть пустым, если отправили только фото
+  type: MessageType;
+  ts: number;
+  attachment?: FileAttachment;
+}
+
+// Интерфейс для действий в комнате, который возвращается при присоединении к комнате
+export interface RoomActions {
+  sendMessage: (message: string) => Promise<void>;
+  leaveRoom: () => void;
+  pingRoom?: () => void;
+  dbAddress: string;
+  loadMoreHistory: () => Promise<void>;
+  hasMoreHistory: () => boolean;
+}
 
 const roomSessions = new Map<string, {
   promise: Promise<any>;

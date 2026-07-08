@@ -1,6 +1,6 @@
-import { CONFIG, type ContactItem } from '../config.ts';
+import { CONFIG } from '../config.ts';
 import { getOrOpenDb } from './authService.ts'; 
-import { updateLastMessage, getAllContacts, saveContact, isPeerBlocked  } from './contactsService.ts';
+import { updateLastMessage, getAllContacts, saveContact, isPeerBlocked, type ContactItem  } from './contactsService.ts';
 import { forceSyncContactProfile, type SyncResult } from './profileService.ts';
 
 const openingDbsLock = new Set<string>();

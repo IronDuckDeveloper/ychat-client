@@ -2,11 +2,12 @@ import { useRef, useState, useEffect } from 'react';
 import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react'; 
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useIPFS } from './useIPFS.ts';
-import { getDeterministicRoomName } from '../lib/p2p/services/roomService.ts';
-import { type ChatMessage, type RoomActions, CONFIG, type ContactItem } from '../lib/p2p/config.ts';
+import { getDeterministicRoomName, type ChatMessage, type RoomActions } from '../lib/p2p/services/roomService.ts';
+import { CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
-import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
+import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService.ts';
 import { globalContactsDb, globalHelia } from '../lib/p2p/services/authService.ts';
+import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 
 interface RouterState {
   contactName?: string;

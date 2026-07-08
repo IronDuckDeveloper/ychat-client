@@ -1,54 +1,5 @@
 
 
-/* Интерфейсы должен лежать в самом верху файла, чтобы TS видел его до вызова функций */
-
-// Интерфейс для конфигурации релея, который будет использоваться при добавлении релея в пул
-export interface RelayConfig {
-  name: string;
-  peerId: string;
-  address: string;
-}
-
-// Конфигурация приложения и интерфейсы для типов сообщений и действий в комнате чата.
-export type MessageType = 'sent' | 'received' | 'system';
-
-// Интерфейс для сообщений в чате
-export interface ChatMessage {
-  id: string;
-  whoSent: string;
-  text: string;
-  type: MessageType;
-  ts: number;
-}
-
-// Интерфейс для действий в комнате, который возвращается при присоединении к комнате
-export interface RoomActions {
-  // или type RoomActions = {
-  sendMessage: (message: string) => Promise<void>;
-  leaveRoom: () => void;
-  pingRoom?: () => void;
-  dbAddress: string;
-  loadMoreHistory: () => Promise<void>;
-  hasMoreHistory: () => boolean;
-}
-
-export interface ContactItem {
-  id: string;               // PeerID контакта
-  profileDbAddress: string; // Адрес его OrbitDB с профилем
-  chatDbAddress: string;    // Адрес вашей общей базы сообщений (eventlog)
-  nickname: string;         // Кэш никнейма для моментального UI
-  avatarCid: string;        // Кэш аватара для моментального UI
-  bio?: string;             // Кэш био для моментального UI
-  updatedAt: number;        // Таймстемп (для сортировки списка чатов)
-  lastMessage?: string; // Текст последнего сообщения
-  lastMessageTime?: number; // Таймстемп последнего сообщения
-  unreadCount?: number; // Количество непрочитанных сообщений
-  isBlocked?: boolean; // Флаг блокировки
-  isDeleted?: boolean; // Флаг удаления
-}
-
-export type PrivacyType = 'public' | 'contacts_only' | 'private';
-
 export const CONFIG = {
   TOPIC_DISCOVERY: '_peer-discovery._p2p._pubsub', // Топик для обнаружения пиров
   ORBITDB_BLOCKS_DIR: './data/blocks.level', // Директория для хранения блоков OrbitDB
