@@ -72,7 +72,7 @@
   .date-separator {
     align-self: center; // По центру
     padding: 0.25rem 0.75rem; // Небольшие отступы для формы "пилюли"
-    background-color: rgba(#94a3b8, 0.15); // Используем цвет $hint с прозрачностью 15%
+    background-color: rgba($hint, 0.15); // Используем цвет $hint с прозрачностью 15%
     color: $hint; // Твой серый цвет из переменных
     border-radius: 12px;
     font-size: 0.75rem;
@@ -141,6 +141,47 @@ position: absolute;
     min-height: 48px;
     box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
     border: 1px solid rgba(153, 120, 171, 0.1);
+    position: relative;
+
+    .attachment-context-menu {
+      position: absolute;
+      bottom: 100%; // Открываем меню вверх (над инпутом)
+      left: 0;
+      margin-bottom: 12px; // Отступ от инпута вверх
+      background-color: $text_variant; // Белый фон (судя по переменным)
+      border: 1px solid rgba($user-bubble, 0.2);
+      border-radius: $radius;
+      box-shadow: 0 -4px 15px rgba($chat-bg-dark, 0.1); // Тень направлена вверх
+      display: flex;
+      flex-direction: column;
+      min-width: 160px;
+      z-index: 150; 
+      overflow: hidden;
+
+      button {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 12px 16px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        color: $text; 
+        transition: background-color 0.2s;
+        text-align: left;
+
+        &:hover {
+          background-color: $chat-bg-light;
+        }
+
+        svg {
+          color: $accent-prime; 
+          flex-shrink: 0;
+        }
+      }
+    }
 
     .attachment-button {
       background: none;

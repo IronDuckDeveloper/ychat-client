@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, Send, Paperclip } from 'lucide-react';
+import { ArrowLeft, Send, Paperclip, Image as ImageIcon, File, Music } from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
@@ -23,6 +23,7 @@ const Chat = () => {
   
   const [isBlocked, setIsBlocked] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
+  const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
   const {
     navigate,
@@ -157,9 +158,28 @@ const Chat = () => {
                 className="attachment-button"
                 aria-label="Attach file"
                 disabled={!isRoomReady}
+                onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
               >
                 <Paperclip size={20} className="attachment-icon" />
               </button>
+
+          {isAttachmentMenuOpen && (
+            <div className="attachment-context-menu">
+              <button onClick={() => { /* Тут логика отправки фото */ setIsAttachmentMenuOpen(false); }}>
+                <ImageIcon size={16} />
+                <span>Фото/Видео</span>
+              </button>
+              <button onClick={() => { /* Тут логика отправки файла */ setIsAttachmentMenuOpen(false); }}>
+                <File size={16} />
+                <span>Файл</span>
+              </button>
+              <button onClick={() => { /* Тут логика отправки аудио */ setIsAttachmentMenuOpen(false); }}>
+                <Music size={16} />
+                <span>Аудио</span>
+              </button>
+            </div>
+          )}
+
               <textarea
                 value={draft}
                 onChange={handleInput}
