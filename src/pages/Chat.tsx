@@ -1,18 +1,28 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { ArrowLeft, Send, Paperclip } from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
 import { isPeerBlocked } from '../lib/p2p/services/contactsService';
-import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx'; // 👈 Добавили импорт
+import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
+
+// Вспомогательная функция для форматирования даты (например: "28 мая 2026")
+const formatDateSeparator = (ts: number) => {
+  const date = new Date(ts);
+  return date.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).replace(' г.', ''); // Убираем 'г.' для большей эстетики
+};
 
 const Chat = () => {
   const { id } = useParams(); 
   
   const [isBlocked, setIsBlocked] = useState(false);
-  const [isContactProfileOpen, setIsContactProfileOpen] = useState(false); // 👈 Стейт шторки
+  const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
 
   const {
     navigate,
@@ -55,7 +65,6 @@ const Chat = () => {
 
   return (
     <div className="chat-container">
-    {/* Разворот профиля контакта */}
       <ContactProfileDrawer 
         isOpen={isContactProfileOpen}
         onClose={() => setIsContactProfileOpen(false)}
@@ -66,14 +75,12 @@ const Chat = () => {
 
       <header className="chat-header">
         <div className="header-left">
-          <button className="back-button" onClick={() => navigate('/contacts', { replace: true })}>
-            <ArrowLeft className="back-icon" size={20} /> {/* Или твоя иконка стрелки */}
+          <button title='Назад' className="back-button" onClick={() => navigate('/contacts', { replace: true })}>
+            <ArrowLeft className="back-icon" size={20} />
           </button>
-          {/* Имя контакта — теперь просто статичный текст, без onClick */}
           <span className="contact-name">{contact?.nickname || displayName || 'Неизвестный'}</span>
         </div>
 
-        {/*  Аватар собеседника */}
         <Avatar 
           url={avatarUrl} 
           size={32} 
@@ -99,20 +106,46 @@ const Chat = () => {
               <div className="message system">Загрузка старых сообщений...</div>
             )}
 
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`message ${
-                  message.type === 'sent'
-                    ? 'sent'
-                    : message.type === 'received'
-                    ? 'received'
-                    : 'system'
-                }`}
-              >
-                {message.text}
-              </div>
-            ))}
+            {messages.map((message, index) => {
+              // Логика разделителя дат
+              const nextMessage = messages[index + 1];
+              let showDateSeparator = false;
+              
+              if (!nextMessage) {
+                // Если это самое старое сообщение в чате, обязательно показываем дату над ним
+                showDateSeparator = true;
+              } else {
+                const currentDateStr = new Date(message.ts).toDateString();
+                const nextDateStr = new Date(nextMessage.ts).toDateString();
+                // Если дата текущего сообщения отличается от даты более старого сообщения
+                if (currentDateStr !== nextDateStr) {
+                  showDateSeparator = true;
+                }
+              }
+
+              return (
+                <React.Fragment key={message.id}>
+                  <div
+                    className={`message ${
+                      message.type === 'sent'
+                        ? 'sent'
+                        : message.type === 'received'
+                        ? 'received'
+                        : 'system'
+                    }`}
+                  >
+                    {message.text}
+                  </div>
+                  
+                  {showDateSeparator && (
+                    <div className="date-separator">
+                      {formatDateSeparator(message.ts)}
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            
             {!messages.length && !isLoadingMore && (
               <div className="message received">Привет!</div>
             )}
