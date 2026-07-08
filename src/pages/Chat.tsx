@@ -23,7 +23,6 @@ const Chat = () => {
   
   const [isBlocked, setIsBlocked] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
-  const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
   const {
     navigate,
@@ -40,7 +39,10 @@ const Chat = () => {
     handleSendMessage,
     getInputPlaceholder,
     handleKeyDown,
-    handleInput
+    handleInput,
+    isAttachmentMenuOpen,
+    setIsAttachmentMenuOpen,
+    toggleAttachmentMenu
   } = useChatLogic();
 
   useEffect(() => {
@@ -158,27 +160,31 @@ const Chat = () => {
                 className="attachment-button"
                 aria-label="Attach file"
                 disabled={!isRoomReady}
-                onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
+                onClick={toggleAttachmentMenu}
               >
                 <Paperclip size={20} className="attachment-icon" />
               </button>
 
-          {isAttachmentMenuOpen && (
-            <div className="attachment-context-menu">
-              <button onClick={() => { /* Тут логика отправки фото */ setIsAttachmentMenuOpen(false); }}>
-                <ImageIcon size={16} />
-                <span>Фото/Видео</span>
-              </button>
-              <button onClick={() => { /* Тут логика отправки файла */ setIsAttachmentMenuOpen(false); }}>
-                <File size={16} />
-                <span>Файл</span>
-              </button>
-              <button onClick={() => { /* Тут логика отправки аудио */ setIsAttachmentMenuOpen(false); }}>
-                <Music size={16} />
-                <span>Аудио</span>
-              </button>
-            </div>
-          )}
+              {isAttachmentMenuOpen && (
+                <div 
+                  className="attachment-context-menu" 
+                  // Если кликаем внутри меню (но не по кнопкам), оно не должно закрываться
+                  onClick={(e) => e.stopPropagation()} 
+                >
+                  <button onClick={() => { setIsAttachmentMenuOpen(false); /* логика фото */ }}>
+                    <ImageIcon size={16} />
+                    <span>Фото/Видео</span>
+                  </button>
+                  <button onClick={() => { setIsAttachmentMenuOpen(false); /* логика файла */ }}>
+                    <File size={16} />
+                    <span>Файл</span>
+                  </button>
+                  <button onClick={() => { setIsAttachmentMenuOpen(false); /* логика аудио */ }}>
+                    <Music size={16} />
+                    <span>Аудио</span>
+                  </button>
+                </div>
+              )}
 
               <textarea
                 value={draft}

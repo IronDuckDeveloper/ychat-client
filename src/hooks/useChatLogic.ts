@@ -37,6 +37,22 @@ export const useChatLogic = () => {
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
 
+  const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
+
+  const toggleAttachmentMenu = (e?: React.MouseEvent) => {
+  e?.stopPropagation(); // Блокируем всплытие, чтобы слушатель document не закрыл меню сразу же
+  setIsAttachmentMenuOpen(!isAttachmentMenuOpen);
+  };
+
+  // Закрытие меню вложений при клике вне его области
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setIsAttachmentMenuOpen(false);
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   // Очистка уведомлений
   useEffect(() => {
     if (globalContactsDb && peerId) {
@@ -267,6 +283,9 @@ export const useChatLogic = () => {
     handleSendMessage,
     getInputPlaceholder,
     handleKeyDown,
-    handleInput
+    handleInput,
+    isAttachmentMenuOpen,
+    setIsAttachmentMenuOpen,
+    toggleAttachmentMenu
   };
 };
