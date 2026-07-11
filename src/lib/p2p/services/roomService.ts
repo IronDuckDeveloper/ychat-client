@@ -7,7 +7,7 @@ import { relayManager } from '../networking/heliaClient.ts';
 import { OrbitDBAccessController } from '@orbitdb/core';
 import { type FileAttachment } from './fileService.ts';
 
-// Конфигурация приложения и интерфейсы для типов сообщений и действий в комнате чата.
+// Конфигурация приложения и интерфейсы для типов сообщений и значений в комнате чата.
 export type MessageType = 'sent' | 'received' | 'system';
 
 // Интерфейс для сообщений в чате
@@ -22,7 +22,7 @@ export interface ChatMessage {
 
 // Интерфейс для действий в комнате, который возвращается при присоединении к комнате
 export interface RoomActions {
-  sendMessage: (message: string) => Promise<void>;
+  sendMessage: (text: string, attachment?: FileAttachment) => Promise<void>;
   leaveRoom: () => void;
   pingRoom?: () => void;
   dbAddress: string;
@@ -86,7 +86,6 @@ export async function joinRoom(
     try {
       const iterator = await db.iterator(options);
       for await (const record of iterator) {
-        // 🔥 НАШ РУЧНОЙ СТОП-КРАН: принудительно останавливаемся на лимите чанка
         if (chunk.length >= limit) {
           break;
         }
@@ -110,12 +109,14 @@ export async function joinRoom(
 
       for (const entry of chronologicalChunk) {
         const messageData = entry.payload?.value || entry.value;
-        if (messageData && messageData.text) {
+        // 🔥 Исправлено: проверяем наличие текста ИЛИ вложения, чтобы не пропускать пустые текстовые сообщения с файлами
+        if (messageData && (messageData.text || messageData.attachment)) {
           const isMine = messageData.whoSent === orbitdb.identity.id;
           onMessage({
             id: entry.hash, 
             whoSent: messageData.whoSent,
-            text: messageData.text,
+            text: messageData.text || '',
+            attachment: messageData.attachment, // 🔥 Передаем вложение в UI
             ts: messageData.ts || Date.now(),
             type: isMine ? 'sent' : 'received'
           }, true);
@@ -134,12 +135,14 @@ export async function joinRoom(
     if (!entry) return;
 
     const messageData = entry.payload?.value || entry.value;
-    if (messageData && messageData.text) {
+    // 🔥 Исправлено здесь тоже
+    if (messageData && (messageData.text || messageData.attachment)) {
       const isMine = messageData.whoSent === orbitdb.identity.id;
       onMessage({
         id: entry.hash,
         whoSent: messageData.whoSent,
-        text: messageData.text,
+        text: messageData.text || '',
+        attachment: messageData.attachment, // 🔥 Передаем вложение в UI при "живом" обновлении базы
         ts: messageData.ts || Date.now(),
         type: isMine ? 'sent' : 'received',
       }, false);
@@ -161,13 +164,19 @@ export async function joinRoom(
   libp2p.getPeers().forEach((peerId: PeerId) => notifyArchivist(libp2p, peerId, dbAddress));
 
   return {
-    sendMessage: async (text: string) => {
+    sendMessage: async (text: string, attachment?: FileAttachment) => {
       try {
-        await db.add({
+        const messageObject: any = {
           whoSent: orbitdb.identity.id,
           text,
           ts: Date.now(),
-        });
+        };
+
+        if (attachment) {
+          messageObject.attachment = attachment; // 🔥 Сохраняем структуру файла в OrbitDB
+        }
+
+        await db.add(messageObject);
       } catch (err: any) {
         console.error(`❌ [OrbitDB] Ошибка при записи:`, err?.message || err);
       }
@@ -198,7 +207,6 @@ export async function joinRoom(
     loadMoreHistory: async () => {
       if (hasMore) {
         const size = CONFIG.CHUNK_SIZE || 15;
-        // 🔥 Исправлено: Передаем и размер, и указатель на прошлый хэш
         await loadHistoryChunk(size, oldestHash); 
         
         if (relayManagerInstance && typeof relayManagerInstance.announceRoom === 'function') {

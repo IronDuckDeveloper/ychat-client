@@ -8,6 +8,7 @@ import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService.ts';
 import { globalContactsDb, globalHelia } from '../lib/p2p/services/authService.ts';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
+import { uploadFileToHelia } from '../lib/p2p/services/fileService.ts'; // 🔥 Импорт сервиса файлов
 
 interface RouterState {
   contactName?: string;
@@ -40,9 +41,62 @@ export const useChatLogic = () => {
 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
+  // 🔥 Логика чистой архитектуры для вложений файлов
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
+
   const toggleAttachmentMenu = (e?: React.MouseEvent) => {
-  e?.stopPropagation(); // Блокируем всплытие, чтобы слушатель document не закрыл меню сразу же
-  setIsAttachmentMenuOpen(!isAttachmentMenuOpen);
+    e?.stopPropagation(); // Блокируем всплытие, чтобы слушатель document не закрыл меню сразу же
+    setIsAttachmentMenuOpen(!isAttachmentMenuOpen);
+  };
+
+  const triggerFileInput = (type: 'image' | 'file' | 'audio') => {
+    if (type === 'image') setAcceptedFileTypes('image/*,video/*');
+    else if (type === 'audio') setAcceptedFileTypes('audio/*');
+    else setAcceptedFileTypes('*/*');
+
+    setIsAttachmentMenuOpen(false);
+    
+    // Небольшой таймаут, чтобы дать реакту обновить атрибут accept на инпуте
+    setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 10);
+  };
+
+  const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !roomHandle || !globalHelia) return;
+
+    try {
+      setIsUploadingFile(true);
+      
+      // 1. Загружаем файл в Helia FS и собираем метаданные + микро-превью
+      const attachmentInfo = await uploadFileToHelia(globalHelia, file);
+      
+      // 2. Публикуем в OrbitDB. Текст сообщения пустой, передаем структуру вложения
+      await roomHandle.sendMessage('', attachmentInfo);
+
+      // 3. Отправляем фоновый пуш-коммит через PubSub сети
+      if (globalHelia && peerId) {
+        try {
+          const myPeerId = (globalHelia as any).libp2p.peerId.toString();
+          const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
+          const notificationData = { from: myPeerId, text: `📎 Файл: ${file.name}`, ts: Date.now() };
+          const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
+          await (globalHelia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
+        } catch (err) {
+          console.warn('⚠️ Не удалось отправить фоновый пуш вложения:', err);
+        }
+      }          
+    } catch (err) {
+      console.error('❌ Ошибка при обработке и отправке файла через Helia:', err);
+    } finally {
+      setIsUploadingFile(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''; // Сбрасываем инпут для возможности повторного выбора
+      }
+    }
   };
 
   // Закрытие меню вложений при клике вне его области
@@ -83,11 +137,10 @@ export const useChatLogic = () => {
     }
   };
 
-// Подписываемся на событие обновления контактов
+  // Подписываемся на событие обновления контактов
   useEffect(() => {
     window.addEventListener('onContactsUpdated', refreshContactData);
     
-    // 👈 Проверяем isReady. Как только он станет true, база уже гарантированно открыта
     if (isReady && globalContactsDb && peerId) {
       refreshContactData();
     }
@@ -95,14 +148,11 @@ export const useChatLogic = () => {
     return () => {
       window.removeEventListener('onContactsUpdated', refreshContactData);
     };
-  }, [peerId, isReady]); // 👈 ГЛАВНОЕ: добавили isReady в зависимости вместо глобальной переменной
+  }, [peerId, isReady]);
 
-// Логика получения аватара из Helia FS
+  // Логика получения аватара из Helia FS
   useEffect(() => {
-    // Ждем, пока нода реально поднимется (isReady === true) и появится globalHelia
     if (!isReady || !globalHelia || !contact?.avatarCid) {
-      // Убрали setAvatarUrl(null), чтобы при F5 аватар не мигал, 
-      // если он придет чуть позже
       return; 
     }
 
@@ -125,7 +175,7 @@ export const useChatLogic = () => {
     return () => {
       isMounted = false;
     };
-  }, [contact?.avatarCid, isReady]); // 👈 ГЛАВНОЕ: добавили isReady в зависимости
+  }, [contact?.avatarCid, isReady]);
 
   // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
@@ -157,7 +207,9 @@ export const useChatLogic = () => {
             const isCurrentlyInThisChat = window.location.pathname.includes(peerId);
             const shouldIncrement = !isCurrentlyInThisChat && !isBackgroundSync && message.type !== 'sent';
 
-            contactsService.updateLastMessage(globalContactsDb, peerId, message.text, message.ts || Date.now(), shouldIncrement);
+            // Если текста нет (отправлен только файл), пишем заглушку в список чатов
+            const displayNotificationText = message.text || (message.attachment ? '📎 Вложение' : '');
+            contactsService.updateLastMessage(globalContactsDb, peerId, displayNotificationText, message.ts || Date.now(), shouldIncrement);
 
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new Event('onContactsUpdated'));
@@ -287,6 +339,13 @@ export const useChatLogic = () => {
     handleInput,
     isAttachmentMenuOpen,
     setIsAttachmentMenuOpen,
-    toggleAttachmentMenu
+    toggleAttachmentMenu,
+    
+    // 🔥 Экспорты для UI вложений
+    fileInputRef,
+    isUploadingFile,
+    acceptedFileTypes,
+    triggerFileInput,
+    handleFileUpload
   };
 };

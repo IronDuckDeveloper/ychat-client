@@ -7,6 +7,7 @@ import { globalContactsDb } from '../lib/p2p/services/authService.ts';
 import { isPeerBlocked } from '../lib/p2p/services/contactsService';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
+import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
 
 // Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
@@ -15,7 +16,7 @@ const formatDateSeparator = (ts: number) => {
     day: 'numeric',
     month: 'long',
     year: 'numeric'
-  }).replace(' г.', ''); // Убираем 'г.' для большей эстетики
+  }).replace(' г.', '');
 };
 
 const Chat = () => {
@@ -41,8 +42,14 @@ const Chat = () => {
     handleKeyDown,
     handleInput,
     isAttachmentMenuOpen,
-    setIsAttachmentMenuOpen,
-    toggleAttachmentMenu
+    toggleAttachmentMenu,
+    
+    // 🔥 Новые пропсы из хука бизнес-логики
+    fileInputRef,
+    isUploadingFile,
+    acceptedFileTypes,
+    triggerFileInput,
+    handleFileUpload
   } = useChatLogic();
 
   useEffect(() => {
@@ -110,17 +117,14 @@ const Chat = () => {
             )}
 
             {messages.map((message, index) => {
-              // Логика разделителя дат
               const nextMessage = messages[index + 1];
               let showDateSeparator = false;
               
               if (!nextMessage) {
-                // Если это самое старое сообщение в чате, обязательно показываем дату над ним
                 showDateSeparator = true;
               } else {
                 const currentDateStr = new Date(message.ts).toDateString();
                 const nextDateStr = new Date(nextMessage.ts).toDateString();
-                // Если дата текущего сообщения отличается от даты более старого сообщения
                 if (currentDateStr !== nextDateStr) {
                   showDateSeparator = true;
                 }
@@ -137,7 +141,13 @@ const Chat = () => {
                         : 'system'
                     }`}
                   >
-                    {message.text}
+                    {/* Текстовая нода сообщения (если есть) */}
+                    {message.text && <div className="text-content">{message.text}</div>}
+                    
+                    {/* 🔥 Вложение файла (если прикреплено) */}
+                    {message.attachment && (
+                      <MessageAttachment attachment={message.attachment} />
+                    )}
                   </div>
                   
                   {showDateSeparator && (
@@ -155,31 +165,45 @@ const Chat = () => {
           </div>
 
           <div className="chat-input-area">
+            {/* 🔥 Скрытый системный инпут для работы с файловой системой браузера */}
+            <input 
+              title='Выбрать файл'
+              type="file"
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+              accept={acceptedFileTypes}
+              onChange={handleFileUpload}
+            />
+
             <div className="input-container">
               <button
                 className="attachment-button"
                 aria-label="Attach file"
-                disabled={!isRoomReady}
+                disabled={!isRoomReady || isUploadingFile}
                 onClick={toggleAttachmentMenu}
               >
-                <Paperclip size={20} className="attachment-icon" />
+                {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
+                {isUploadingFile ? (
+                  <div className="spinner-icon" style={{ width: '18px', height: '18px', border: '2px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <Paperclip size={20} className="attachment-icon" />
+                )}
               </button>
 
               {isAttachmentMenuOpen && (
                 <div 
                   className="attachment-context-menu" 
-                  // Если кликаем внутри меню (но не по кнопкам), оно не должно закрываться
                   onClick={(e) => e.stopPropagation()} 
                 >
-                  <button onClick={() => { setIsAttachmentMenuOpen(false); /* логика фото */ }}>
+                  <button onClick={() => triggerFileInput('image')}>
                     <ImageIcon size={16} />
                     <span>Фото/Видео</span>
                   </button>
-                  <button onClick={() => { setIsAttachmentMenuOpen(false); /* логика файла */ }}>
+                  <button onClick={() => triggerFileInput('file')}>
                     <File size={16} />
                     <span>Файл</span>
                   </button>
-                  <button onClick={() => { setIsAttachmentMenuOpen(false); /* логика аудио */ }}>
+                  <button onClick={() => triggerFileInput('audio')}>
                     <Music size={16} />
                     <span>Аудио</span>
                   </button>
@@ -190,15 +214,15 @@ const Chat = () => {
                 value={draft}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
-                placeholder={getInputPlaceholder()}
-                disabled={!isRoomReady}
+                placeholder={isUploadingFile ? 'Подготовка файла к отправке P2P...' : getInputPlaceholder()}
+                disabled={!isRoomReady || isUploadingFile}
               />
             </div>
             <button
               className="send-button"
               aria-label="Send message"
               onClick={handleSendMessage}
-              disabled={!isRoomReady || !draft.trim()}
+              disabled={!isRoomReady || !draft.trim() || isUploadingFile}
             >
               <Send size={20} />
             </button>

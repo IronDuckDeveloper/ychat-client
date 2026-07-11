@@ -96,6 +96,11 @@
     position: relative;
     z-index: 1;
 
+    // Если внутри сообщения есть обертка картинки, убираем отступы
+    &:has(.attachment-image-wrapper) {
+      padding: 0.2rem;
+    }
+
     &.received {
       align-self: flex-start; 
       background-color: white;

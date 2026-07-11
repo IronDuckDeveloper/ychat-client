@@ -647,5 +647,3 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     handleBlockContact, handleUnblockAndRefresh
   };
 };
-
-
