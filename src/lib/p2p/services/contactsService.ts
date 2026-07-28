@@ -1,7 +1,9 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from '../config.ts';
-import { requestPeerProfile } from './profileService'; 
-import { getOrOpenDb } from './authService.ts';
+import { requestPeerProfile } from './profileService.ts'; 
+import { getOrOpenDb, globalHelia } from './authService.ts';
+import { getDeterministicRoomName } from './roomService.ts';
+import { notifyArchivist } from '../networking/connectionManager.ts';
 
 export interface ContactItem {
   id: string;               // PeerID контакта
@@ -28,10 +30,6 @@ let cachedContacts: ContactItem[] = [];
 let getAllContactsPromise: Promise<ContactItem[]> | null = null;
 let isSubscribedToUpdates = false;
 
-/**
- * Вспомогательная функция для синхронизации локального кэша с физической БД.
- * Вызывается автоматически при успешном чтении или изменениях.
- */
 function updateLocalCache(allRecords: any[]) {
   if (!Array.isArray(allRecords)) {
     console.warn('⚠️ [ContactsDB] OrbitDB вернул не массив записей:', allRecords);
@@ -40,7 +38,6 @@ function updateLocalCache(allRecords: any[]) {
 
   cachedContacts = allRecords
     .map((record: any) => record.value as ContactItem)
-    // Проверяем c.id, чтобы убрать "undefined" из UI и починить ключи React
     .filter((c: ContactItem) => !!c && !!c.id && !c.isDeleted)
     .sort((a: ContactItem, b: ContactItem) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
@@ -68,7 +65,6 @@ export const getContactById = async (contactsDb: any, id: string): Promise<Conta
   }
 };
 
-// 🛡️ Хелпер для быстрой проверки блокировки пира
 export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<boolean> => {
   const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
   if (localBlacklistStr) {
@@ -99,13 +95,32 @@ export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<bo
 export const saveContact = async (contactsDb: any, contact: ContactItem) => {
   if (!contactsDb) throw new Error("База контактов не инициализирована");
   
-  // 🧹 Санитизация объекта: удаляем любые свойства со значением undefined, чтобы IPLD модель не падала
+  // 🧹 Санитизация объекта
   const sanitizedContact = { ...contact };
   Object.keys(sanitizedContact).forEach(key => {
     if ((sanitizedContact as any)[key] === undefined) {
       delete (sanitizedContact as any)[key];
     }
   });
+
+  // 🛡️ ЗАЩИТА ОТ БЕСКОНЕЧНОГО ЦИКЛА: Проверяем ВСЕ ключевые поля
+  const existingContact = cachedContacts.find(c => c.id === sanitizedContact.id);
+  if (existingContact) {
+    const isIdentical = 
+      existingContact.nickname === sanitizedContact.nickname &&
+      existingContact.avatarCid === sanitizedContact.avatarCid &&
+      existingContact.profileDbAddress === sanitizedContact.profileDbAddress &&
+      existingContact.chatDbAddress === sanitizedContact.chatDbAddress &&
+      existingContact.lastMessage === sanitizedContact.lastMessage &&
+      existingContact.lastMessageTime === sanitizedContact.lastMessageTime &&
+      existingContact.unreadCount === sanitizedContact.unreadCount &&
+      existingContact.isBlocked === sanitizedContact.isBlocked &&
+      existingContact.isDeleted === sanitizedContact.isDeleted;
+
+    if (isIdentical) {
+      return; 
+    }
+  }
 
   // 1. 🔥 ОПЕРЕЖАЮЩЕЕ ОБНОВЛЕНИЕ: Мгновенно обновляем кэш ДО записи в базу.
   let newCache = [...cachedContacts];
@@ -121,7 +136,7 @@ export const saveContact = async (contactsDb: any, contact: ContactItem) => {
 
   // 2. Асинхронно сохраняем на диск (React не будет ждать эту операцию)
   await contactsDb.put(sanitizedContact.id, sanitizedContact); 
-  console.log(`💾 [ContactsDB] Контакт ${sanitizedContact.nickname || sanitizedContact.id} сохранен.`);
+  console.log(`💾 [ContactsDB] Контакт ${sanitizedContact.nickname || sanitizedContact.id.slice(-6)} сохранен.`);
 };
 
 export const getContact = async (contactsDb: any, peerId: string): Promise<ContactItem | null> => {
@@ -133,9 +148,6 @@ export const getContact = async (contactsDb: any, peerId: string): Promise<Conta
   }
 };
 
-/**
- * ⚡ Оптимизированное получение всех контактов.
- */
 export const getAllContacts = async (contactsDb: any): Promise<ContactItem[]> => {
   if (!contactsDb) return [];
   
@@ -181,9 +193,12 @@ export const deleteContact = async (contactsDb: any, contactId: string): Promise
   try {
     const contact = await getContact(contactsDb, contactId);
     if (contact) {
-      contact.isDeleted = true;
-      contact.updatedAt = Date.now();
-      await saveContact(contactsDb, contact);
+      const updatedContact: ContactItem = {
+        ...contact,
+        isDeleted: true,
+        updatedAt: Date.now()
+      };
+      await saveContact(contactsDb, updatedContact);
       console.log(`🗑️ [ContactsDB] Контакт ${contactId} мягко удален (скрыт).`);
       return true;
     }
@@ -219,15 +234,16 @@ export const updateLastMessage = async (
       return; 
     }
 
-    contact.lastMessage = text || '';
-    contact.lastMessageTime = timestamp;
-    contact.updatedAt = Math.max(contact.updatedAt, timestamp);
+    // ✅ Иммутабельное создание объекта
+    const updatedContact: ContactItem = {
+      ...contact,
+      lastMessage: text || '',
+      lastMessageTime: timestamp,
+      updatedAt: Math.max(contact.updatedAt || 0, timestamp),
+      unreadCount: incrementUnread ? (contact.unreadCount || 0) + 1 : contact.unreadCount
+    };
 
-    if (incrementUnread) {
-      contact.unreadCount = (contact.unreadCount || 0) + 1;
-    }
-
-    await saveContact(db, contact);
+    await saveContact(db, updatedContact);
     window.dispatchEvent(new Event('onContactsUpdated'));
     
   } catch (error) {
@@ -240,8 +256,11 @@ export const clearUnread = async (db: any, peerId: string) => {
   try {
     const contact = await getContact(db, peerId);
     if (contact && (contact.unreadCount || 0) > 0) {
-      contact.unreadCount = 0;
-      await saveContact(db, contact);
+      const updatedContact: ContactItem = {
+        ...contact,
+        unreadCount: 0
+      };
+      await saveContact(db, updatedContact);
       window.dispatchEvent(new Event('onContactsUpdated'));
     }
   } catch (error) {
@@ -286,12 +305,17 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
     const contact = await getContact(db, peerId);
     if (contact) {
       if (contact.chatDbAddress === address) return;
-      contact.chatDbAddress = address;
-      await saveContact(db, contact); 
+      
+      const updatedContact: ContactItem = {
+        ...contact,
+        chatDbAddress: address
+      };
+      
+      await saveContact(db, updatedContact); 
       console.log(`🎯 [ContactsDB] Сохранен адрес базы чата: ${address}`);
 
       setTimeout(async () => {
-        await syncContactHistory(contact, db);
+        await syncContactHistory(updatedContact, db);
       }, 200);
     }
   } catch (error) {
@@ -301,7 +325,6 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
 
 export async function syncContactHistory(contact: any, contactsDb: any) {
   if (contact.isBlocked) return;
-  if (!contact.chatDbAddress) return;
 
   const now = Date.now();
   const lastSynced = syncCooldowns.get(contact.id) || 0;
@@ -310,10 +333,46 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
     return;
   }
 
+  // 1. Берем готовое имя комнаты, которое использует UI (например, room_c86de...)
+  let roomName = contact.room;
+
+  // Если вдруг его нет, вычисляем через правильный PeerId, а не OrbitDB Identity
+  if (!roomName) {
+    if (globalHelia) {
+      const myPeerId = (globalHelia as any).libp2p.peerId.toString();
+      roomName = await getDeterministicRoomName(myPeerId, contact.id);
+    } else {
+      console.warn(`[Sync] Нет globalHelia, не можем вычислить комнату для ${contact.nickname}`);
+      return;
+    }
+  }
+
+  if (!roomName) return;
   syncCooldowns.set(contact.id, now);
 
-  const chatDb = await getOrOpenDb(contact.chatDbAddress);
+  // 2. Открываем базу именно по имени room_...
+  const chatDb = await getOrOpenDb(roomName);
   if (!chatDb) return;
+
+  const actualAddress = chatDb.address.toString();
+
+  // Обновляем адрес БД в контакте
+  if (contact.chatDbAddress !== actualAddress) {
+    console.log(`🔄 [Sync] Обновляем адрес БД для ${contact.nickname}: ${actualAddress}`);
+    updateChatDbAddress(contactsDb, contact.id, actualAddress);
+  }
+
+  // Пингуем архиватор
+  try {
+    if (globalHelia) {
+      const libp2p = (globalHelia as any).libp2p;
+      libp2p.getPeers().forEach((peerId: any) => {
+        notifyArchivist(libp2p, peerId, actualAddress);
+      });
+    }
+  } catch (e) {
+    console.warn("❌ [Sync] Ошибка уведомления архиватора:", e);
+  }
 
   await new Promise<void>((resolve) => {
     let idleTimer: NodeJS.Timeout;
@@ -328,9 +387,11 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
 
       try {
         const records = [];
-        for await (const record of chatDb.iterator({ limit: 10 })) {
+        for await (const record of chatDb.iterator({ limit: 20, reverse: true })) {
           records.push(record);
         }
+        
+        console.log(`[Sync Debug] В локальной базе ${contact.nickname} (${actualAddress.slice(-8)}) найдено записей: ${records.length}`);
         
         if (records.length > 0) {
           const messages = records.map((r: any) => r.payload?.value || r.value || r);
@@ -341,29 +402,29 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
 
           const newMessages = messages.filter((msg: any) => msg.ts > contactLastTime);
 
-          if (newMessages.length > 0) {
-            console.log(`📥 [Холодный старт] Нашли ${newMessages.length} сообщений от ${contact.nickname}`);
+          if (latestMsg && latestMsg.ts > contactLastTime) {
+            console.log(`📥 [Холодный старт] Нашли новые сообщения от ${contact.nickname}`);
             
-            const isCurrentlyInThisChat = window.location.pathname.includes(contact.id);
+            const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
+            const isCurrentlyInThisChat = currentUrl.includes(contact.id) || (contact.room && currentUrl.includes(contact.room));
             
-            // 🛡️ Фикс гонки: запрашиваем МАКСИМАЛЬНО АКТУАЛЬНЫЙ объект контакта из кэша/БД.
-            // Это предотвратит затирание никнейма (например, Леви4), полученного по PubSub во время ожидания БД.
             const freshContact = await getContact(contactsDb, contact.id) || contact;
-            
-            let newUnreadCount = !isCurrentlyInThisChat ? (freshContact.unreadCount || 0) + newMessages.length : 0;
+            const newUnreadCount = !isCurrentlyInThisChat ? (freshContact.unreadCount || 0) + newMessages.length : 0;
+            const textPreview = latestMsg.text ? latestMsg.text : (latestMsg.attachment ? '📎 Вложение' : '');
 
             await saveContact(contactsDb, {
               ...freshContact,
-              lastMessage: latestMsg?.text || '',
-              lastMessageTime: latestMsg?.ts || Date.now(),
-              updatedAt: Math.max(freshContact.updatedAt || 0, latestMsg?.ts || Date.now()),
+              chatDbAddress: actualAddress,
+              lastMessage: textPreview,
+              lastMessageTime: latestMsg.ts,
+              updatedAt: Math.max(freshContact.updatedAt || 0, latestMsg.ts),
               unreadCount: newUnreadCount 
             });
 
             setTimeout(() => {
               window.dispatchEvent(new Event('onContactsUpdated'));
               console.log("⚡ [Sync] UI триггер отправлен");
-            }, 300);
+            }, 150);
           }
         }
       } catch (dbError) {
@@ -394,7 +455,8 @@ export async function syncContactHistory(contact: any, contactsDb: any) {
     };
     
     chatDb.events.on('update', onUpdate);
-    idleTimer = setTimeout(finalizeSync, 2000);
+    // Даем релею 3 секунды, чтобы он успел выгрузить блоки
+    idleTimer = setTimeout(finalizeSync, 3000); 
   });
 }
 

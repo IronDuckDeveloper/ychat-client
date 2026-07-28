@@ -16,7 +16,6 @@ function App() {
   useEffect(() => {
     if (isAuthenticated() && !globalHelia) {
       console.log('🔄 Запуск P2P сессии...');
-      
       initializeApp()
         .then(() => {
           if (globalHelia && globalRelayManager) {

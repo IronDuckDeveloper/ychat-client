@@ -1,5 +1,6 @@
 import { unixfs } from '@helia/unixfs';
 import { CID } from 'multiformats/cid';
+import { relayManager } from '../networking/heliaClient';
 
 // Глобальный кэш для текущей сессии (вкладки)
 // Ключ: CID (строка), Значение: Object URL (строка)
@@ -27,7 +28,10 @@ export async function uploadAvatarToHelia(helia: any, file: Blob): Promise<strin
 }
 
 // Чтение файла из Helia по CID и создание Object URL для тега <img>
-export async function fetchAvatarFromHelia(helia: any, cidString: string, timeoutMs = 5000, forceRefresh = false): Promise<string | null> {
+export async function fetchAvatarFromHelia(helia: any, cidString: string, timeoutMs = 15000, forceRefresh = false): Promise<string | null> {
+  return null;
+
+  
   if (!cidString) return null;
   
   if (forceRefresh) {
@@ -83,8 +87,16 @@ export async function fetchAvatarFromHelia(helia: any, cidString: string, timeou
         console.error(`❌ [Helia FS] Ошибка загрузки аватара ${cidString}:`, error);
       }
 
-      // Твой фоллбэк на HTTP-шлюзы
-      const gateways = [`https://ipfs.io/ipfs/${cidString}`, `https://dweb.link/ipfs/${cidString}`];
+      // Получаем IP активного релея
+      const relayIp = relayManager.getActiveRelayIp();
+
+      const gateways = [
+        `http://${relayIp}:8081/ipfs/${cidString}`, 
+        
+        // ПРИОРИТЕТ 2: Публичные шлюзы (на всякий случай)
+        `https://ipfs.io/ipfs/${cidString}`, 
+        `https://dweb.link/ipfs/${cidString}`
+      ];
       for (const gatewayUrl of gateways) {
         try {
           const response = await fetch(gatewayUrl, { signal: AbortSignal.timeout(timeoutMs) });

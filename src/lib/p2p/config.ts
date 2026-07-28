@@ -21,10 +21,15 @@ export const CONFIG = {
     DB_BLACKLIST_KEY : 'encrypted_blacklist', // Ключ для хранения зашифрованного черного списка
   },
 
+  PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
+
   IS_LODING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
   
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства
   KEY_IP_ADDRESS: 'ipAddress', // Ключ для хранения IP-адреса
+  KEY_LAST_PEER_SYNC: 'last_peer_sync', // Ключ для хранения времени последней синхронизации с релеями
+  KEY_KNOWN_RELAYS: 'known_relays', // Ключ для хранения списка известных релеев
+  CACHE_NAME_FILES: 'ychat-media-v1',
 
   STORAGE_KEY: 'browser-private-key', // Ключ для хранилища в localStorage, где будет сохраняться seed-фраза в виде base64 строки
   SEED_LENGTH: 32,  // Длина seed для Ed25519 - 32 байта
@@ -36,7 +41,7 @@ export const CONFIG = {
   INACTIVITY_TIMEOUT_MS: 10 * 60 * 1000, // Время для пинга на сервер (10 минут)
   COOLDOWN_TIME: 30000,   // Кулдаун 30 секунд (в течение этого времени повторные запросы в БД игнорируются)
 
-  CHUNK_SIZE: 50, // Сколько сообщений грузить за раз
+  CHUNK_SIZE: 15, // Сколько сообщений грузить за раз
 
   MSG: {
     SUCCESS : 'SUCCESS',

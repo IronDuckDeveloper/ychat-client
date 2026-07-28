@@ -19,7 +19,7 @@ function ContactAvatar({ cid }: { cid: string | undefined }) {
       setIsRetrying(true);
       try {
         const isManualRefresh = retryCount > 0;
-        const url = await fetchAvatarFromHelia(globalHelia, cid, 5000, isManualRefresh);
+        const url = await fetchAvatarFromHelia(globalHelia, cid, 15000, isManualRefresh);
         
         if (isMounted && url) {
           setAvatarUrl(url);

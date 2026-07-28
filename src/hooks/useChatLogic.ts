@@ -2,13 +2,13 @@ import { useRef, useState, useEffect } from 'react';
 import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react'; 
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useIPFS } from './useIPFS.ts';
-import { getDeterministicRoomName, type ChatMessage, type RoomActions } from '../lib/p2p/services/roomService.ts';
+import { clearEntireChat, getDeterministicRoomName, type ChatMessage, type RoomActions } from '../lib/p2p/services/roomService.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService.ts';
 import { globalContactsDb, globalHelia } from '../lib/p2p/services/authService.ts';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
-import { uploadFileToHelia } from '../lib/p2p/services/fileService.ts'; // 🔥 Импорт сервиса файлов
+import { uploadFileToHelia, deleteFileFromHelia } from '../lib/p2p/services/fileService.ts';
 
 interface RouterState {
   contactName?: string;
@@ -76,7 +76,6 @@ export const useChatLogic = () => {
       
       // 2. Публикуем в OrbitDB. Текст сообщения пустой, передаем структуру вложения
       await roomHandle.sendMessage('', attachmentInfo);
-
       // 3. Отправляем фоновый пуш-коммит через PubSub сети
       if (globalHelia && peerId) {
         try {
@@ -98,6 +97,7 @@ export const useChatLogic = () => {
       }
     }
   };
+  
 
   // Закрытие меню вложений при клике вне его области
   useEffect(() => {
@@ -197,8 +197,18 @@ export const useChatLogic = () => {
           if (!isMounted) return;
           if (message?.text?.startsWith('System:')) return;
 
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === message.id)) return prev;
+        setMessages((prev) => {
+            // Ищем, есть ли уже это сообщение в стейте
+            const existingIndex = prev.findIndex((m) => m.id === message.id);
+            
+            if (existingIndex !== -1) {
+              // Если есть — ПЕРЕЗАПИСЫВАЕМ его (это нужно для синхронизации "Сообщение удалено")
+              const updated = [...prev];
+              updated[existingIndex] = message;
+              return updated.sort((a, b) => (b.ts || Date.now()) - (a.ts || Date.now()));
+            }
+            
+            // Если нет — добавляем новое
             const updated = [message, ...prev];
             return updated.sort((a, b) => (b.ts || Date.now()) - (a.ts || Date.now()));
           });
@@ -321,6 +331,27 @@ export const useChatLogic = () => {
     setDraft(textarea.value);
   };
 
+  // ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ
+  const handleDeleteMessage = async (messageId: string, cid?: string, serverCid?: string) => {
+      // 1. Физически сносим файл из IPFS
+      if (cid && globalHelia) {
+        await deleteFileFromHelia(globalHelia, cid, serverCid);
+      }
+
+      // 2. Меняем сообщение в локальном UI мгновенно
+      setMessages((prev) => prev.map((m) => {
+        if (m.id === messageId) {
+          return { ...m, text: 'Сообщение удалено', attachment: undefined };
+        }
+        return m;
+      }));
+
+      // 3. Отправляем изменения в OrbitDB, чтобы у собеседника тоже обновилось
+      if (roomHandle && typeof (roomHandle as any).tombstoneMessage === 'function') {
+        await (roomHandle as any).tombstoneMessage(messageId);
+      }
+    };
+
   return {
     navigate,
     displayName,
@@ -340,6 +371,7 @@ export const useChatLogic = () => {
     isAttachmentMenuOpen,
     setIsAttachmentMenuOpen,
     toggleAttachmentMenu,
+    handleDeleteMessage,
     
     // 🔥 Экспорты для UI вложений
     fileInputRef,

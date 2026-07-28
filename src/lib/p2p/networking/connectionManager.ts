@@ -22,7 +22,9 @@ export async function notifyArchivist(
   }
   
   try {
-    const stream = await libp2p.dialProtocol(peerId, CONFIG.TOPICS.ANNOUNCE);
+    const stream = await libp2p.dialProtocol(peerId, CONFIG.TOPICS.ANNOUNCE, {
+      runOnTransientConnection: true
+    });
 
     // Передаем JSON с адресом базы данных, который так ждет твой сервер!
     const data = new TextEncoder().encode(
@@ -40,7 +42,7 @@ export async function notifyArchivist(
 
 // === Функция синхронизации кэша релеев ===
 export async function checkAndSyncRelays(helia: Helia): Promise<void> {
-  const lastSync = localStorage.getItem('last_peer_sync');
+  const lastSync = localStorage.getItem(CONFIG.KEY_LAST_PEER_SYNC);
   const now = Date.now();
 
   if (!lastSync || now - parseInt(lastSync, 10) > CONFIG.SYNC_INTERVAL_MS) {
@@ -57,8 +59,8 @@ export async function checkAndSyncRelays(helia: Helia): Promise<void> {
       try {
         const payload = JSON.parse(new TextDecoder().decode(msg.data));
         if (payload?.relays) {
-          localStorage.setItem('known_relays', JSON.stringify(payload.relays));
-          localStorage.setItem('last_peer_sync', Date.now().toString());
+          localStorage.setItem(CONFIG.KEY_KNOWN_RELAYS, JSON.stringify(payload.relays));
+          localStorage.setItem(CONFIG.KEY_LAST_PEER_SYNC, Date.now().toString());
           console.log(
             `📥 [PEER-SYNC] Кэш синхронизирован. Релеев: ${payload.relays.length}`,
           );

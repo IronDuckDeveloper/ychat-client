@@ -5,6 +5,7 @@ import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerpr
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
 import { addContactIfMissing, initContactsDB, getContact, saveContact } from './contactsService.ts';
+import { OrbitDBAccessController } from '@orbitdb/core';
 
 export let globalHelia: any = null;
 export let globalOrbitDB: any = null;
@@ -23,45 +24,53 @@ export const onDbReady = (callback: () => void) => {
 
 let isInitializing = false;
 
-const activeDbs = new Map();
+export const activeDbs = new Map<string, any>();
 
-export async function getOrOpenDb(address: string | undefined | null) {
-  // 1. Броня от битых адресов
-  if (!address || typeof address !== 'string' || !address.startsWith('/orbitdb/')) {
-    console.warn(`⚠️ getOrOpenDb: Пропущен некорректный адрес базы: ${address}`);
+export async function getOrOpenDb(addressOrName: string | undefined | null) {
+  if (!addressOrName || typeof addressOrName !== 'string') {
+    return null; 
+  }
+
+  // Блокируем мусор, но пропускаем полные адреса И детерминированные комнаты
+  if (!addressOrName.startsWith('/orbitdb/') && !addressOrName.startsWith(CONFIG.PREFIX_ROOM)) {
     return null;
   }
 
-  // 2. Проверяем кэш
-  if (activeDbs.has(address)) {
-    const cachedDb = activeDbs.get(address);
-    // Если база по какой-то причине закрыта (например, из-за React Strict Mode cleanup)
-    // удаляем её из кэша, чтобы открыть заново
-    if (cachedDb.closed) {
-      activeDbs.delete(address);
-    } else {
-      return cachedDb;
-    }
+  // 1. Быстрый возврат из кэша
+  if (activeDbs.has(addressOrName)) {
+    return activeDbs.get(addressOrName);
   }
 
   try {
-    // 3. Открытие базы. 
-    // Убираем { type: 'keyvalue' }! OrbitDB автоматически определит правильный тип 
-    // (events для чата, keyvalue для профиля) на основе манифеста базы.
-    const db = await globalOrbitDB.open(address);
-
-    // Слушаем событие закрытия базы, чтобы вовремя вычищать её из нашего кэша
-    if (db.events) {
-      db.events.on('close', () => {
-        console.log(`🧹 [Кэш БД] База ${address} была закрыта, удаляем из кэша.`);
-        activeDbs.delete(address);
-      });
+    let db;
+    
+    // 2. Открываем базу с правильным манифестом
+    if (addressOrName.startsWith(CONFIG.PREFIX_ROOM)) {
+      db = await globalOrbitDB.open(addressOrName, {
+      type: 'documents',
+      docIndex: '_id',
+      AccessController: OrbitDBAccessController({
+        type: 'orbitdb',
+        write: ['*'],
+      }),
+    });
+    } else {
+      // Если это уже готовый /orbitdb/zdpu... адрес
+      db = await globalOrbitDB.open(addressOrName);
     }
 
-    activeDbs.set(address, db);
+    // 3. Сохраняем в кэш. 
+    // 🔥 Важно: сохраняем под оригинальным запросом (чтобы повторный вызов room_... не открывал базу заново)
+    activeDbs.set(addressOrName, db);
+    
+    // И дублируем по физическому адресу, если запрашивали по имени
+    if (db.address && db.address.toString() !== addressOrName) {
+      activeDbs.set(db.address.toString(), db);
+    }
+
     return db;
   } catch (e) {
-    console.error(`❌ getOrOpenDb: Ошибка при открытии базы ${address}:`, e);
+    console.error("❌ [OrbitDB] Ошибка при открытии БД:", e);
     return null;
   }
 }
@@ -79,7 +88,7 @@ export async function broadcastMyProfile(customProfileData?: any) {
   try {
     const myPeerId = globalHelia.libp2p.peerId.toString();
     
-    // 🔥 ФИКС: Явные проверки наличия ключа. Если в customProfileData ключа нет, 
+    // Явные проверки наличия ключа. Если в customProfileData ключа нет, 
     // обязательно тянем его из базы профиля.
     const nickname = customProfileData && customProfileData[CONFIG.PROFILE.KEY_NICKNAME] !== undefined
       ? customProfileData[CONFIG.PROFILE.KEY_NICKNAME] 
@@ -214,33 +223,29 @@ export async function initializeApp(nicknameForRegistration?: string) {
         console.log(`📩 [PubSub Сеть] Получено обновление профиля от ${senderId.slice(0,8)}`);
         
         const contact = await getContact(globalContactsDb, senderId);
-        
+                
         if (contact) {
-          let isChanged = false;
-
-          // 🔥 ИСПРАВЛЕНО: Добавлена проверка изменения profileDbAddress
-          if (
+          // Проверяем, есть ли реальные изменения
+          const isChanged = 
             contact.avatarCid !== msg.avatarCid || 
             contact.nickname !== msg.nickname ||
             contact.bio !== msg.bio ||
-            contact.profileDbAddress !== msg.profileDbAddress
-          ) {
-            contact.avatarCid = msg.avatarCid;
-            contact.nickname = msg.nickname;
-            contact.bio = msg.bio || '';
-            
-            // Записываем адрес БД, только если он реально пришел
-            if (msg.profileDbAddress) {
-              contact.profileDbAddress = msg.profileDbAddress;
-            }
-            
-            isChanged = true;
-          }
+            (msg.profileDbAddress && contact.profileDbAddress !== msg.profileDbAddress);
 
           if (isChanged) {
-            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}, адрес БД: ${contact.profileDbAddress}`);
-            contact.updatedAt = Date.now();
-            await saveContact(globalContactsDb, contact);
+            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}, адрес БД: ${msg.profileDbAddress || contact.profileDbAddress}`);
+            
+            // ✅ Создаем новый объект через спред-оператор
+            const updatedContact = {
+              ...contact,
+              avatarCid: msg.avatarCid,
+              nickname: msg.nickname,
+              bio: msg.bio || '',
+              profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
+              updatedAt: Date.now()
+            };
+
+            await saveContact(globalContactsDb, updatedContact);
             window.dispatchEvent(new CustomEvent('onContactsUpdated', { 
               detail: { peerId: senderId } 
             }));
@@ -314,7 +319,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
           // Шлем запрос именно на текущий в итерации relay.peerId
           const isRegistered = await globalRelayManager.registerWithRelay(
             libp2p,
-            relay.peerId,
+            relay,
             profileAddressStr,
             fingerprint,
             ipAddress,

@@ -39,7 +39,13 @@ export async function generateDeviceFingerprint(): Promise<string> {
 /**
  * Получает внешний IP-адрес пользователя через публичный сервис
  */
+// Глобальная переменная внутри модуля для кэширования IP
+let cachedClientIp: string | null = null;
 export async function getClientIpAddress(): Promise<string> {
+  // Если IP уже был получен ранее — возвращаем его мгновенно
+  if (cachedClientIp) {
+    return cachedClientIp;
+  }
   try {
     // Используем самый стабильный и быстрый сервис ipify (возвращает чистый текст)
     const response = await fetch('https://api.ipify.org?format=json');

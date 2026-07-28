@@ -80,6 +80,25 @@ export class RelayManager {
     return this.currentIdx || 0; 
   }
 
+  public getActiveRelayIp(): string | null {
+    const currentRelay = this.getActiveRelay();
+    if (!currentRelay || !currentRelay.address) return null;
+
+    try {
+      // Парсим multiaddr (например: "/ip4/123.45.67.89/tcp/4001/ws")
+      const ma = multiaddr(currentRelay.address);
+      
+      // nodeAddress().address вернет чистый IP "123.45.67.89" или домен "example.com"
+      return ma.nodeAddress().address; 
+    } catch (err) {
+      console.error('❌ [RelayManager] Ошибка парсинга multiaddr:', err);
+      
+      // Резервный вариант через обычный сплит строки, если библиотека ругается
+      const parts = currentRelay.address.split('/');
+      return parts[2] || null;
+    }
+  }
+
   // Привязываем инстанс libp2p после его старта
   public startMonitoring(libp2p: Libp2p, onRelayChanged?: (newRelay: RelayConfig) => void) {
     this.libp2p = libp2p;
@@ -230,7 +249,7 @@ export class RelayManager {
    */
   public async registerWithRelay(
     libp2p: Libp2p,
-    relayPeerIdString: string,
+    relay: RelayConfig,
     profileDbAddress: string,
     fingerprint: string,
     ipAddress: string,
@@ -238,17 +257,26 @@ export class RelayManager {
   ): Promise<boolean> {
 
     try {
-      console.log(`🔄 [RPC] Отправляем запрос Архивариусу: ${relayPeerIdString.slice(-6)}...`);
+      console.log(`🔄 [RPC] Отправляем запрос Архивариусу: ${relay.name} (${relay.peerId.slice(-6)})...`);
       
-      const relayPeerId = peerIdFromString(relayPeerIdString);
-      const stream = await libp2p.dialProtocol(relayPeerId, CONFIG.TOPICS.RPC_PROTOCOL);
+      // Собираем полный Multiaddr из адреса и ID
+      const fullAddress = `${relay.address}/p2p/${relay.peerId}`;
+      const target = multiaddr(fullAddress);
+      // dialProtocol принимает multiaddr, и это заставляет libp2p идти по конкретному адресу,
+      // не пытаясь угадать маршрут через PeerStore
+      const stream = await libp2p.dialProtocol(target, CONFIG.TOPICS.RPC_PROTOCOL);
 
-      const payload = JSON.stringify({
-        action: action, // 👈 Передаем на сервер,
-        profileDbAddress: profileDbAddress,
-        fingerprint: fingerprint,
-        ipAddress: ipAddress
-      });
+    // Достаем адрес самого браузера, чтобы сервер знал, куда стучаться за базой
+    const clientMultiaddrs = libp2p.getMultiaddrs();
+    const clientMa = clientMultiaddrs.length > 0 ? clientMultiaddrs[0].toString() : null;
+
+    const payload = JSON.stringify({
+      action: action,
+      profileDbAddress: profileDbAddress,
+      fingerprint: fingerprint,
+      ipAddress: ipAddress,
+      clientMultiaddr: clientMa // 👈 ВОТ ЭТО СПАСЕТ ПИННИНГ
+    });
 
       // ==========================================
       // 1. ОТПРАВКА ДАННЫХ (Глушим типы pipe полностью)
@@ -265,13 +293,11 @@ export class RelayManager {
       // ==========================================
       let isSuccess = false;
 
-      // Передаем lp.decode БЕЗ скобок. Полностью изолируем цепочку вывода типов.
       await (pipe as any)(
         stream.source,
         lp.decode,
-        async function (source: any) {
+        async (source: any) => {
           for await (const chunk of source) {
-            // chunk гарантированно будет иметь метод .subarray() в рантайме
             const responseString = new TextDecoder().decode(chunk.subarray());
             const response = JSON.parse(responseString);
             
@@ -286,7 +312,7 @@ export class RelayManager {
             } else {
               console.error(`🚨 [RPC] Неизвестный статус: ${response.status}`);
             }
-            break; // Нужен только один пакет
+            break; 
           }
         }
       );

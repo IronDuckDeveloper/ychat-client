@@ -23,6 +23,7 @@ export interface ChatMessage {
 // Интерфейс для действий в комнате, который возвращается при присоединении к комнате
 export interface RoomActions {
   sendMessage: (text: string, attachment?: FileAttachment) => Promise<void>;
+  tombstoneMessage: (msgId: string) => Promise<void>;
   leaveRoom: () => void;
   pingRoom?: () => void;
   dbAddress: string;
@@ -49,7 +50,8 @@ export async function joinRoom(
   
   if (!session) {
     const openPromise = orbitdb.open(roomName, {
-      type: 'events',
+      type: 'documents',
+      docIndex: '_id',
       AccessController: OrbitDBAccessController({
         type: 'orbitdb',
         write: ['*'],
@@ -78,18 +80,28 @@ export async function joinRoom(
   let hasMore = true; 
 
   const loadHistoryChunk = async (limit: number, beforeHash: string | null = null) => {
-    // Читаем базу в реверсе (от новых записей к старым)
-    const options: any = { reverse: true }; 
-    if (beforeHash) options.lt = beforeHash; 
-
     const chunk: any[] = [];
     try {
-      const iterator = await db.iterator(options);
-      for await (const record of iterator) {
-        if (chunk.length >= limit) {
-          break;
+      const allRecords = await db.all();
+      const sorted = allRecords
+        .map((r: any) => r.value || r)
+        .sort((a: any, b: any) => (b.ts || 0) - (a.ts || 0));
+
+      let startIndex = 0;
+      if (beforeHash) {
+        const foundIdx = sorted.findIndex((m: any) => (m._id || m.id) === beforeHash);
+        if (foundIdx !== -1) {
+          startIndex = foundIdx + 1;
         }
-        chunk.push(record);
+      }
+
+      const page = sorted.slice(startIndex, startIndex + limit);
+      for (const doc of page) {
+        chunk.push({
+          hash: doc._id || doc.id,
+          value: doc,
+          payload: { value: doc }
+        });
       }
     } catch (e) {
       console.error('❌ Ошибка чтения чанка OrbitDB:', e);
@@ -113,7 +125,7 @@ export async function joinRoom(
         if (messageData && (messageData.text || messageData.attachment)) {
           const isMine = messageData.whoSent === orbitdb.identity.id;
           onMessage({
-            id: entry.hash, 
+            id: messageData._id || entry.hash, 
             whoSent: messageData.whoSent,
             text: messageData.text || '',
             attachment: messageData.attachment, // 🔥 Передаем вложение в UI
@@ -135,14 +147,13 @@ export async function joinRoom(
     if (!entry) return;
 
     const messageData = entry.payload?.value || entry.value;
-    // 🔥 Исправлено здесь тоже
     if (messageData && (messageData.text || messageData.attachment)) {
       const isMine = messageData.whoSent === orbitdb.identity.id;
       onMessage({
-        id: entry.hash,
+        id: messageData._id || entry.hash || entry.key,
         whoSent: messageData.whoSent,
         text: messageData.text || '',
-        attachment: messageData.attachment, // 🔥 Передаем вложение в UI при "живом" обновлении базы
+        attachment: messageData.attachment, // Передаем вложение в UI при "живом" обновлении базы
         ts: messageData.ts || Date.now(),
         type: isMine ? 'sent' : 'received',
       }, false);
@@ -154,9 +165,13 @@ export async function joinRoom(
 
   const onConnect = (evt: any) => {
     const peerId = evt.detail as unknown as PeerId;
+
     setTimeout(() => checkAndSyncRelays(helia), 2000);
+
     if (relayManager.isRelay(peerId.toString())) {
-      notifyArchivist(libp2p, peerId, dbAddress);
+      setTimeout(() => {
+        notifyArchivist(libp2p, peerId, dbAddress);
+      }, 1500);
     }
   };
 
@@ -167,6 +182,7 @@ export async function joinRoom(
     sendMessage: async (text: string, attachment?: FileAttachment) => {
       try {
         const messageObject: any = {
+          _id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           whoSent: orbitdb.identity.id,
           text,
           ts: Date.now(),
@@ -176,7 +192,7 @@ export async function joinRoom(
           messageObject.attachment = attachment; // 🔥 Сохраняем структуру файла в OrbitDB
         }
 
-        await db.add(messageObject);
+        await db.put(messageObject);
       } catch (err: any) {
         console.error(`❌ [OrbitDB] Ошибка при записи:`, err?.message || err);
       }
@@ -195,6 +211,27 @@ export async function joinRoom(
             currentSession.instance.close().catch(() => {});
           }
         }
+      }
+    },
+tombstoneMessage: async (msgId: string) => {
+      try {
+        const result = await db.get(msgId);
+        
+        // В OrbitDB documents метод get() возвращает МАССИВ
+        const doc = Array.isArray(result) ? result[0] : result;
+        
+        if (doc) {
+          const targetDoc = doc.value || doc;
+          
+          await db.put({
+            ...targetDoc,
+            _id: msgId,
+            text: 'Сообщение удалено',
+            attachment: null
+          });
+        }
+      } catch (err: any) {
+        console.error(`❌ [OrbitDB] Ошибка обновления сообщения:`, err?.message || err);
       }
     },
     pingRoom: () => {
@@ -224,5 +261,23 @@ export const getDeterministicRoomName = async (nodeId: string, peerId: string) =
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return `room_${hashHex}`;
+  return `${CONFIG.PREFIX_ROOM}${hashHex}`;
+};
+
+export const clearEntireChat = async (db: any) => {
+  if (!db) {
+    console.error('❌ База данных не передана');
+    return;
+  }
+  
+  try {
+    console.log(`🗑️ Запуск полного удаления базы: ${db.address.toString()}`);
+    
+    // Метод drop() полностью удаляет локальную базу данных в OrbitDB
+    await db.drop();
+    
+    console.log('✅ База чата успешно и безвозвратно удалена локально');
+  } catch (error) {
+    console.error('❌ Ошибка при удалении базы чата:', error);
+  }
 };

@@ -45,21 +45,21 @@ const ContactList = () => {
 
         if (entry.isIntersecting) {
           // 1. Контакт появился на экране. 
-          // Не бежим сразу в базу! Запускаем таймер на 500 мс.
+          // Не бежим сразу в базу! Запускаем таймер на 2000 мс.
           if (contact && contact.id) {
             const timer = setTimeout(() => {
               console.log(`⏱️ [Smart Render] ${contact.nickname} задержался на экране. Добавляем в очередь.`);
               syncContactInQueue(contact);
               // Очищаем отработавший таймер
               scrollTimers.current.delete(target); 
-            }, 500); // <-- Те самые 500 мс задержки
+            }, 2000);
             
             // Сохраняем таймер, привязанный к DOM-элементу
             scrollTimers.current.set(target, timer);
           }
         } else {
           // 2. Контакт ушел с экрана.
-          // Если таймер еще тикает (прошло меньше 500 мс), убиваем его!
+          // Если таймер еще тикает (прошло меньше 2000 мс), убиваем его!
           if (scrollTimers.current.has(target)) {
             clearTimeout(scrollTimers.current.get(target)!);
             scrollTimers.current.delete(target);

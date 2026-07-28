@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.ts';
 import { getOrOpenDb } from './authService.ts'; 
-import { updateLastMessage, getAllContacts, saveContact, isPeerBlocked, type ContactItem  } from './contactsService.ts';
+import { updateLastMessage, getAllContacts, saveContact, isPeerBlocked, type ContactItem, getContactById  } from './contactsService.ts';
 import { forceSyncContactProfile, type SyncResult } from './profileService.ts';
 
 const openingDbsLock = new Set<string>();
@@ -14,39 +14,49 @@ export const startBackgroundProfileWatcher = async (contactsDb: any) => {
     const validContacts = rawContacts.filter(c => c && c.profileDbAddress && !c.isBlocked);
 
     // 1. Постоянный live-слушатель изменений (для последующих обновлений в реальном времени)
-    const setupLiveListener = async (contact: ContactItem) => {
-      if (openingDbsLock.has(contact.profileDbAddress)) return;
-      openingDbsLock.add(contact.profileDbAddress);
+const setupLiveListener = async (contact: ContactItem) => {
+  if (openingDbsLock.has(contact.profileDbAddress)) return;
+  openingDbsLock.add(contact.profileDbAddress);
 
-      try {
-        const remoteDb = await getOrOpenDb(contact.profileDbAddress);
-        if (!remoteDb) return;
+  try {
+    const remoteDb = await getOrOpenDb(contact.profileDbAddress);
+    if (!remoteDb) return;
 
-        remoteDb.events.on('update', async () => {
-          const freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-          const freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
-          const freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
-          
-          await saveContact(contactsDb, { 
-            ...contact, nickname: freshName, avatarCid: freshAvatar, bio: freshBio, updatedAt: Date.now()
-          });
-          
-          window.dispatchEvent(new Event('onContactsUpdated'));
-          console.log(`♻️ [Background] Профиль ${freshName || contact.id} обновлен в фоне по событию update!`);
-        });
-      } catch (e) {
-        console.error(`❌ Не удалось настроить живое отслеживание профиля ${contact.id}`);
-      } finally {
-        openingDbsLock.delete(contact.profileDbAddress);
-      }
-    };
+    remoteDb.events.on('update', async () => {
+      const freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+      const freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+      const freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
+      
+      // 🔥 ИСПРАВЛЕНИЕ: Достаем самую свежую версию контакта прямо перед сохранением!
+      // Иначе замыкание перезапишет lastMessage старыми данными из момента инициализации.
+      const latestContact = await getContactById(contactsDb, contact.id); 
+      if (!latestContact) return;
+
+      await saveContact(contactsDb, { 
+        ...latestContact, // Берем актуальные данные (включая свежие сообщения)
+        nickname: freshName, 
+        avatarCid: freshAvatar, 
+        bio: freshBio, 
+        updatedAt: Date.now()
+      });
+      
+      window.dispatchEvent(new Event('onContactsUpdated'));
+      console.log(`♻️ [Background] Профиль ${freshName || contact.id} обновлен в фоне по событию update!`);
+    });
+  } catch (e) {
+    // Просто глушим консоль для оффлайн-пиров, чтобы AggregateError не засорял логи
+    console.warn(`⏳ [Background] Пир ${contact.id} сейчас оффлайн, live-обновления отложены.`);
+  } finally {
+    openingDbsLock.delete(contact.profileDbAddress);
+  }
+};
 
     // 2. Функция синка одного контакта с поддержкой ограниченных ретраев
     const syncWithRetry = async (contact: ContactItem, attempt = 1) => {
       const result: SyncResult = await forceSyncContactProfile(contactsDb, contact);
       
       if (result.success) {
-        if (result.status === 'SUCCESS') {
+        if (result.status === CONFIG.MSG.SUCCESS) {
           window.dispatchEvent(new Event('onContactsUpdated'));
         }
         // Синк прошел успешно (или данные актуальны) -> вешаем постоянный листенер

@@ -43,8 +43,7 @@ const Chat = () => {
     handleInput,
     isAttachmentMenuOpen,
     toggleAttachmentMenu,
-    
-    // 🔥 Новые пропсы из хука бизнес-логики
+    handleDeleteMessage,
     fileInputRef,
     isUploadingFile,
     acceptedFileTypes,
@@ -144,9 +143,13 @@ const Chat = () => {
                     {/* Текстовая нода сообщения (если есть) */}
                     {message.text && <div className="text-content">{message.text}</div>}
                     
-                    {/* 🔥 Вложение файла (если прикреплено) */}
+                    {/* Вложение файла (если прикреплено) */}
                     {message.attachment && (
-                      <MessageAttachment attachment={message.attachment} />
+                      <MessageAttachment 
+                        attachment={message.attachment} 
+                        // Передаем и ID, и CID
+                        onDelete={() => handleDeleteMessage(message.id, message.attachment?.cid, message.attachment?.serverCid)}
+                      />
                     )}
                   </div>
                   

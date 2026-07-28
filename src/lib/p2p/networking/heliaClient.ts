@@ -19,8 +19,9 @@ import { RelayManager } from './RelayManager.ts';
 import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
-import { kadDHT } from '@libp2p/kad-dht';
+// import { kadDHT } from '@libp2p/kad-dht';
 import { broadcastMyProfile } from '../services/authService.ts';
+import { multiaddr } from '@multiformats/multiaddr';
 
 let initializationPromise: Promise<any> | null = null;
 
@@ -83,7 +84,7 @@ export function createBrowserHelia(): Promise<any> {
             transports: [
               webSockets({ filter: all }),
               webRTC(),
-              circuitRelayTransport({ discoverRelays: 5 }),
+              circuitRelayTransport({ discoverRelays: 0 }),
             ],
             connectionManager: {
               minConnections: 1,
@@ -109,12 +110,13 @@ export function createBrowserHelia(): Promise<any> {
             services: {
               identify: identify(),
               ping: ping(),
-              dht: kadDHT({
-                clientMode: true,
-                kBucketSize: 20,
-                validators: {},
-                selectors: {},
-              }),
+              // 🔥 kadDHT в закрытой сети он не нужен.
+              // dht: kadDHT({
+              //   clientMode: true,
+              //   kBucketSize: 20,
+              //   validators: {},
+              //   selectors: {},
+              // }),
               pubsub: gossipsub({
                 doPX: true,
                 D: 3,
@@ -138,6 +140,12 @@ export function createBrowserHelia(): Promise<any> {
               }),
             },
           },
+        });
+
+        // 🔥 Явно проверяем физическую доступность релея!
+        const targetMa = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+        await heliaNode.libp2p.dial(targetMa, { 
+          signal: AbortSignal.timeout(8000) // Ждем 8 секунд, иначе считаем мертвым
         });
 
         console.log(`✅ [HeliaInit] Успешный коннект к релею: ${relay.name || relay.peerId.slice(-6)}`);
