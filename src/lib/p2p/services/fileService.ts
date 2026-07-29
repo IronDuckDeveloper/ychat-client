@@ -24,10 +24,10 @@ const pendingFetches = new Map<string, Promise<string | null>>();
  * Загрузка любого файла (File/Blob) в Helia.
  * Возвращает объект с CID и метаданными для отправки в чат.
  */
-export async function uploadFileToHelia(helia: any, originalFile: File): Promise<FileAttachment> {
+export async function uploadFileToHelia(helia: any, originalFile: File, customName?: string): Promise<FileAttachment> {
   let file: File;
   try {
-    file = await processImageForHelia(originalFile);
+    file = await processImageForHelia(originalFile, customName);
   } catch (err) {
     console.warn('[Helia FS] Ошибка конвертации, используем оригинал:', err);
     file = originalFile; // fallback
@@ -390,20 +390,19 @@ export async function deleteFileFromHelia(helia: any, cidString: string, serverC
   }
 }
 
-export async function processImageForHelia(originalFile: File): Promise<File> {
-  // Пропускаем файлы, которые не являются картинками
+export async function processImageForHelia(
+  originalFile: File, 
+  customName?: string
+): Promise<File> {
   if (!originalFile.type.startsWith('image/')) {
     return originalFile;
   }
 
-  console.log(`[Image] Исходный файл: ${originalFile.name}, размер: ${(originalFile.size / 1024 / 1024).toFixed(2)} MB`);
-
-  // Настройки сжатия
   const options = {
     maxSizeMB: 0.5,
     maxWidthOrHeight: 1920,
     useWebWorker: true,
-    fileType: 'image/webp', // 🔥 ЖЕСТКО КОНВЕРТИРУЕМ В webp
+    fileType: 'image/webp',
     initialQuality: 0.82
   };
 
@@ -411,18 +410,16 @@ export async function processImageForHelia(originalFile: File): Promise<File> {
     const compressedBlob = await imageCompression(originalFile, options);
     const timestamp = Date.now();
 
-    // Оборачиваем Blob обратно в File, меняем расширение и тип
-    const newName = "ychat_" + timestamp + ".webp";
-    const compressedFile = new File([compressedBlob], newName, {
-      type: 'image/webp', // 🔥 ПРИНУДИТЕЛЬНО СТАВИМ ТИП webp
+    // 🔥 Если передали customName (например, 'avatar.webp'), берем его.
+    // Иначе генерируем имя с таймстемпом для чата.
+    const newName = customName || ("ychat_" + timestamp + ".webp");
+    
+    return new File([compressedBlob], newName, {
+      type: 'image/webp',
       lastModified: timestamp,
     });
-
-    console.log(`[Image] Сжато успешно. Новый размер: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
-    return compressedFile;
-
   } catch (error) {
-    console.error('[Image] Ошибка сжатия (browser-image-compression):', error);
+    console.error('[Image] Ошибка сжатия:', error);
     return originalFile; 
   }
 }

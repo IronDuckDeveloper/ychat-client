@@ -1,125 +1,76 @@
-import { unixfs } from '@helia/unixfs';
-import { CID } from 'multiformats/cid';
-import { relayManager } from '../networking/heliaClient';
+import {
+  uploadFileToHelia,
+  fetchFileFromHelia,
+  deleteFileFromHelia,
+  type FileAttachment
+} from './fileService';
 
-// Глобальный кэш для текущей сессии (вкладки)
-// Ключ: CID (строка), Значение: Object URL (строка)
-const avatarCache = new Map<string, string>();
+/**
+ * Загрузка аватара в Helia и Kubo через fileService.
+ * 
+ * - Приводит файл к единому имени 'avatar.webp' и MIME-типу 'image/webp'.
+ * - Если переданы oldCid / oldServerCid, предварительно удаляет старый аватар,
+ *   очищая кэши браузера и открепляя файл на сервере Kubo.
+ */
+export async function uploadAvatarToHelia(
+  helia: any,
+  fileOrBlob: Blob | File,
+  oldCid?: string,
+  oldServerCid?: string
+): Promise<FileAttachment> {
+  // 1. Удаляем старый аватар (если был), чтобы не мусорить в Kubo и кэше
+  if (oldCid) {
+    try {
+      await deleteFileFromHelia(helia, oldCid, oldServerCid);
+    } catch (err) {
+      console.warn(`⚠️ [AvatarService] Не удалось удалить старый аватар:`, err);
+    }
+  }
 
-// Хранилище активных промисов загрузки
-const pendingFetches = new Map<string, Promise<string | null>>();
+  // 2. Оборачиваем Blob в File
+  const avatarFile = fileOrBlob instanceof File
+    ? fileOrBlob
+    : new File([fileOrBlob], 'avatar.webp', { type: 'image/webp' });
 
-// Загрузка файла/Blob в Helia и получение строкового CID
-export async function uploadAvatarToHelia(helia: any, file: Blob): Promise<string> {
-  const fs = unixfs(helia);
-  const arrayBuffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  
-  // addBytes возвращает объект CID
-  const cid = await fs.addBytes(bytes);
-  console.log(`🖼️ [Helia FS] Аватар загружен. CID: ${cid.toString()}`);
-  
-  // 🔥 ДОБАВЛЕНО: Сразу кладем наш собственный загруженный аватар в кэш, 
-  // чтобы не вытягивать его из базы при следующем рендере
-  const localUrl = URL.createObjectURL(file);
-  avatarCache.set(cid.toString(), localUrl);
-  
-  return cid.toString();
+  // 3. 🔥 Передаем фиксированное имя 'avatar.webp' в fileService
+  return uploadFileToHelia(helia, avatarFile, 'avatar.webp');
 }
 
-// Чтение файла из Helia по CID и создание Object URL для тега <img>
-export async function fetchAvatarFromHelia(helia: any, cidString: string, timeoutMs = 15000, forceRefresh = false): Promise<string | null> {
-  return null;
-
-  
+/**
+ * Получение аватара из кэша (RAM -> Cache API) или сети (Kubo Gateway -> P2P).
+ * Возвращает Object URL для тега <img>.
+ */
+export async function fetchAvatarFromHelia(
+  helia: any,
+  cidString: string,
+  timeoutMs = 15000,
+  serverCid?: string,
+  forceRefresh = false
+): Promise<string | null> {
   if (!cidString) return null;
-  
+
+  // Если требуется принудительное обновление, удаляем старый кэш перед запросом
   if (forceRefresh) {
-    avatarCache.delete(cidString);
-    console.log(`🗑️ [Cache] Кэш очищен для CID: ${cidString}`);
-  }
-
-  // 1. Проверяем готовый кэш
-  if (avatarCache.has(cidString)) {
-    return avatarCache.get(cidString) || null;
-  }
-  
-  // 🔥 2. ЗАЩИТА ОТ ДВОЙНЫХ ВЫЗОВОВ (Strict Mode Fix)
-  // Если аватар УЖЕ в процессе скачивания, просто возвращаем текущий промис
-  if (pendingFetches.has(cidString)) {
-    return pendingFetches.get(cidString)!; 
-  }
-
-  // Оборачиваем всю твою логику загрузки в асинхронную функцию
-  const fetchTask = (async () => {
+    console.log(`🗑️ [AvatarService] Принудительная очистка кэша для аватара: ${cidString}`);
     try {
-      const fs = unixfs(helia);
-      const cid = CID.parse(cidString);
-      const chunks = [];
-      console.log(`🖼️ [Helia FS] Загружаем аватар. CID: ${cidString}`);
-      
-      const abortController = new AbortController();
-      const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
-      
-      for await (const chunk of fs.cat(cid as any, { signal: abortController.signal })) {
-        chunks.push(chunk);
-      }
-      clearTimeout(timeoutId); 
-      
-      const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-      const fullBytes = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        fullBytes.set(chunk, offset);
-        offset += chunk.length;
-      }
-      
-      const blob = new Blob([fullBytes], { type: 'image/jpeg' });
-      const objectUrl = URL.createObjectURL(blob);
-      
-      avatarCache.set(cidString, objectUrl);
-      return objectUrl;
-
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.warn(`⏳ [Helia FS] Таймаут загрузки аватара ${cidString}.`);
-      } else {
-        console.error(`❌ [Helia FS] Ошибка загрузки аватара ${cidString}:`, error);
-      }
-
-      // Получаем IP активного релея
-      const relayIp = relayManager.getActiveRelayIp();
-
-      const gateways = [
-        `http://${relayIp}:8081/ipfs/${cidString}`, 
-        
-        // ПРИОРИТЕТ 2: Публичные шлюзы (на всякий случай)
-        `https://ipfs.io/ipfs/${cidString}`, 
-        `https://dweb.link/ipfs/${cidString}`
-      ];
-      for (const gatewayUrl of gateways) {
-        try {
-          const response = await fetch(gatewayUrl, { signal: AbortSignal.timeout(timeoutMs) });
-          if (response.ok) {
-            const blob = await response.blob();
-            const objectUrl = URL.createObjectURL(blob);
-            avatarCache.set(cidString, objectUrl);
-            return objectUrl;
-          }
-        } catch (e) { continue; }
-      }
-      return null;
+      await deleteFileFromHelia(helia, cidString, serverCid);
+    } catch (err) {
+      console.warn(`⚠️ [AvatarService] Ошибка при сбросе кэша аватара:`, err);
     }
-  })();
-
-  // Записываем промис в мапу "в работе"
-  pendingFetches.set(cidString, fetchTask);
-
-  try {
-    // Ждем выполнения
-    return await fetchTask;
-  } finally {
-    // Обязательно удаляем из мапы после успеха или ошибки
-    pendingFetches.delete(cidString);
   }
+
+  // Делегируем скачивание fileService с типом 'image/webp'
+  return fetchFileFromHelia(helia, cidString, 'image/webp', serverCid, timeoutMs);
+}
+
+/**
+ * Удаление аватара (например, при сбросе на стандартную иконку).
+ */
+export async function deleteAvatarFromHelia(
+  helia: any,
+  cidString: string,
+  serverCid?: string
+): Promise<boolean> {
+  if (!cidString) return false;
+  return deleteFileFromHelia(helia, cidString, serverCid);
 }

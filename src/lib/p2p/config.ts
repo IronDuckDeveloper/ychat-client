@@ -19,6 +19,7 @@ export const CONFIG = {
     MSG_PROFILE_REQUEST: 'PROFILE_REQUEST', // Сообщение об прозьбе обновить профиль
     BLACKLIST_KEY : 'ychat_blocked_peers', // Ключ для хранения черного списка
     DB_BLACKLIST_KEY : 'encrypted_blacklist', // Ключ для хранения зашифрованного черного списка
+    KEY_AVATAR_SERVER_CID: 'avatar_server_cid',
   },
 
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)

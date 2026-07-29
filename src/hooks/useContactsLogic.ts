@@ -227,8 +227,10 @@ export const useContactsLogic = () => {
           setMyBio(bio || '');
         }
 
-        if (avatarCID && globalHelia && isMounted) { 
-          const url = await fetchAvatarFromHelia(globalHelia, avatarCID);
+        if (avatarCID && globalHelia && isMounted) {
+          const serverCid = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
+          // Передаем timeoutMs = 15000 и serverCid для быстрой загрузки с Gateway
+          const url = await fetchAvatarFromHelia(globalHelia, avatarCID, 15000, serverCid);
           if (isMounted) setMyAvatarUrl(url);
         }
 
@@ -397,19 +399,36 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       await dbInstance.put(CONFIG.PROFILE.KEY_BIO, newBio);
       await dbInstance.put(CONFIG.PROFILE.KEY_LAST_UPDATED, timestamp);
 
-      // Запоминаем текущий CID аватарки, чтобы правильно отправить его в сеть
+      // 1. Достаем ТЕКУЩИЕ (старые) CID аватарки перед загрузкой новой
       let currentAvatarCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+      let currentAvatarServerCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
 
       if (newAvatarBlob && globalHelia) {
-        const cid = await uploadAvatarToHelia(globalHelia, newAvatarBlob);
+        // 2. Передаем старые CID в uploadAvatarToHelia — сервис сам удалит их из Kubo и кэшей
+        const attachment = await uploadAvatarToHelia(
+          globalHelia, 
+          newAvatarBlob, 
+          currentAvatarCid,        // Старый локальный CID
+          currentAvatarServerCid   // Старый серверный CID (для unpin + GC в Kubo)
+        );
+
+        const newCid = attachment.cid;
+        const newServerCid = attachment.serverCid;
+
         try {
           const dht = globalHelia.libp2p.dht;
           if (dht && typeof dht.provide === 'function') {
-            await dht.provide(CID.parse(cid)).catch(() => {});
+            await dht.provide(CID.parse(newCid)).catch(() => {});
           }
         } catch {}
-        await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, cid);
-        currentAvatarCid = cid; // Обновляем CID на свежезагруженный
+
+        // 3. Сохраняем в OrbitDB новый CID и новый Server CID
+        await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, newCid);
+        if (newServerCid) {
+          await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid', newServerCid);
+        }
+
+        currentAvatarCid = newCid; // Обновляем для отправки в broadcast
         setMyAvatarUrl(URL.createObjectURL(newAvatarBlob));
       }
       
@@ -419,8 +438,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       await dbInstance.put(CONFIG.PROFILE.KEY_PRIVACY, newPrivacy);
       setMyPrivacy(newPrivacy);
       
-      // 🚀 ФИКС САФАРИ: Передаем 100% свежие данные напрямую в функцию,
-      // чтобы она не пыталась читать их из тормозящей локальной базы
+      // 🚀 ФИКС САФАРИ: Передаем 100% свежие данные напрямую в функцию
       if (globalHelia) {
         await broadcastMyProfile({
           [CONFIG.PROFILE.KEY_NICKNAME]: newNickname,
