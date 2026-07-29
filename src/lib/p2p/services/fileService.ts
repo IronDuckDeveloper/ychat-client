@@ -3,6 +3,7 @@ import { CID } from 'multiformats/cid';
 import { relayManager } from '../networking/heliaClient';
 import imageCompression from 'browser-image-compression';
 import { CONFIG } from '../config';
+import {LruObjectUrlCache} from '../utils/LruObjectUrlCache.ts';
 
 // Интерфейс для описания прикрепленного файла, 
 // именно этот объект мы будем отправлять в OrbitDB сообщении
@@ -16,7 +17,7 @@ export interface FileAttachment {
 }
 
 // Глобальный кэш для файлов сессии
-const fileCache = new Map<string, string>();
+const fileCache = new LruObjectUrlCache(50); // Лимит 50–100 файлов оптимален для комфортного скролла без нагрузки на RAM
 const pendingFetches = new Map<string, Promise<string | null>>();
 
 /**
@@ -323,11 +324,7 @@ export async function deleteFileFromHelia(helia: any, cidString: string, serverC
     console.log(`🗑️ [Helia FS] Начинаем удаление файла: ${cidString}`);
     
     // 1. Удаляем из оперативного кэша (RAM)
-    if (fileCache.has(cidString)) {
-      const url = fileCache.get(cidString);
-      if (url) URL.revokeObjectURL(url); // Очищаем память браузера
-      fileCache.delete(cidString);
-    }
+    fileCache.delete(cidString);
     pendingFetches.delete(cidString);
 
     // 🔥 2. Удаляем из постоянного кэша браузера (Cache API)

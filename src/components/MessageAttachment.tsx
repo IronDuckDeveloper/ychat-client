@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { File, Download, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 import { globalHelia } from '../lib/p2p/services/authService.ts';
-import { type FileAttachment, fetchFileFromHelia, deleteFileFromHelia } from '../lib/p2p/services/fileService.ts'; 
+import { type FileAttachment, fetchFileFromHelia } from '../lib/p2p/services/fileService.ts'; 
 import '../styles/MessageAttachment.scss';
 
 interface MessageAttachmentProps {
