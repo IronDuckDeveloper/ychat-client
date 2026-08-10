@@ -1,8 +1,7 @@
-// src/networking/SyncQueue.ts
-import { syncContactHistory } from "../services/contactsService";
+import { syncContactHistory, type ContactItem } from "../services/contactsService";
 
 export class P2PSyncQueue {
-  private queue: { contact: any; contactsDb: any }[] = [];
+  private queue: { contact: ContactItem; contactsDb: any }[] = [];
   private activeCount = 0;
   // Сет для отслеживания контактов, которые УЖЕ в очереди или обрабатываются
   private pendingIds = new Set<string>(); 
@@ -10,7 +9,7 @@ export class P2PSyncQueue {
 
   constructor() {}
 
-  add(contact: any, contactsDb: any) {
+  add(contact: ContactItem, contactsDb: any) {
     // 1. ПРОВЕРКА: Если этот контакт уже в очереди, просто игнорируем запрос
     if (this.pendingIds.has(contact.id)) {
       console.log(`⏳ [Queue] Контакт ${contact.nickname || contact.id} уже в очереди, пропускаем.`);

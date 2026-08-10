@@ -1,103 +1,109 @@
 import { CONFIG } from '../config.ts';
 import { getOrOpenDb } from './authService.ts'; 
-import { updateLastMessage, getAllContacts, saveContact, isPeerBlocked, type ContactItem, getContactById  } from './contactsService.ts';
+import { updateLastMessage, getAllContacts, saveContact, type ContactItem, getContactById, isPeerIgnored } from './contactsService.ts';
 import { forceSyncContactProfile, type SyncResult } from './profileService.ts';
 
 const openingDbsLock = new Set<string>();
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 3000;
+const activeListeners = new Set<string>();
 
 export const startBackgroundProfileWatcher = async (contactsDb: any) => {
   if (!contactsDb) return;
   try {
     const rawContacts = await getAllContacts(contactsDb);
-    const validContacts = rawContacts.filter(c => c && c.profileDbAddress && !c.isBlocked);
 
-    // 1. Постоянный live-слушатель изменений (для последующих обновлений в реальном времени)
-const setupLiveListener = async (contact: ContactItem) => {
-  if (openingDbsLock.has(contact.profileDbAddress)) return;
-  openingDbsLock.add(contact.profileDbAddress);
+    // 🧹 Фильтруем контакты через единую систему фаервола
+    const validContacts = [];
+    for (const c of rawContacts) {
+      if (c && !(await isPeerIgnored(contactsDb, c.id))) {
+        validContacts.push(c);
+      }
+    }
 
-  try {
-    const remoteDb = await getOrOpenDb(contact.profileDbAddress);
-    if (!remoteDb) return;
+    // 1. Постоянный live-слушатель изменений базы профиля
+    const setupLiveListener = async (contact: ContactItem) => {
+      // console.log(`♻️♻️ ♻️ [BackgroundWatcher] Проверка адреса DB для ${contact.nickname || contact.id}: ${contact.profileDbAddress}`);
 
-    remoteDb.events.on('update', async () => {
-      const freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-      const freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
-      const freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
-      
-      // 🔥 ИСПРАВЛЕНИЕ: Достаем самую свежую версию контакта прямо перед сохранением!
-      // Иначе замыкание перезапишет lastMessage старыми данными из момента инициализации.
-      const latestContact = await getContactById(contactsDb, contact.id); 
-      if (!latestContact) return;
-
-      await saveContact(contactsDb, { 
-        ...latestContact, // Берем актуальные данные (включая свежие сообщения)
-        nickname: freshName, 
-        avatarCid: freshAvatar, 
-        bio: freshBio, 
-        updatedAt: Date.now()
-      });
-      
-      window.dispatchEvent(new Event('onContactsUpdated'));
-      console.log(`♻️ [Background] Профиль ${freshName || contact.id} обновлен в фоне по событию update!`);
-    });
-  } catch (e) {
-    // Просто глушим консоль для оффлайн-пиров, чтобы AggregateError не засорял логи
-    console.warn(`⏳ [Background] Пир ${contact.id} сейчас оффлайн, live-обновления отложены.`);
-  } finally {
-    openingDbsLock.delete(contact.profileDbAddress);
-  }
-};
-
-    // 2. Функция синка одного контакта с поддержкой ограниченных ретраев
-    const syncWithRetry = async (contact: ContactItem, attempt = 1) => {
-      const result: SyncResult = await forceSyncContactProfile(contactsDb, contact);
-      
-      if (result.success) {
-        if (result.status === CONFIG.MSG.SUCCESS) {
-          window.dispatchEvent(new Event('onContactsUpdated'));
-        }
-        // Синк прошел успешно (или данные актуальны) -> вешаем постоянный листенер
-        await setupLiveListener(contact);
+      // Если адреса базы нет — мы физически не можем открыть OrbitDB
+      if (!contact.profileDbAddress) {
+        console.warn(`⚠️ [BackgroundWatcher] У контакта ${contact.nickname || contact.id} отсутствует profileDbAddress! Live-слушатель не запущен.`);
         return;
       }
 
-      // Если упали по причине transient (сеть еще не соединила узлы) и лимит попыток не исчерпан
-      if (result.status === 'TRANSIENT_FAILURE' && attempt < MAX_RETRIES) {
-        console.log(`⏳ [Retry Queue] Контакт ${contact.nickname || contact.id} не синхронизирован (Transient). Попытка ${attempt}/${MAX_RETRIES}. Повтор через ${RETRY_DELAY_MS / 1000} сек...`);
-        
+      if (activeListeners.has(contact.profileDbAddress)) return;
+      if (openingDbsLock.has(contact.profileDbAddress)) return;
+      
+      openingDbsLock.add(contact.profileDbAddress);
+
+      try {
+        const remoteDb = await getOrOpenDb(contact.profileDbAddress);
+        if (!remoteDb) return;
+
+        activeListeners.add(contact.profileDbAddress);
+
+        remoteDb.events.on('update', async () => {
+          const freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+          const freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+          const freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
+          
+          const latestContact = await getContactById(contactsDb, contact.id); 
+          if (!latestContact) return;
+
+          await saveContact(contactsDb, { 
+            ...latestContact,
+            nickname: freshName || latestContact.nickname, 
+            avatarCid: freshAvatar || latestContact.avatarCid, 
+            bio: freshBio || latestContact.bio, 
+            updatedAt: Date.now()
+          });
+          
+          window.dispatchEvent(new Event('onContactsUpdated'));
+          console.log(`♻️ [Background] Профиль ${freshName || contact.id} обновлен по событию update!`);
+        });
+      } catch (e) {
+        console.warn(`⏳ [Background] Не удалось открыть базу ${contact.profileDbAddress} (пир оффлайн?).`);
+      } finally {
+        openingDbsLock.delete(contact.profileDbAddress);
+      }
+    };
+
+    // 2. Функция попытки синка и получения адреса базы
+    const syncWithRetry = async (contact: ContactItem, attempt = 1) => {
+      // forceSyncContactProfile должна найти/получить profileDbAddress и сохранить его в contactsDb
+      const result: SyncResult = await forceSyncContactProfile(contactsDb, contact);
+      
+      // Достаем обновленный контакт из базы (у него уже должен появиться profileDbAddress)
+      const freshContact = (await getContactById(contactsDb, contact.id)) || contact;
+
+      if (result.success || freshContact.profileDbAddress) {
+        if (result.status === CONFIG.MSG.SUCCESS) {
+          window.dispatchEvent(new Event('onContactsUpdated'));
+        }
+        // Запускаем live-слушатель уже с полученным profileDbAddress
+        await setupLiveListener(freshContact);
+        return;
+      }
+
+      if (attempt < 3) {
+        console.log(`⏳ [Retry Queue] Попытка ${attempt}/3 получить профиль/адрес для ${contact.id}...`);
         setTimeout(() => {
           syncWithRetry(contact, attempt + 1);
-        }, RETRY_DELAY_MS);
+        }, 3000);
       } else {
-        // Если лимит исчерпан или ошибка критическая (например, битый адрес БД)
-        console.warn(`🛑 [Background] Синхронизация для ${contact.nickname || contact.id} завершена с фолбэком на локальный кэш. Статус: ${result.status}`);
-        // Всё равно вешаем листенер, на случай если пир появится в сети позже сам
-        await setupLiveListener(contact);
+        console.warn(`🛑 [Background] Не удалось получить profileDbAddress для ${contact.id} после ${attempt} попыток.`);
       }
     };
 
-    // 3. 🔥 ПОСЛЕДОВАТЕЛЬНЫЙ СТАРТ (Запускается сразу, без слепых таймаутов)
-    console.log(`🚀 [Cold Start] Запуск последовательного синка профилей. Контактов на проверку: ${validContacts.length}`);
-    
-    const runSequentialSync = async () => {
-      for (const contact of validContacts) {
-        await syncWithRetry(contact);
-        // Небольшая пауза между стартами синка разных контактов, чтобы разгрузить CPU/IndexedDB
-        await new Promise(resolve => setTimeout(resolve, 150));
-      }
-    };
-
-    runSequentialSync();
+    // 3. Запуск последовательного синка
+    console.log(`🚀 [Cold Start] Запуск фонового синка. Контактов: ${validContacts.length}`);
+    for (const contact of validContacts) {
+      await syncWithRetry(contact);
+    }
 
   } catch (err) {
     console.error('❌ Ошибка запуска фонового слежения за профилями:', err);
   }
 };
 
-// Глобальный фоновый слушатель сетевых PubSub уведомлений о новых сообщениях
 export const startGlobalNotificationListener = async (globalHelia: any, globalContactsDb: any) => {
   if (!globalHelia || !globalContactsDb) return;
   
@@ -112,11 +118,13 @@ export const startGlobalNotificationListener = async (globalHelia: any, globalCo
       try {
         const payload = JSON.parse(new TextDecoder().decode(evt.detail.data));
         if (payload.from && payload.text) {
-          
-          if (await isPeerBlocked(globalContactsDb, payload.from)) {
-              console.log(`🚫 [Фаервол] Проигнорирован пуш сообщения от заблокированного: ${payload.from}`);
-              return;
-          }
+
+        // 🛡️ Единый фаервол: проверяем блэклист, isBlocked и isDeleted
+        if (await isPeerIgnored(globalContactsDb, payload.from)) {
+          console.log(`🔇 [Push] Сообщение от ${payload.from.slice(0, 8)} проигнорировано (заблокирован/удален)`);
+          return;
+        }
+
           const isCurrentlyInThisChat = window.location.pathname.includes(payload.from);
           
           await updateLastMessage(
@@ -133,7 +141,6 @@ export const startGlobalNotificationListener = async (globalHelia: any, globalCo
     };
 
     globalHelia.libp2p.services.pubsub.addEventListener('message', handleIncomingNotification);
-    console.log(`🔔 [Background] Успешно подписались на системный топик пушей: ${myNotificationTopic}`);
   } catch (pubSubErr) {
     console.error('❌ Ошибка запуска фоновых уведомлений', pubSubErr);
   }

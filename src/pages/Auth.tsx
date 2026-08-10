@@ -1,8 +1,9 @@
-import { RefreshCw, Eye, EyeOff, User, HelpCircle } from 'lucide-react';
+import { RefreshCw, Eye, EyeOff, User, HelpCircle, Copy } from 'lucide-react';
 import { useAuthLogic } from '../hooks/useAuthLogic.ts';
 
 const AuthScreen = () => {
   const {
+    isLoading,
     isRegister,
     setIsRegister,
     showPass,
@@ -12,13 +13,26 @@ const AuthScreen = () => {
     words,
     handleWordChange,
     generateWords,
+    copyWords,
     handleLoginOrRegister,
-    toastMessage // 👈 Достаем сообщение тоста
+    toastMessage
   } = useAuthLogic();
+
+  // Пока идет проверка или редирект — не рендерим форму вообще
+  if (isLoading) {
+    return null; // Или <div className="auth-loading">Загрузка...</div>
+  }
 
   return (
     <div className="auth-screen">
-      <div className="auth-container">
+      {/* Заменили div.auth-container на form.auth-container — вложенность CSS сохранилась */}
+      <form
+        className="auth-container"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleLoginOrRegister();
+        }}
+      >
         <div className="auth-header">
           <h1>{isRegister ? 'Создать аккаунт' : 'С возвращением'}</h1>
           <p className="auth-subtitle">
@@ -40,7 +54,7 @@ const AuthScreen = () => {
             <User className="input-icon" size={18} />
             <input
               type="text"
-              placeholder="Придумайте никнейм (например, AlexP2P)"
+              placeholder="Придумайте никнейм (например, KristinaP2P)"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
               className="nickname-input"
@@ -59,12 +73,14 @@ const AuthScreen = () => {
               disabled={isRegister}
               placeholder={`${i + 1}`}
               className="word-input"
+              autoComplete={showPass ? 'off' : 'current-password'}
             />
           ))}
         </div>
 
         <div className="words-actions-bar">
           <button
+            type="button"
             onClick={() => setShowPass(!showPass)}
             className="action-link"
             aria-label={showPass ? 'Скрыть слова' : 'Показать слова'}
@@ -73,19 +89,33 @@ const AuthScreen = () => {
             <span>{showPass ? 'Скрыть слова' : 'Показать слова'}</span>
           </button>
 
+          <button
+            type="button"
+            onClick={copyWords}
+            className="action-link"
+          >
+            <Copy size={16} />
+            <span>Сохранить в буфер</span>
+          </button>
+
           {isRegister && (
-            <button onClick={generateWords} className="action-link primary">
+            <button
+              type="button"
+              onClick={generateWords}
+              className="action-link primary"
+            >
               <RefreshCw size={14} />
               <span>Обновить слова</span>
             </button>
           )}
         </div>
 
-        <button className="submit-btn" onClick={handleLoginOrRegister}>
+        <button type="submit" className="submit-btn">
           {isRegister ? 'Зарегистрироваться' : 'Войти в аккаунт'}
         </button>
 
         <button
+          type="button"
           onClick={() => setIsRegister(!isRegister)}
           className="switch-mode"
         >
@@ -93,7 +123,7 @@ const AuthScreen = () => {
             ? 'Уже есть аккаунт? Войти'
             : 'Нет аккаунта? Создать профиль'}
         </button>
-      </div>
+      </form>
 
       {/* ТОСТ: отображаем поверх всего, если есть сообщение */}
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}

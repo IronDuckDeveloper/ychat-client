@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { initializeApp } from '../lib/p2p/services/authService.ts';
+import { broadcastMyProfile, initializeApp } from '../lib/p2p/services/authService.ts';
 import { 
   saveSeedFromAuth, 
   generateNewMnemonic, 
@@ -12,6 +12,7 @@ import {
 import { CONFIG } from '../lib/p2p/config.ts';
 
 export const useAuthLogic = () => {
+  const [isLoading, setIsLoading] = useState(true);
   const [isRegister, setIsRegister] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [nickname, setNickname] = useState('');
@@ -38,6 +39,8 @@ export const useAuthLogic = () => {
       return;
     }
     
+    // Если не авторизован — снимаем загрузку и готовим форму
+    setIsLoading(false);
     setWords(Array(12).fill(''));
     setNickname('');
     setShowPass(false);
@@ -47,10 +50,45 @@ export const useAuthLogic = () => {
     }
   }, [isRegister, navigate]);
 
+  // Ввод одного слова или авто-распределение при вставке нескольких слов через пробел
   const handleWordChange = (index: number, value: string) => {
+    const trimmed = value.trim();
+
+    // Если вставлена строка из нескольких слов
+    if (trimmed.includes(' ')) {
+      const parsedWords = trimmed.split(/\s+/);
+      const newWords = [...words];
+      
+      parsedWords.forEach((word, i) => {
+        if (index + i < 12) {
+          newWords[index + i] = word.toLowerCase();
+        }
+      });
+      
+      setWords(newWords);
+      return;
+    }
+
     const newWords = [...words];
-    newWords[index] = value.trim();
+    newWords[index] = value.trim().toLowerCase();
     setWords(newWords);
+  };
+
+  // Копирование всех 12 слов в одну строку через пробел
+  const copyWords = async () => {
+    const phrase = words.join(' ').trim();
+    if (!phrase) {
+      showToast('⚠️ Нет слов для копирования');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(phrase);
+      showToast('✅ 12 слов скопированы в буфер обмена');
+    } catch (err) {
+      console.error('Ошибка при копировании:', err);
+      showToast('❌ Не удалось скопировать в буфер обмена');
+    }
   };
 
   const handleLoginOrRegister = async () => {
@@ -84,15 +122,17 @@ export const useAuthLogic = () => {
       await saveSeedFromAuth(seed32);
       await initializeApp(isRegister ? nickname : undefined);
 
-      localStorage.setItem(CONFIG.IS_LODING, 'true');
-
       if (isRegister) {
-        console.log('✅ Регистрация завершена, профиль создан.');
-      } else {
-        console.log('✅ Вход выполнен, профиль восстановлен.');
+        console.log('📢 [Register] Отправляем профиль в сеть перед перезагрузкой...');
+        try {
+          await broadcastMyProfile();
+          await new Promise(r => setTimeout(r, 500));
+        } catch (e) {
+          console.warn('⚠️ Не удалось забросить профиль перед редиректом:', e);
+        }
       }
-      
-      // Заставляем браузер полностью перезагрузить страницу и запустить App.tsx как при F5
+
+      localStorage.setItem(CONFIG.IS_LODING, 'true');
       window.location.href = '/contacts';
 
     } catch (error: any) {
@@ -110,8 +150,8 @@ export const useAuthLogic = () => {
     }
   };
 
-  // Возвращаем тост и метод наружу
   return {
+    isLoading,
     isRegister,
     setIsRegister,
     showPass,
@@ -121,6 +161,7 @@ export const useAuthLogic = () => {
     words,
     handleWordChange,
     generateWords,
+    copyWords,
     handleLoginOrRegister,
     toastMessage,
     showToast

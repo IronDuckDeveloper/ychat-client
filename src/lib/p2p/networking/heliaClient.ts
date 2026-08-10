@@ -20,7 +20,7 @@ import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
 // import { kadDHT } from '@libp2p/kad-dht';
-import { broadcastMyProfile } from '../services/authService.ts';
+import { broadcastMyProfile, globalProfileDb } from '../services/authService.ts';
 import { multiaddr } from '@multiformats/multiaddr';
 
 let initializationPromise: Promise<any> | null = null;
@@ -152,6 +152,7 @@ export function createBrowserHelia(): Promise<any> {
 
         // Фиксируем успешный индекс в менеджере
         relayManager.setActiveIndex(currentRelayIndex);
+        
         // Размораживаем UI
         window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: true } }));
 
@@ -176,8 +177,12 @@ export function createBrowserHelia(): Promise<any> {
 
     // Запускаем мониторинг именно здесь, один раз
     relayManager.startMonitoring(heliaNode.libp2p, async (newRelay) => {
-      notifyArchivist(heliaNode.libp2p, peerId, newRelay.name);
-      console.log(`📢 Оповещаем новый архивариус: ${newRelay.name}`);
+      
+      // Отправляем Архивариусу адрес НАШЕЙ базы профиля, чтобы он её закэшировал
+      if (globalProfileDb) {
+        notifyArchivist(heliaNode.libp2p, peerId, globalProfileDb.address.toString());
+        console.log(`📢 Оповестили Архивариус о нашей базе профиля`);
+      }
 
       if (heliaNode) {
         try {

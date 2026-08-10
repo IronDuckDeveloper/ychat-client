@@ -1,10 +1,10 @@
 import { createBrowserHelia, relayManager } from '../networking/heliaClient.ts';
 import { getOrbitDB } from '../orbit/client.ts';
-import { getFilteredProfileData, initProfileDB } from './profileService.ts';
+import { getFilteredProfileData, initProfileDB, initGlobalRegistryDB } from './profileService.ts';
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
-import { addContactIfMissing, initContactsDB, getContact, saveContact } from './contactsService.ts';
+import { initContactsDB, getContact, saveContact, type ContactItem, updateContactProfileAddress } from './contactsService.ts';
 import { OrbitDBAccessController } from '@orbitdb/core';
 
 export let globalHelia: any = null;
@@ -26,6 +26,8 @@ let isInitializing = false;
 
 export const activeDbs = new Map<string, any>();
 
+const processedPubSubMsgs = new Set<string>();
+
 export async function getOrOpenDb(addressOrName: string | undefined | null) {
   if (!addressOrName || typeof addressOrName !== 'string') {
     return null; 
@@ -36,9 +38,17 @@ export async function getOrOpenDb(addressOrName: string | undefined | null) {
     return null;
   }
 
-  // 1. Быстрый возврат из кэша
+  // 1. Быстрый возврат из кэша с проверкой, жива ли база
   if (activeDbs.has(addressOrName)) {
-    return activeDbs.get(addressOrName);
+    const cachedDb = activeDbs.get(addressOrName);
+    
+    // Внутренняя проверка IPFS/LevelDB. Если у БД стерты события или статус closed, кэш протух.
+    // Если база мертва — удаляем из кэша и идем открывать заново.
+    if (!cachedDb || cachedDb.closed || (cachedDb.events && cachedDb.events.closed)) {
+      activeDbs.delete(addressOrName);
+    } else {
+      return cachedDb;
+    }
   }
 
   try {
@@ -47,20 +57,19 @@ export async function getOrOpenDb(addressOrName: string | undefined | null) {
     // 2. Открываем базу с правильным манифестом
     if (addressOrName.startsWith(CONFIG.PREFIX_ROOM)) {
       db = await globalOrbitDB.open(addressOrName, {
-      type: 'documents',
-      docIndex: '_id',
-      AccessController: OrbitDBAccessController({
-        type: 'orbitdb',
-        write: ['*'],
-      }),
-    });
+        type: 'documents',
+        docIndex: '_id',
+        AccessController: OrbitDBAccessController({
+          type: 'orbitdb',
+          write: ['*'],
+        }),
+      });
     } else {
       // Если это уже готовый /orbitdb/zdpu... адрес
       db = await globalOrbitDB.open(addressOrName);
     }
 
     // 3. Сохраняем в кэш. 
-    // 🔥 Важно: сохраняем под оригинальным запросом (чтобы повторный вызов room_... не открывал базу заново)
     activeDbs.set(addressOrName, db);
     
     // И дублируем по физическому адресу, если запрашивали по имени
@@ -77,7 +86,7 @@ export async function getOrOpenDb(addressOrName: string | undefined | null) {
 
 /**
  * Рассылает текущий профиль пользователя (ник и аватар) в общую сеть PubSub.
- * Используется как при обновлении своего профиля, так и в ответ на PROFILE_REQUEST.
+ * Используется при обновлении своего профиля или ответе на WAKEUP.
  */
 export async function broadcastMyProfile(customProfileData?: any) {
   if (!globalHelia || !globalProfileDb) {
@@ -88,8 +97,6 @@ export async function broadcastMyProfile(customProfileData?: any) {
   try {
     const myPeerId = globalHelia.libp2p.peerId.toString();
     
-    // Явные проверки наличия ключа. Если в customProfileData ключа нет, 
-    // обязательно тянем его из базы профиля.
     const nickname = customProfileData && customProfileData[CONFIG.PROFILE.KEY_NICKNAME] !== undefined
       ? customProfileData[CONFIG.PROFILE.KEY_NICKNAME] 
       : await globalProfileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
@@ -140,10 +147,10 @@ export async function initializeApp(nicknameForRegistration?: string) {
   try {
     console.log('🚀 [Init] Запуск IPFS узла и баз данных...');
 
-    // 1. Просто привязываем готовый инстанс из heliaClient
+    // 1. Привязываем готовый инстанс из heliaClient
     globalRelayManager = relayManager;
 
-    // 2. Поднимаем IPFS (внутри createBrowserHelia уже происходит перебор релеев и запуск мониторинга!)
+    // 2. Поднимаем IPFS
     globalHelia = await createBrowserHelia();
     
     const libp2p = (globalHelia as any).libp2p as any;
@@ -152,6 +159,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
     globalOrbitDB = await getOrbitDB(globalHelia);
     globalProfileDb = await initProfileDB(globalOrbitDB);
     globalContactsDb = await initContactsDB(globalOrbitDB);
+    await initGlobalRegistryDB(globalOrbitDB);
 
     const pubsub = libp2p.services.pubsub;
     if (!pubsub) {
@@ -159,12 +167,18 @@ export async function initializeApp(nicknameForRegistration?: string) {
     }
 
     await pubsub.subscribe(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC);   // Подписываемся на обновления профилей
-    await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC);  // Подписываемся на пинги пробуждения от других клиентов
+    await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC);       // Подписываемся на пинги пробуждения
 
     // ==========================================
     // ЛОГИКА ОБРАБОТКИ СООБЩЕНИЙ (ОБНОВЛЕНИЯ ПРОФИЛЯ И ПРОБУЖДЕНИЯ)
     // ==========================================
     pubsub.addEventListener('message', async (evt: any) => {
+      const msgId = `${evt.detail.from.toString()}_${evt.detail.sequenceNumber}`;
+      if (processedPubSubMsgs.has(msgId)) return;
+      
+      processedPubSubMsgs.add(msgId);
+      setTimeout(() => processedPubSubMsgs.delete(msgId), 5000);
+      
       const currentTopic = evt.detail.topic;
 
       // 1. Пропускаем только те топики, которые умеем обрабатывать
@@ -182,20 +196,18 @@ export async function initializeApp(nicknameForRegistration?: string) {
       }
 
       const myPeerId = globalHelia.libp2p.peerId.toString();
-      
-      // evt.detail.from.toString() может содержать ID релея, через который прошло сообщение.
       const senderId = msg.senderId || evt.detail.from.toString();
       
       // Игнорируем эхо от собственных сообщений
       if (senderId === myPeerId) return;
 
       // 👇 БЛОК ФАЕРВОЛА: Проверяем, не в черном ли списке отправитель
-      const { isPeerBlocked } = await import('./contactsService.ts');
-      const isBlocked = await isPeerBlocked(globalContactsDb, senderId);
+      const { isPeerIgnored } = await import('./contactsService.ts');
+      const isBlocked = await isPeerIgnored(globalContactsDb, senderId);
       
       if (isBlocked) {
         console.log(`🚫 [Фаервол] Отклонено PubSub-сообщение (${currentTopic}) от заблокированного: ${senderId.slice(0, 8)}`);
-        return; // Полностью игнорируем любые чихи от этого пира
+        return;
       }
 
       // 2. Обработка WAKEUP_PING (Кто-то проснулся)
@@ -204,91 +216,84 @@ export async function initializeApp(nicknameForRegistration?: string) {
           if (msg.type === CONFIG.MSG.WAKEUP) {
             console.log(`🔔 [PubSub] Пир ${senderId.slice(-6)} проснулся! Отправляем ему наш профиль для синхронизации.`);
             
-            // Прогоняем профиль через твой фильтр приватности для конкретного пира, который проснулся
             const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, senderId);
 
             if (filteredProfile) {
-              // Рассылаем ему свежие данные, чтобы он обновил свою записную книжку
               await broadcastMyProfile(filteredProfile); 
             }
           }
         } catch (e) {
           console.error('❌ Ошибка при обработке WAKEUP_PING:', e);
         }
-        return; // Выходим из слушателя, так как этот топик обработан
+        return;
       }
 
-      // 3. Обработка PROFILE_UPDATED
-      if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {  
-        console.log(`📩 [PubSub Сеть] Получено обновление профиля от ${senderId.slice(0,8)}`);
+      // 3. Обработка входящих обновлений профиля (MSG_PROFILE_UPDATED)
+      if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {
+        console.log(`📩 [PubSub Сеть] Получены данные профиля от ${senderId.slice(0,8)}:`, msg);
+
+        await updateContactProfileAddress(globalContactsDb, msg.senderId, msg.profileDbAddress);
         
-        const contact = await getContact(globalContactsDb, senderId);
-                
-        if (contact) {
-          // Проверяем, есть ли реальные изменения
+        let contact = await getContact(globalContactsDb, senderId);
+        
+        if (!contact) {
+          // Если контакта еще не было в базе — создаем его автоматически
+          const newContact: ContactItem = {
+            id: senderId,
+            chatDbAddress: '', 
+            nickname: msg.nickname || senderId.slice(0, 8),
+            avatarCid: msg.avatarCid || '',
+            bio: msg.bio || '',
+            profileDbAddress: msg.profileDbAddress || '',
+            updatedAt: Date.now(),
+            isBlocked: false,
+            isDeleted: false
+          };
+          await saveContact(globalContactsDb, newContact);
+          console.log(`➕ [PubSub] Автоматически создан новый контакт: ${newContact.nickname}`);
+          window.dispatchEvent(new Event('onContactsUpdated'));
+        } else {
+          // Если контакт есть — проверяем, изменились ли данные
           const isChanged = 
             contact.avatarCid !== msg.avatarCid || 
             contact.nickname !== msg.nickname ||
             contact.bio !== msg.bio ||
-            (msg.profileDbAddress && contact.profileDbAddress !== msg.profileDbAddress);
+            (!contact.profileDbAddress && !!msg.profileDbAddress) ||
+            contact.profileDbAddress !== msg.profileDbAddress;
 
           if (isChanged) {
-            console.log(`🔄 [PubSub] Обновляем локальную базу для контакта ${msg.nickname}, адрес БД: ${msg.profileDbAddress || contact.profileDbAddress}`);
+            console.log(`🔄 [PubSub] Обновляем профиль для контакта: ${msg.nickname || senderId.slice(0, 8)}`);
             
-            // ✅ Создаем новый объект через спред-оператор
-            const updatedContact = {
+            const updatedContact: ContactItem = {
               ...contact,
-              avatarCid: msg.avatarCid,
-              nickname: msg.nickname,
-              bio: msg.bio || '',
+              avatarCid: msg.avatarCid ?? contact.avatarCid,
+              nickname: msg.nickname ?? contact.nickname,
+              bio: msg.bio ?? contact.bio,
               profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
               updatedAt: Date.now()
             };
 
             await saveContact(globalContactsDb, updatedContact);
-            window.dispatchEvent(new CustomEvent('onContactsUpdated', { 
-              detail: { peerId: senderId } 
-            }));
+            window.dispatchEvent(new Event('onContactsUpdated'));
           }
         }
-      }
-
-      // 4. Кто-то просит НАС представиться (PROFILE_REQUEST)
-      if (msg.type === CONFIG.PROFILE.MSG_PROFILE_REQUEST) {
-        if (msg.targetId === myPeerId) {
-            console.log(`📡 [PubSub] Получен PROFILE_REQUEST от ${senderId}. Проверяем приватность...`);
-            
-            // 1. Получаем отфильтрованный профиль. Передаем senderId (тот, кто просит!)
-            const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, senderId);
-
-            if (filteredProfile) {
-              // 2. Отправляем в сеть именно отфильтрованные данные
-              await broadcastMyProfile(filteredProfile); 
-            }
-
-            if (globalContactsDb && senderId) {
-              addContactIfMissing(globalContactsDb, globalHelia, senderId);
-            }
-          }
       }
     });
 
     // ==========================================
     // ЛОГИКА ОБРАБОТКИ ПУЛЬСА СЕТИ (PubSub)
     // ==========================================
+    // setInterval(() => {
+    //   if (globalHelia) {
+    //     const allPeers = libp2p.getPeers();
+    //     const pubsubPeers = pubsub.getPeers();
+    //     const topics = pubsub.getTopics();
 
-    // Оригинальный логгер сети
-    setInterval(() => {
-      if (globalHelia) {
-        const allPeers = libp2p.getPeers();
-        const pubsubPeers = pubsub.getPeers();
-        const topics = pubsub.getTopics();
-
-        console.log(
-          `📊 Network: Peers=${allPeers.length} | PubSub=${pubsubPeers.length} | Topics=${JSON.stringify(topics)}`
-        );
-      }
-    }, 5000);
+    //     console.log(
+    //       `📊 Network: Peers=${allPeers.length} | PubSub=${pubsubPeers.length} | Topics=${JSON.stringify(topics)}`
+    //     );
+    //   }
+    // }, 5000);
 
     // ==========================================
     // 4. Логика регистрации С ЧЕСТНЫМ КУВЫРКОМ ПО РЕЛЕЯМ
@@ -309,14 +314,12 @@ export async function initializeApp(nicknameForRegistration?: string) {
       const relays = globalRelayManager.getPool();
       let registrationSuccess = false;
 
-      // Бежим по нашему пулу надежности
       for (const relay of relays) {
         try {
           console.log(`⏳ [Init] Пробуем зарегистрироваться через релей: ${relay.name}...`);
 
           const actionType = nicknameForRegistration ? 'REGISTER' : 'LOGIN';   
           
-          // Шлем запрос именно на текущий в итерации relay.peerId
           const isRegistered = await globalRelayManager.registerWithRelay(
             libp2p,
             relay,
@@ -326,28 +329,23 @@ export async function initializeApp(nicknameForRegistration?: string) {
             actionType
           );
 
-          // Если регистрация прошла успешно, выходим из цикла и фиксируем этот релей как активный в менеджере
           if (isRegistered) {
             registrationSuccess = true;
             
-            // Фиксируем этот рабочий релей как активный в менеджере
             const activeIdx = relays.indexOf(relay);
             globalRelayManager.setActiveIndex(activeIdx);
             
             console.log(`🎉 [Init] Сетевой антифрод успешно пройден на релее ${relay.name}!`);
-            break; // Успех! Выходим из цикла перебора релеев
+            break; 
           } else {
             console.warn(`⚠️ [Init] Релей ${relay.name} отклонил регистрацию (лимит), проверяем следующий...`);
           }
 
         } catch (relayError: any) {
-          // Если сервер лежит (как твой старый IP 62.x) — ловим ошибку связи ЗДЕСЬ
-          // Цикл НЕ прерывается, код спокойно идет к следующему релею в списке
           console.warn(`⚠️ [Init] Релей ${relay.name} недоступен по сети: ${relayError.message || relayError}`);
         }
       }
 
-      // Если прошли весь цикл и ни один сервер не ответил успехом
       if (!registrationSuccess) {
         throw new Error('Не удалось зарегистрироваться: все релеи сети недоступны или превышен лимит устройств.');
       }
@@ -357,7 +355,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
     
     // 🔥 СМАРТ-ФИКС: Циклический запуск WAKEUP с контролем пиров и версионированием
     let wakeupAttempts = 0;
-    const maxWakeupAttempts = 10; // Пробуем в течение 30 секунд
+    const maxWakeupAttempts = 10; 
 
     const trySendWakeup = setInterval(async () => {
       wakeupAttempts++;
@@ -377,14 +375,13 @@ export async function initializeApp(nicknameForRegistration?: string) {
         if (peers.length > 0) {
           console.log(`📢 [Mesh] Сеть ожила (пиров: ${peers.length}). Отправляем WAKEUP с таймстемпом на попытке ${wakeupAttempts}...`);
           
-          // Достаем метку последнего обновления нашего профиля
           const myPeerId = globalHelia.libp2p.peerId.toString();
           const lastUpdated = await globalProfileDb.get(CONFIG.PROFILE.KEY_LAST_UPDATED) || Date.now();
 
           const wakeupMsg = { 
             type: CONFIG.MSG.WAKEUP,
             senderId: myPeerId,
-            updatedAt: lastUpdated // 🧠 Твоя идея: шлем версию (время) нашего профиля
+            updatedAt: lastUpdated
           };
 
           await pubsub.publish(
@@ -392,16 +389,14 @@ export async function initializeApp(nicknameForRegistration?: string) {
             new TextEncoder().encode(JSON.stringify(wakeupMsg))
           );
 
-          clearInterval(trySendWakeup); // Успешно отправили — выключаем таймер!
+          clearInterval(trySendWakeup); 
         } else {
           console.log(`⏳ [Mesh] Ожидание PubSub пиров для отправки WAKEUP... (попытка ${wakeupAttempts}/${maxWakeupAttempts})`);
         }
       } catch (err) {
         console.error('❌ Ошибка при попытке отправить WAKEUP:', err);
       }
-    }, 3000); // Опрашиваем каждые 3 секунды
-
-    // return { helia, profileDb, contactsDb, sessionToken: password };
+    }, 3000); 
 
     dbReadyCallbacks.forEach(cb => cb());
     dbReadyCallbacks = []; 
@@ -421,14 +416,13 @@ export async function initializeApp(nicknameForRegistration?: string) {
       console.error('⚠️ [Init] Ошибка при очистке мусора:', cleanupError);
     }
 
-    // Сбрасываем стейт
     globalHelia = null;
     globalOrbitDB = null;
     globalProfileDb = null;
     globalRelayManager = null;
     isInitializing = false;
 
-    throw error;  // Пробрасываем ошибку дальше в Auth.tsx
+    throw error; 
   } finally {
     isInitializing = false;
   }

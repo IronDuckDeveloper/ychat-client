@@ -3,14 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
 
+
 import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
-import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType } from '../lib/p2p/services/contactsService.ts';
+import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
-import { requestPeerProfile, forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
+import { forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
 import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts'; 
+
 
 export const useContactsLogic = () => {
   const navigate = useNavigate();
@@ -62,10 +64,16 @@ export const useContactsLogic = () => {
   const closeDialog = () => setDialogConfig(prev => ({ ...prev, isOpen: false }));
 
   // --- ОЧЕРЕДЬ ДЛЯ ЗАГРУЗКИ КОНТАКТОВ ---
-  const syncContactInQueue = (contact: ContactItem) => {
-    // Простая проверка: если адрес есть, шлем в очередь
-    if (contact.chatDbAddress && !contact.isBlocked) {
-      globalSyncQueue.add(contact, globalContactsDb);
+  const syncContactInQueue = async (contact: ContactItem) => {
+    // 🛡️ Пока идет холодный старт — Smart Render ничего не кидает в очередь
+    if (!isColdStartDone) return;
+
+    // Быстрый отсев по свойствам объекта + полная проверка фаервола
+    if (contact.chatDbAddress) {
+      const isIgnored = await isPeerIgnored(globalContactsDb, contact.id);
+      if (!isIgnored) {
+        globalSyncQueue.add(contact, globalContactsDb);
+      }
     }
   };
 
@@ -154,33 +162,38 @@ export const useContactsLogic = () => {
     return () => stopAddCamera();
   }, [isAddModalOpen]);
 
-  // Обновление контактов
+// Обновление контактов и АВТО-СИНХРОНИЗАЦИЯ ПРОФИЛЕЙ
   useEffect(() => {
     const refreshContactsList = async () => {
-      if (!contactsDbInstance) return; 
+      // 🚀 ФИКС ГОНКИ: Читаем базу напрямую из импорта, а не из стейта React.
+      // Стейт может отставать, но глобальная переменная всегда актуальна в момент события.
+      const db = globalContactsDb; 
+      if (!db) return; 
+
       try {
-        const freshContacts = await getAllContacts(contactsDbInstance);
+        const freshContacts = await getAllContacts(db);
+        
         setContacts(prev => {
-          if (JSON.stringify(prev) === JSON.stringify(freshContacts)) return prev;
-          return freshContacts;
+          const hasRealDiff = JSON.stringify(prev) !== JSON.stringify(freshContacts);
+          return hasRealDiff ? [...freshContacts] : prev;
         });
       } catch (err) {
         console.error('❌ Ошибка обновления:', err);
       }
     };
 
-    // 1. Слушаем твой кастомный ивент, который дергается от 'update' в сервисе
+    // Вешаем слушатель глобального события
     window.addEventListener('onContactsUpdated', refreshContactsList);
     
-    // 2. Если база есть в стейте — делаем ПЕРВИЧНЫЙ запрос мгновенно!
-    if (contactsDbInstance) {
+    // Сразу пробуем загрузить контакты, если база уже готова к моменту рендера
+    if (globalContactsDb) {
       refreshContactsList();
     }
 
     return () => {
       window.removeEventListener('onContactsUpdated', refreshContactsList);
     };
-  }, [contactsDbInstance]);
+  }, [isNetworkReady]);
 
   // Защита роута
   useEffect(() => {
@@ -362,12 +375,8 @@ export const useContactsLogic = () => {
       
       if (targetContact) {
         showToast('🔄 Запрос на обновление отправлен...');
-        
-        // 🚀 Канал 1: Пробуем стянуть напрямую через OrbitDB (если сеть позволяет)
+        // Пробуем стянуть напрямую через OrbitDB (если сеть позволяет)
         forceSyncContactProfile(globalContactsDb, targetContact);
-        
-        // 🚀 Канал 2: Пинаем пира через PubSub (пробивает transient-соединения!)
-        await requestPeerProfile(globalHelia, targetPeerId);
       } else {
         showToast('❌ Ошибка: контакт не найден');
       }
@@ -527,7 +536,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           id: targetId,
           profileDbAddress: profileAddress,
           chatDbAddress: '', 
-          nickname: `Пир: ${targetId.slice(0, 8)}...`, 
+          nickname: `Пир: ${targetId.slice(-8)}...`, 
           avatarCid: '',
           bio: '',
           updatedAt: Date.now(),
@@ -541,13 +550,9 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       setContacts(await getAllContacts(globalContactsDb));
 
       if (globalHelia) {
-        const freshContact = await getContactById(globalContactsDb, targetId);
-        
-        // 🚀 Всегда шлем PubSub запрос для мгновенного отклика
-        await requestPeerProfile(globalHelia, targetId);
-        
-        // Параллельно запускаем OrbitDB синхронизацию
-        if (freshContact && freshContact.profileDbAddress) {
+        const freshContact = await getContactById(globalContactsDb, targetId);    
+        // Запускаем OrbitDB синхронизацию
+        if (freshContact) {
           await forceSyncContactProfile(globalContactsDb, freshContact);
         }
       }
@@ -622,8 +627,6 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       if (globalHelia) {
         if (updatedContact.profileDbAddress) {
           await forceSyncContactProfile(globalContactsDb, targetContact);
-        } else {
-          await requestPeerProfile(globalHelia, id);
         }
       }
 

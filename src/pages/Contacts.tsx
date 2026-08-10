@@ -7,6 +7,7 @@ import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 import HeaderActionButton from '../components/HeaderActionButton.tsx';
 import { useCallback, useRef, useEffect } from 'react';
 import Avatar from '../components/Avatar.tsx';
+import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 
 const ContactList = () => {
   const {
@@ -81,7 +82,7 @@ const ContactList = () => {
   }, [syncContactInQueue]);
 
 // 2. Эта функция просто привязывает элемент к обсерверу
-const contactRef = useCallback((node: HTMLDivElement | null, contact: any) => {
+const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactItem) => {
   if (node) {
     elementsMap.current.set(node, contact);
     if (observer.current) observer.current.observe(node);

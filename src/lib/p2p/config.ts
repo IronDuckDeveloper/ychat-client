@@ -5,6 +5,8 @@ export const CONFIG = {
   ORBITDB_BLOCKS_DIR: './data/blocks.level', // Директория для хранения блоков OrbitDB
   DATA_DIR: './data', // Директория для хранения данных Helia (включая ключи)
   ORBITDB_DIR: './orbitdb', // Директория для хранения баз OrbitDB
+  GLOBAL_REGISTRY_ADDRESS: '', // Адрес глобальной базы профилей (будет установлен при старте)
+
       
   PROFILE: {
     DB_PROFILE: 'user-profile',// Строка 'user-profile' создаст базу локально и привяжет к текущей Identity.
@@ -16,15 +18,15 @@ export const CONFIG = {
     KEY_AVATAR_CID: 'avatarCID', // Ключ для хранения CID аватара
     KEY_PRIVACY: 'privacy_mode', // Режим приватности профиля (public, contacts_only, private)
     MSG_PROFILE_UPDATED: 'PROFILE_UPDATED', // Сообщение об обновлении профиля
-    MSG_PROFILE_REQUEST: 'PROFILE_REQUEST', // Сообщение об прозьбе обновить профиль
     BLACKLIST_KEY : 'ychat_blocked_peers', // Ключ для хранения черного списка
     DB_BLACKLIST_KEY : 'encrypted_blacklist', // Ключ для хранения зашифрованного черного списка
-    KEY_AVATAR_SERVER_CID: 'avatar_server_cid',
+    KEY_AVATAR_SERVER_CID: 'avatar_server_cid', // Ключ для хранения серверного CID аватара
   },
 
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
 
   IS_LODING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
+  KEY_GLOBAL_REGISTRY_ADDRESS: 'YCHAT_GLOBAL_REGISTRY_ADDRESS', // Ключ для хранения состояния авторизации
   
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства
   KEY_IP_ADDRESS: 'ipAddress', // Ключ для хранения IP-адреса
@@ -57,6 +59,6 @@ export const CONFIG = {
     PROFILE_UPDATES_TOPIC: 'ychat/profiles/updates', // Топик для обновления профилей
     RPC_PROTOCOL: '/ychat/anti-flood/1.0.0', // Протокол для RPC-метода проверки регистрации (антифрод)
     WAKEUP_SYNC_TOPIC: 'peers:wakeup:ping', // Для пробуждения соседей и синхронизации OrbitDB
-    ANNOUNCE_NEW_MESSAGE: `ychat-notifications-` // Топик для анонсирования нового сообщения
+    ANNOUNCE_NEW_MESSAGE: `ychat-notifications-`, // Топик для анонсирования нового сообщения
   }
 };

@@ -21,9 +21,9 @@ export class NetworkStateMachine {
   public pubsubTopic: string;
   public broadcastMyProfile: () => Promise<void>;
   
-  public state: NetState; // Использовали тут
+  public state: NetState;
   private watchdogTimer: any;
-  private listeners: Set<(state: NetState) => void>; // И тут
+  private listeners: Set<(state: NetState) => void>;
 
   constructor(config: {
     libp2p: any;
@@ -163,7 +163,6 @@ private startWatchdog() {
             if (this.relayManager.switchToNextRelay) {
               await this.relayManager.switchToNextRelay();
               
-              // 🔥 ИСПРАВЛЕНИЕ ЗДЕСЬ:
               // Релей успешно сменился. Запускаем рекавери заново, 
               // чтобы пройти процесс с новым рабочим релеем!
               this.recoverNetwork();
@@ -180,7 +179,8 @@ private startWatchdog() {
       // 4. Подписываемся на топики
       try {
         this.libp2p.services.pubsub.subscribe(this.pubsubTopic);
-      } catch (e) { /* Игнорируем */ }
+        this.libp2p.services.pubsub.subscribe(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC);
+      } catch (e) {/* Игнорируем */ }
 
       // 5. Отправляем профиль
       if (this.broadcastMyProfile) this.broadcastMyProfile().catch(() => {});
@@ -200,10 +200,10 @@ private startWatchdog() {
     }
   }
 
-  public async start() {
-    this.transitionTo(NET_STATE.CONNECTING);
-    this.transitionTo(NET_STATE.CONNECTED);
-  }
+public async start() {
+  this.transitionTo(NET_STATE.CONNECTING);
+  this.transitionTo(NET_STATE.CONNECTED);
+}
 }
 
 export let globalNetworkState: NetworkStateMachine | null = null;

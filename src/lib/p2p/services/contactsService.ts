@@ -1,7 +1,6 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from '../config.ts';
-import { requestPeerProfile } from './profileService.ts'; 
-import { getOrOpenDb, globalHelia } from './authService.ts';
+import { getOrOpenDb, globalHelia, activeDbs } from './authService.ts';
 import { getDeterministicRoomName } from './roomService.ts';
 import { notifyArchivist } from '../networking/connectionManager.ts';
 
@@ -9,6 +8,7 @@ export interface ContactItem {
   id: string;               // PeerID контакта
   profileDbAddress: string; // Адрес его OrbitDB с профилем
   chatDbAddress: string;    // Адрес вашей общей базы сообщений (eventlog)
+  room?: string;            // (Опционально) Имя детерминированной комнаты
   nickname: string;         // Кэш никнейма для моментального UI
   avatarCid: string;        // Кэш аватара для моментального UI
   bio?: string;             // Кэш био для моментального UI
@@ -20,6 +20,12 @@ export interface ContactItem {
   isDeleted?: boolean; // Флаг удаления
 }
 
+export interface PeerRestrictionStatus {
+  isBlocked: boolean;
+  isDeleted: boolean;
+  isRestricted: boolean; // true, если peer заблокирован ИЛИ удален
+}
+
 export type PrivacyType = 'public' | 'contacts_only' | 'private';
 
 // Глобальный кэш для защиты от двойной синхронизации 
@@ -29,6 +35,10 @@ const syncCooldowns = new Map<string, number>();
 let cachedContacts: ContactItem[] = [];
 let getAllContactsPromise: Promise<ContactItem[]> | null = null;
 let isSubscribedToUpdates = false;
+
+// 🛡️ Новые флаги для управления очередью синхронизации
+export let isColdStartDone = false;
+const activeSyncs = new Set<string>();
 
 function updateLocalCache(allRecords: any[]) {
   if (!Array.isArray(allRecords)) {
@@ -65,31 +75,57 @@ export const getContactById = async (contactsDb: any, id: string): Promise<Conta
   }
 };
 
-export const isPeerBlocked = async (contactsDb: any, peerId: string): Promise<boolean> => {
+/**
+ * Проверяет полную ограничение доступа к пиру (блэклист localStorage + базы контактов)
+ */
+export const getPeerRestrictionStatus = async (
+  contactsDb: any, 
+  peerId: string
+): Promise<PeerRestrictionStatus> => {
+  if (!peerId) return { isBlocked: false, isDeleted: false, isRestricted: false };
+
+  // 1. Проверка локального блэклиста в localStorage
+  let isLocalBlocked = false;
   const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
   if (localBlacklistStr) {
     try {
       const localBlacklist: string[] = JSON.parse(localBlacklistStr);
       if (localBlacklist.includes(peerId)) {
-        return true; 
+        isLocalBlocked = true;
       }
     } catch (e) {
-      console.error('Ошибка парсинга блэклиста:', e);
+      console.error('Ошибка парсинга блэклиста из localStorage:', e);
     }
   }
+
+  // 2. Проверка записи в БД контактов
+  let isDbBlocked = false;
+  let isDbDeleted = false;
 
   if (contactsDb) {
     try {
       const contact = await getContact(contactsDb, peerId);
-      if (contact && contact.isBlocked) {
-        return true;
+      if (contact) {
+        isDbBlocked = !!contact.isBlocked;
+        isDbDeleted = !!contact.isDeleted;
       }
     } catch (e) {
-      console.error('Ошибка проверки блокировки в БД:', e);
+      console.error('Ошибка получения контакта для проверки блокировки:', e);
     }
   }
 
-  return false; 
+  const isBlocked = isLocalBlocked || isDbBlocked;
+  const isRestricted = isBlocked || isDbDeleted;
+
+  return { isBlocked, isDeleted: isDbDeleted, isRestricted };
+};
+
+/**
+ * Быстрый булев хелпер для фаерволов и фоновых сервисов
+ */
+export const isPeerIgnored = async (contactsDb: any, peerId: string): Promise<boolean> => {
+  const { isRestricted } = await getPeerRestrictionStatus(contactsDb, peerId);
+  return isRestricted;
 };
 
 export const saveContact = async (contactsDb: any, contact: ContactItem) => {
@@ -122,7 +158,7 @@ export const saveContact = async (contactsDb: any, contact: ContactItem) => {
     }
   }
 
-  // 1. 🔥 ОПЕРЕЖАЮЩЕЕ ОБНОВЛЕНИЕ: Мгновенно обновляем кэш ДО записи в базу.
+  // 1. Мгновенно обновляем кэш ДО записи в базу.
   let newCache = [...cachedContacts];
   const idx = newCache.findIndex(c => c.id === sanitizedContact.id);
   if (sanitizedContact.isDeleted) {
@@ -268,36 +304,6 @@ export const clearUnread = async (db: any, peerId: string) => {
   }
 };
 
-export const addContactIfMissing = async (db: any, helia: any, peerId: string) => {
-  if (!db || !peerId) return;
-  
-  try {
-    const contact = await getContact(db, peerId);
-
-    if (!contact) {
-      const newContact: ContactItem = {
-        id: peerId,
-        profileDbAddress: '',
-        chatDbAddress: '',
-        nickname: `${peerId.substring(0, 6)}...`,
-        avatarCid: '',
-        updatedAt: Date.now(),
-        unreadCount: 0,
-        isDeleted: false
-      };
-      
-      await saveContact(db, newContact);
-      window.dispatchEvent(new Event('onContactsUpdated'));
-
-      if (helia) {
-        await requestPeerProfile(helia, peerId);
-      }
-    }
-  } catch (err) {
-    console.error(`❌ [ContactsService] Ошибка автодобавления:`, err);
-  }
-};
-
 export async function updateChatDbAddress(db: any, peerId: string, address: string) {
   if (!db || !peerId || !address) return;
   
@@ -323,141 +329,175 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
   }
 }
 
-export async function syncContactHistory(contact: any, contactsDb: any) {
-  if (contact.isBlocked) return;
+export async function syncContactHistory(contact: ContactItem, contactsDb: any) {
+  // 🛡️ Выходим, если контакт заблокирован, удален или находится в блэклисте
+  if (await isPeerIgnored(contactsDb, contact.id)) {
+    console.log(`🔇 [Sync] Пропуск синхронизации для ${contact.nickname}: контакт заблокирован или удален.`);
+    return;
+  }
+
+  // 🛡️ Защита от параллельного запуска синка одной и той же базы
+  if (activeSyncs.has(contact.chatDbAddress || contact.id)) {
+    return;
+  }
+  activeSyncs.add(contact.chatDbAddress || contact.id);
 
   const now = Date.now();
   const lastSynced = syncCooldowns.get(contact.id) || 0;
 
   if (now - lastSynced < CONFIG.COOLDOWN_TIME) {
+    activeSyncs.delete(contact.chatDbAddress || contact.id); // Не забываем сбрасывать
     return;
   }
 
-  // 1. Берем готовое имя комнаты, которое использует UI (например, room_c86de...)
-  let roomName = contact.room;
-
-  // Если вдруг его нет, вычисляем через правильный PeerId, а не OrbitDB Identity
-  if (!roomName) {
-    if (globalHelia) {
-      const myPeerId = (globalHelia as any).libp2p.peerId.toString();
-      roomName = await getDeterministicRoomName(myPeerId, contact.id);
-    } else {
-      console.warn(`[Sync] Нет globalHelia, не можем вычислить комнату для ${contact.nickname}`);
-      return;
-    }
-  }
-
-  if (!roomName) return;
-  syncCooldowns.set(contact.id, now);
-
-  // 2. Открываем базу именно по имени room_...
-  const chatDb = await getOrOpenDb(roomName);
-  if (!chatDb) return;
-
-  const actualAddress = chatDb.address.toString();
-
-  // Обновляем адрес БД в контакте
-  if (contact.chatDbAddress !== actualAddress) {
-    console.log(`🔄 [Sync] Обновляем адрес БД для ${contact.nickname}: ${actualAddress}`);
-    updateChatDbAddress(contactsDb, contact.id, actualAddress);
-  }
-
-  // Пингуем архиватор
   try {
-    if (globalHelia) {
-      const libp2p = (globalHelia as any).libp2p;
-      libp2p.getPeers().forEach((peerId: any) => {
-        notifyArchivist(libp2p, peerId, actualAddress);
-      });
-    }
-  } catch (e) {
-    console.warn("❌ [Sync] Ошибка уведомления архиватора:", e);
-  }
+    let roomName = contact.room;
 
-  await new Promise<void>((resolve) => {
-    let idleTimer: NodeJS.Timeout;
-    let isFinished = false;
-
-    const finalizeSync = async () => {
-      if (isFinished) return;
-      isFinished = true;
-
-      clearTimeout(idleTimer);
-      chatDb.events.off('update', onUpdate); 
-
-      try {
-        const records = [];
-        for await (const record of chatDb.iterator({ limit: 20, reverse: true })) {
-          records.push(record);
-        }
-        
-        console.log(`[Sync Debug] В локальной базе ${contact.nickname} (${actualAddress.slice(-8)}) найдено записей: ${records.length}`);
-        
-        if (records.length > 0) {
-          const messages = records.map((r: any) => r.payload?.value || r.value || r);
-          messages.sort((a: any, b: any) => a.ts - b.ts);
-          
-          const latestMsg = messages[messages.length - 1];
-          const contactLastTime = contact.lastMessageTime || 0;
-
-          const newMessages = messages.filter((msg: any) => msg.ts > contactLastTime);
-
-          if (latestMsg && latestMsg.ts > contactLastTime) {
-            console.log(`📥 [Холодный старт] Нашли новые сообщения от ${contact.nickname}`);
-            
-            const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
-            const isCurrentlyInThisChat = currentUrl.includes(contact.id) || (contact.room && currentUrl.includes(contact.room));
-            
-            const freshContact = await getContact(contactsDb, contact.id) || contact;
-            const newUnreadCount = !isCurrentlyInThisChat ? (freshContact.unreadCount || 0) + newMessages.length : 0;
-            const textPreview = latestMsg.text ? latestMsg.text : (latestMsg.attachment ? '📎 Вложение' : '');
-
-            await saveContact(contactsDb, {
-              ...freshContact,
-              chatDbAddress: actualAddress,
-              lastMessage: textPreview,
-              lastMessageTime: latestMsg.ts,
-              updatedAt: Math.max(freshContact.updatedAt || 0, latestMsg.ts),
-              unreadCount: newUnreadCount 
-            });
-
-            setTimeout(() => {
-              window.dispatchEvent(new Event('onContactsUpdated'));
-              console.log("⚡ [Sync] UI триггер отправлен");
-            }, 150);
-          }
-        }
-      } catch (dbError) {
-        console.error(`❌ Ошибка чтения истории ${contact.nickname}:`, dbError);
-      } finally {
-        try {
-          const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
-          const isCurrentlyInThisChat = currentUrl.includes(contact.id) || 
-            (contact.room && currentUrl.includes(contact.room));
-
-          if (isCurrentlyInThisChat) {
-            console.log(`👀 [Sync] Чат ${contact.nickname} сейчас открыт на экране. Оставляем БД открытой.`);
-          } else {
-            await chatDb.close();
-            console.log(`🧹 [Sync] База ${contact.nickname} закрыта, ресурсы освобождены.`);
-          }
-        } catch (closeErr) {
-          console.error(`❌ Ошибка при закрытии БД ${contact.nickname}:`, closeErr);
-        }
-        
-        resolve();
+    if (!roomName) {
+      if (globalHelia) {
+        const myPeerId = (globalHelia as any).libp2p.peerId.toString();
+        roomName = await getDeterministicRoomName(myPeerId, contact.id);
+        contact.room = roomName;
+        await saveContact(contactsDb, contact);
+      } else {
+        console.warn(`[Sync] Нет globalHelia, не можем вычислить комнату для ${contact.nickname}`);
+        return;
       }
-    };
+    }
 
-    const onUpdate = () => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(finalizeSync, 300); 
-    };
-    
-    chatDb.events.on('update', onUpdate);
-    // Даем релею 3 секунды, чтобы он успел выгрузить блоки
-    idleTimer = setTimeout(finalizeSync, 3000); 
-  });
+    if (!roomName) return;
+    syncCooldowns.set(contact.id, now);
+
+    const chatDb = await getOrOpenDb(roomName);
+    if (!chatDb) return;
+
+    const actualAddress = chatDb.address.toString();
+
+    // Обновляем адрес БД в контакте
+    if (contact.chatDbAddress !== actualAddress) {
+      updateChatDbAddress(contactsDb, contact.id, actualAddress);
+    }
+
+    // Пингуем архиватор
+    try {
+      if (globalHelia) {
+        // 🛡️ Защита: не отправляем анонсы для заблокированных или удаленных контактов
+        if (!contact.isBlocked && !contact.isDeleted) {
+          const libp2p = (globalHelia as any).libp2p;
+          libp2p.getPeers().forEach((peerId: any) => {
+            notifyArchivist(libp2p, peerId, actualAddress);
+            
+            if (contact.profileDbAddress) {
+              notifyArchivist(libp2p, peerId, contact.profileDbAddress);
+            }
+          });
+        } else {
+          console.log(`🔇 [Sync] Пропуск анонса архивариусу для ${contact.nickname}: контакт скрыт или заблокирован.`);
+        }
+      }
+    } catch (e) {
+      console.warn("❌ [Sync] Ошибка уведомления архиватора:", e);
+    }
+
+    await new Promise<void>((resolve) => {
+      let idleTimer: NodeJS.Timeout;
+      let isFinished = false;
+
+      const finalizeSync = async () => {
+        if (isFinished) return;
+        isFinished = true;
+
+        clearTimeout(idleTimer);
+        chatDb.events.off('update', onUpdate);
+
+        try {
+          const allRecords = await chatDb.all();
+          const sortedRecords = allRecords
+            .map((r: any) => r.value || r)
+            .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0));
+
+          const records = sortedRecords.slice(-10);
+
+          console.log(`[Sync Debug] В локальной базе ${contact.nickname} [${actualAddress.slice(-8)}] получено записей (топ-10): ${records.length}`);
+
+          if (records.length > 0) {
+            const latestMsg = records[records.length - 1];
+            const contactLastTime = contact.lastMessageTime || 0;
+
+            const newMessages = records.filter((msg: any) => msg.ts > contactLastTime);
+
+            if (latestMsg && latestMsg.ts > contactLastTime) {
+              console.log(`📥 [Холодный старт] Нашли новые сообщения от ${contact.nickname}`);
+
+              const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
+              const isCurrentlyInThisChat = currentUrl.includes(contact.id) || (contact.room && currentUrl.includes(contact.room));
+
+              const freshContact = await getContact(contactsDb, contact.id) || contact;
+              const newUnreadCount = !isCurrentlyInThisChat ? (freshContact.unreadCount || 0) + newMessages.length : 0;
+              const textPreview = latestMsg.text ? latestMsg.text : (latestMsg.attachment ? '📎 Вложение' : '');
+
+              await saveContact(contactsDb, {
+                ...freshContact,
+                chatDbAddress: actualAddress,
+                lastMessage: textPreview,
+                lastMessageTime: latestMsg.ts,
+                updatedAt: Math.max(freshContact.updatedAt || 0, latestMsg.ts),
+                unreadCount: newUnreadCount
+              });
+
+              setTimeout(() => {
+                window.dispatchEvent(new Event('onContactsUpdated'));
+                console.log("⚡ [Sync] UI триггер отправлен");
+              }, 150);
+            }
+          }
+        } catch (dbError: any) {
+          if (dbError?.message?.includes('Database is not open') || dbError?.name === 'ModuleError') {
+            console.warn(`[Sync] ⚠️ Синк прерван для ${contact.nickname}: БД была закрыта при выходе из чата.`);
+          } else {
+            console.error(`❌ Ошибка чтения истории ${contact.nickname}:`, dbError);
+          }
+        } finally {
+          try {
+            const currentUrl = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
+            const isCurrentlyInThisChat = currentUrl.includes(contact.id) || 
+              (contact.room && currentUrl.includes(contact.room));
+
+            if (isCurrentlyInThisChat) {
+              console.log(`👀 [Sync] Чат ${contact.nickname} [${contact.chatDbAddress?.slice(-8)}] сейчас открыт на экране. Оставляем БД открытой.`);
+            } else {
+              // Закрываем БД
+              await chatDb.close();
+              
+              // 🧹 Очищаем мертвые ссылки из кэша
+              if (roomName) activeDbs.delete(roomName);
+              if (actualAddress) activeDbs.delete(actualAddress);
+              
+              console.log(`🧹 [Sync] База ${contact.nickname} [${contact.chatDbAddress?.slice(-8)}] закрыта, ресурсы освобождены и удалены из кэша.`);
+            }
+          } catch (closeErr: any) {
+            if (!closeErr?.message?.includes('not open')) {
+              console.error(`❌ Ошибка при закрытии БД ${contact.nickname} [${contact.chatDbAddress?.slice(-8)}]:`, closeErr);
+            }
+          }
+
+          resolve();
+        }
+      };
+
+      const onUpdate = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(finalizeSync, 300);
+      };
+
+      chatDb.events.on('update', onUpdate);
+      idleTimer = setTimeout(finalizeSync, 3000);
+    });
+
+  } finally {
+    // 🧹 Обязательно освобождаем блокировку в блоке finally
+    activeSyncs.delete(contact.chatDbAddress || contact.id);
+  }
 }
 
 export async function syncTopContactsHistory(contactsDb: any, limit = 10) {
@@ -473,5 +513,41 @@ export async function syncTopContactsHistory(contactsDb: any, limit = 10) {
     console.log(`✅ [Холодный старт] Синхронизация первых ${topContacts.length} контактов завершена.`);
   } catch (error) {
     console.error('❌ [Контакты] Ошибка при пакетной проверке истории:', error);
+  } finally {
+    // 🏁 Сигнализируем, что холодный старт отработал
+    isColdStartDone = true;
+  }
+}
+
+/**
+ * Вызывается, когда по PubSub прилетает чужой адрес OrbitDB профиля.
+ * Сохраняет адрес в контакт и запускает синхронизацию аватарки/ника.
+ */
+export async function updateContactProfileAddress(contactsDb: any, peerId: string, profileDbAddress: string) {
+  if (!contactsDb || !peerId || !profileDbAddress) return;
+
+  try {
+    const contact = await getContact(contactsDb, peerId);
+    if (!contact) return;
+
+    // Если адрес уже такой же — ничего не делаем
+    if (contact.profileDbAddress === profileDbAddress) return;
+
+    console.log(`📇 [ContactsDB] Сохраняем новый адрес профиля для ${peerId.slice(0, 8)}: ${profileDbAddress}`);
+
+    const updatedContact: ContactItem = {
+      ...contact,
+      profileDbAddress: profileDbAddress,
+      updatedAt: Date.now()
+    };
+
+    await saveContact(contactsDb, updatedContact);
+
+    // Сразу запускаем подтягивание аватарки и ника из этой базы
+    setTimeout(() => {
+      syncContactHistory(updatedContact, contactsDb);
+    }, 100);
+  } catch (error) {
+    console.error(`❌ [ContactsDB] Ошибка обновления profileDbAddress:`, error);
   }
 }

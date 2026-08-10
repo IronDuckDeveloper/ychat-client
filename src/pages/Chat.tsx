@@ -4,7 +4,7 @@ import { ArrowLeft, Send, Paperclip, Image as ImageIcon, File, Music } from 'luc
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
-import { isPeerBlocked } from '../lib/p2p/services/contactsService';
+import { getPeerRestrictionStatus } from '../lib/p2p/services/contactsService';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
 import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
@@ -23,6 +23,7 @@ const Chat = () => {
   const { id } = useParams(); 
   
   const [isBlocked, setIsBlocked] = useState(false);
+  const [isDeleted, setIsDeleted] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
 
   const {
@@ -51,20 +52,22 @@ const Chat = () => {
     handleFileUpload
   } = useChatLogic();
 
-  useEffect(() => {
-    const checkBlockStatus = async () => {
+useEffect(() => {
+    const checkAccessStatus = async () => {
       if (!id || !globalContactsDb) return;
       
-      const blockedStatus = await isPeerBlocked(globalContactsDb, id);
-      setIsBlocked(blockedStatus); 
+      const { isBlocked: blocked, isDeleted: deleted } = await getPeerRestrictionStatus(globalContactsDb, id);
+      
+      setIsBlocked(blocked);
+      setIsDeleted(deleted);
 
-      if (blockedStatus) {
-        console.warn(`🚫 Доступ в чат ${id} ограничен: пользователь заблокирован.`);
+      if (blocked || deleted) {
+        console.warn(`🚫 Доступ в чат ${id} ограничен: ${blocked ? 'заблокирован' : 'удален'}.`);
       }
     };
 
-    checkBlockStatus();
-  }, [id]); 
+    checkAccessStatus();
+  }, [id]);
 
   const onBack = async () => {
     if (id) {
