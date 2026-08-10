@@ -25,7 +25,7 @@ export const CONFIG = {
 
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
 
-  IS_LODING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
+  IS_LOADING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
   KEY_GLOBAL_REGISTRY_ADDRESS: 'YCHAT_GLOBAL_REGISTRY_ADDRESS', // Ключ для хранения состояния авторизации
   
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства

@@ -26,28 +26,34 @@ function App() {
               broadcastMyProfile: broadcastMyProfile
             });
 
-            // Запускаем контроль сети (стейт-машина переходит в CONNECTING -> CONNECTED)
-            stateMachine.start();
-            console.log('🛡️ [App] Network State Machine успешно запущена.');
-            // 🔥 ВЫЗЫВАЕМ СИНХРОНИЗАЦИЮ ДИНАМИЧЕСКИХ РЕЛЕЕВ И РЕЕСТРА ПРИ СТАРТЕ
-              checkAndSyncRelays(globalHelia, true)
-                .catch(err => console.error("❌ Ошибка checkAndSyncRelays:", err));
+        // Запускаем контроль сети (стейт-машина переходит в CONNECTING -> CONNECTED)
+        stateMachine.start();
+        console.log('🛡️ [App] Network State Machine успешно запущена.');
 
-              // 1. Включаем фоновые службы
-              startGlobalNotificationListener(globalHelia, globalContactsDb)
-                .catch(err => console.error("❌ Ошибка пуш-нотификатора:", err));
+        // 🔥 Объединяем все стартовые функции в один Promise.all
+        Promise.all([
+          checkAndSyncRelays(globalHelia, true)
+            .catch(err => console.error("❌ Ошибка checkAndSyncRelays:", err)),
 
-              startBackgroundProfileWatcher(globalContactsDb)
-                .catch(err => console.error("❌ Ошибка вотчера профилей:", err));
+          startGlobalNotificationListener(globalHelia, globalContactsDb)
+            .catch(err => console.error("❌ Ошибка пуш-нотификатора:", err)),
 
-            // 2. Синхронизация историй Нужно ли вызывать здесь если у нас уже есть синк в contacts.tsx? observer.current = new IntersectionObserver((entries)
-            setTimeout(() => {
-              console.log(`🚀 [Cold Start] Сеть стабилизировалась. Запускаем синхронизацию историй... db: ${globalContactsDb?.address?.toString()}`);
-              
-              syncTopContactsHistory(globalContactsDb, 10)
-                .then(() => console.log("✅ [Cold Start] Синк историй успешно завершен на горячем канале!"))
-                .catch(err => console.error("❌ Ошибка синка историй:", err));
-            }, 3000);
+          startBackgroundProfileWatcher(globalContactsDb)
+            .catch(err => console.error("❌ Ошибка вотчера профилей:", err))
+        ]).then(() => {
+          // Этот блок кода выполнится ровно тогда, когда ВСЕ три функции выше отработают.
+          // Никаких таймаутов!
+          console.log(`🚀 [Cold Start] Фоновые службы запущены. Запускаем синхронизацию историй... db: ${globalContactsDb?.address?.toString()}`);
+          
+          return syncTopContactsHistory(globalContactsDb, 10);
+        })
+        .then(() => {
+          console.log("✅ [Cold Start] Синк историй успешно завершен на горячем канале!");
+        })
+        .catch(err => {
+          // Перехватит ошибку, если syncTopContactsHistory упадет
+          console.error("❌ Ошибка синка историй:", err);
+        });
           }
         })
         .catch(err => {

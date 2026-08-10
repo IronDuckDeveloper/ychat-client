@@ -9,7 +9,7 @@ export const NetworkOverlay: React.FC = () => {
   const location = useLocation();
   const [status, setStatus] = useState(globalNetworkState?.state || NET_STATE.CONNECTING);
   const wasSleeping = useRef(false);
-  const isAuthed = localStorage.getItem(CONFIG.IS_LODING) === 'true';
+  const isAuthed = localStorage.getItem(CONFIG.IS_LOADING) === 'true';
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -42,7 +42,7 @@ export const NetworkOverlay: React.FC = () => {
   if (status === NET_STATE.CONNECTED) return null;
 
   // Не показываем оверлей при запуске, если юзер уже был залогинен
-  if (status === NET_STATE.CONNECTING && isAuthed) return null;
+  // if (status === NET_STATE.CONNECTING && isAuthed) return null;
 
   let title = 'Ожидание сети...';
   let subtitle = 'Пожалуйста, подождите';
