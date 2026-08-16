@@ -5,7 +5,15 @@ import { globalHelia } from '../lib/p2p/services/authService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
 import '../styles/contactAvatar.scss';
 
-function ContactAvatar({ cid }: { cid: string | undefined }) {
+function ContactAvatar({ 
+  cid, 
+  serverCid, 
+  encryptionKey
+}: { 
+  cid: string | undefined,
+  serverCid?: string,
+  encryptionKey?: string
+}) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryCount, setRetryCount] = useState(0); 
@@ -17,15 +25,24 @@ function ContactAvatar({ cid }: { cid: string | undefined }) {
 
     const loadAvatar = async () => {
       setIsRetrying(true);
-      try {
+      try {        
         const isManualRefresh = retryCount > 0;
-        const url = await fetchAvatarFromHelia(globalHelia, cid, 15000, isManualRefresh);
+        const url = await fetchAvatarFromHelia(
+          globalHelia, 
+          cid, 
+          15000, 
+          serverCid, 
+          encryptionKey,
+          isManualRefresh
+        );
         
+        console.log(`🖼️ [Avatar UI] Результат fetch:`, url ? 'Успешно получен Blob URL ✅' : 'URL не получен ❌');
+
         if (isMounted && url) {
           setAvatarUrl(url);
         }
       } catch (e) {
-        console.error('Ошибка загрузки аватара контакта:', e);
+        console.error('🖼️ [Avatar UI] Ошибка загрузки аватара контакта:', e);
       } finally {
         if (isMounted) setIsRetrying(false);
       }
@@ -36,9 +53,8 @@ function ContactAvatar({ cid }: { cid: string | undefined }) {
     return () => {
       isMounted = false; 
     };
-  }, [cid, retryCount]); 
+  }, [cid, serverCid, encryptionKey, retryCount]); 
 
-  // 1. Успешный вариант: картинка есть
   if (avatarUrl) {
     return (
       <img 
@@ -49,7 +65,6 @@ function ContactAvatar({ cid }: { cid: string | undefined }) {
     );
   }
 
-  // 2. Процесс: идет загрузка из сети (крутится чистый SCSS)
   if (isRetrying) {
     return (
       <div className="contact-avatar-wrapper contact-avatar-loading">
@@ -58,7 +73,6 @@ function ContactAvatar({ cid }: { cid: string | undefined }) {
     );
   }
 
-  // 3. Пустой профиль: CID нет, показываем обычного человечка цвета $hint
   if (!cid) {
     return (
       <div className="contact-avatar-wrapper">
@@ -67,12 +81,10 @@ function ContactAvatar({ cid }: { cid: string | undefined }) {
     );
   }
 
-  // 4. Ошибка сети: CID есть, но картинка не пришла.
-  // Иконка рефреша цвета $hint, которая при ховере плавно станет $accent-prime
   return (
     <div 
       onClick={(e) => {
-        e.stopPropagation(); // Блокируем переход в чат
+        e.stopPropagation();
         setRetryCount(prev => prev + 1); 
       }}
       title="Повторить загрузку аватара"

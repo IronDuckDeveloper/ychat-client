@@ -11,6 +11,8 @@ export interface ContactItem {
   room?: string;            // (Опционально) Имя детерминированной комнаты
   nickname: string;         // Кэш никнейма для моментального UI
   avatarCid: string;        // Кэш аватара для моментального UI
+  avatarServerCid?: string; // Кэш серверного CID для удаления из Kubo
+  avatarEncryptionKey?: string; // Кэш ключа шифрования для удаления из Kubo
   bio?: string;             // Кэш био для моментального UI
   updatedAt: number;        // Таймстемп (для сортировки списка чатов)
   lastMessage?: string; // Текст последнего сообщения
@@ -145,6 +147,9 @@ export const saveContact = async (contactsDb: any, contact: ContactItem) => {
     const isIdentical = 
       existingContact.nickname === sanitizedContact.nickname &&
       existingContact.avatarCid === sanitizedContact.avatarCid &&
+      existingContact.avatarServerCid === sanitizedContact.avatarServerCid &&
+      existingContact.avatarEncryptionKey === sanitizedContact.avatarEncryptionKey &&
+      existingContact.bio === sanitizedContact.bio &&
       existingContact.profileDbAddress === sanitizedContact.profileDbAddress &&
       existingContact.chatDbAddress === sanitizedContact.chatDbAddress &&
       existingContact.lastMessage === sanitizedContact.lastMessage &&
@@ -418,8 +423,6 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
 
           const records = sortedRecords.slice(-10);
 
-          console.log(`[Sync Debug] В локальной базе ${contact.nickname} [${actualAddress.slice(-8)}] получено записей (топ-10): ${records.length}`);
-
           if (records.length > 0) {
             const latestMsg = records[records.length - 1];
             const contactLastTime = contact.lastMessageTime || 0;
@@ -447,7 +450,6 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
 
               setTimeout(() => {
                 window.dispatchEvent(new Event('onContactsUpdated'));
-                console.log("⚡ [Sync] UI триггер отправлен");
               }, 150);
             }
           }

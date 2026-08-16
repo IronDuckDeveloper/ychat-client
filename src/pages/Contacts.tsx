@@ -187,7 +187,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               }}
             >
               <div className="contact-avatar">
-                <ContactAvatar cid={contact.avatarCid} />
+                <ContactAvatar cid={contact.avatarCid} serverCid={contact.avatarServerCid} encryptionKey={contact.avatarEncryptionKey} />
                 {contact.unreadCount && contact.unreadCount > 0 ? (
                   <span className="unread-badge">
                     {contact.unreadCount > 9 ? '9+' : contact.unreadCount}

@@ -37,7 +37,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({ attachment, onDel
     const autoLoadImage = async () => {
       try {
         setDownloadError(false);
-        const url = await fetchFileFromHelia(globalHelia, attachment.cid, fileMimeType, attachment.serverCid);
+        const url = await fetchFileFromHelia(globalHelia, attachment.cid, fileMimeType, attachment.serverCid, attachment.encryptionKey);
         if (isMounted && url) setFileUrl(url);
       } catch (err) {
         console.error(`❌ Ошибка автозагрузки изображения ${attachment.cid}:`, err);
@@ -74,7 +74,7 @@ const handleDeleteFile = async (e: React.MouseEvent) => {
     console.log(`⬇️ [MessageAttachment] Запрос на скачивание: ${attachment.cid}`);
 
     // Получаем URL из P2P сети через твой сервис
-    const url = await fetchFileFromHelia(globalHelia, attachment.cid, fileMimeType, attachment.serverCid);
+    const url = await fetchFileFromHelia(globalHelia, attachment.cid, fileMimeType, attachment.serverCid, attachment.encryptionKey);
     
     if (!url) {
       throw new Error("Не удалось получить URL из Helia");

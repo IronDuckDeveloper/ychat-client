@@ -2,8 +2,10 @@ import { unixfs } from '@helia/unixfs';
 import { CID } from 'multiformats/cid';
 import { relayManager } from '../networking/heliaClient';
 import imageCompression from 'browser-image-compression';
+import heic2any from 'heic2any';
 import { CONFIG } from '../config';
 import {LruObjectUrlCache} from '../utils/LruObjectUrlCache.ts';
+import { exportKeyToBase64, generateFileKey, importKeyFromBase64 } from '../crypto/crypto.ts';
 
 // Интерфейс для описания прикрепленного файла, 
 // именно этот объект мы будем отправлять в OrbitDB сообщении
@@ -14,6 +16,7 @@ export interface FileAttachment {
   type: string; // MIME-тип (например, 'image/jpeg', 'video/mp4', 'application/pdf')
   size: number;
   preview?: string;
+  encryptionKey?: string;
 }
 
 // Глобальный кэш для файлов сессии
@@ -33,33 +36,50 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
     file = originalFile; // fallback
   }
 
-  const fs = unixfs(helia);
-  const arrayBuffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
+  // 🔐 1. ШИФРОВАНИЕ ФАЙЛА перед загрузкой
+  const aesKey = await generateFileKey();
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
   
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBytes = new Uint8Array(arrayBuffer);
+
+  const encryptedBuffer = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    fileBytes
+  );
+
+  const encryptedBytes = new Uint8Array(encryptedBuffer);
+  
+  // Склеиваем IV (12 байт) и зашифрованный файл
+  const payloadToUpload = new Uint8Array(iv.length + encryptedBytes.length);
+  payloadToUpload.set(iv, 0);
+  payloadToUpload.set(encryptedBytes, iv.length);
+
+  // 2. Загружаем ЗАШИФРОВАННЫЕ байты в локальную Helia
+  const fs = unixfs(helia);
   // Отключаем rawLeaves, чтобы сгенерировался правильный CIDv1 (bafy...) формата DAG-PB
-  const cid = await fs.addBytes(bytes, {
+  const cid = await fs.addBytes(payloadToUpload, {
     rawLeaves: false
   });
-  
   const cidString = cid.toString();
-  console.log(`📎 [Helia FS] Файл "${file.name}" загружен локально. CID: ${cidString}`);
+  console.log(`📎 [Helia FS] Файл "${file.name}" зашифрован и загружен локально. CID: ${cidString}`);
 
   // Переменная для серверного сида
   let serverCid: string | undefined = undefined; 
 
-  // Прямой Push в Kubo через HTTP API
+  // 3. Прямой Push в Kubo через HTTP API (пушим зашифрованный blob)
   try {
     // Получаем IP текущего активного релея, чтобы пушить файл именно на него
     const relayIp = relayManager.getActiveRelayIp();
     if (relayIp) {
       const formData = new FormData();
-      formData.append('file', file); // Кидаем уже сжатый/обработанный файл
+      // Оборачиваем зашифрованные байты в Blob
+      const encryptedBlobForKubo = new Blob([payloadToUpload], { type: 'application/octet-stream' });
+      formData.append('file', encryptedBlobForKubo, file.name); // Кидаем зашифрованный файл
 
       console.log(`🚀 [Helia FS] Пушим файл напрямую в Kubo на ${relayIp}...`);
-      
       const kuboApiUrl = `http://${relayIp}:5001/api/v0/add?pin=true&cid-version=1&raw-leaves=false`;
-      
       const response = await fetch(kuboApiUrl, {
         method: 'POST',
         body: formData,
@@ -70,7 +90,6 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
         const text = await response.text();
         const jsonLine = text.trim().split('\n')[0];
         const result = JSON.parse(jsonLine);
-        
         serverCid = result.Hash; // Забираем сид, который сгенерировал Kubo!
         console.log(`✅ [Helia FS] Файл осел в Kubo! Server CID: ${serverCid}`);
       } else {
@@ -83,20 +102,25 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
     console.error(`❌ [Helia FS] Ошибка прямого пуша в Kubo:`, error);
     // Не прерываем выполнение! Файл есть локально, чат продолжит работать.
   }
-  
-  // Кэшируем оригинальный файл сразу (чтобы отправитель не качал его сам у себя)
+
+  // 4. Кэшируем ОРИГИНАЛЬНЫЙ (расшифрованный) файл сразу 
+  // (чтобы отправитель не качал и не расшифровывал его сам у себя)
   const localUrl = URL.createObjectURL(file);
   fileCache.set(cidString, localUrl);
   
-  // Генерируем микро-превью (если это картинка)
+  // Генерируем микро-превью (если это картинка) из оригинала
   const tinyPreview = await generateTinyPreview(file);
   
+  // 5. Экспортируем ключ для передачи через OrbitDB
+  const base64Key = await exportKeyToBase64(aesKey);
+
   return {
     cid: cidString,
-    serverCid, // Отправляем оба сида в OrbitDB
+    serverCid: serverCid, // Отправляем оба сида в OrbitDB
     name: file.name,
     type: file.type || 'application/octet-stream',
     size: file.size,
+    encryptionKey: base64Key, // 👈 Ключ отправляется в БД сообщения чата
     ...(tinyPreview && { preview: tinyPreview })
   };
 }
@@ -136,7 +160,13 @@ const serverFetchSemaphore = new FetchSemaphore(5);
 /**
  * Универсальная функция сборки и надежного кэширования в браузере.
  */
-async function saveToCacheAndReturn(chunks: Uint8Array[], mimeType: string, cidString: string): Promise<string> {
+// Обновленная функция сборки и РАСШИФРОВКИ
+async function decryptAndSave(
+  chunks: Uint8Array[], 
+  mimeType: string, 
+  cidString: string, 
+  encryptionKey?: string
+): Promise<string> {
   const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
   const fullBytes = new Uint8Array(totalLength);
   let offset = 0;
@@ -144,10 +174,35 @@ async function saveToCacheAndReturn(chunks: Uint8Array[], mimeType: string, cidS
     fullBytes.set(chunk, offset);
     offset += chunk.length;
   }
+
+  let finalBytes = fullBytes;
+
+  // 🔓 РАСШИФРОВКА (если передан ключ)
+  if (encryptionKey) {
+    try {
+      const cryptoKey = await importKeyFromBase64(encryptionKey);
+      
+      // Отделяем IV (первые 12 байт) от ciphertext
+      const iv = fullBytes.slice(0, 12);
+      const ciphertext = fullBytes.slice(12);
+
+      const decryptedBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        ciphertext
+      );
+      finalBytes = new Uint8Array(decryptedBuffer);
+      console.log(`🔓 [Crypto] Файл ${cidString} успешно расшифрован`);
+    } catch (e) {
+      console.error(`❌ [Crypto] Ошибка расшифровки файла ${cidString}:`, e);
+      // Если расшифровка не удалась, лучше прервать процесс, иначе получим битый файл
+      throw new Error("Decryption failed"); 
+    }
+  }
+
+  const blob = new Blob([finalBytes], { type: mimeType });
   
-  const blob = new Blob([fullBytes], { type: mimeType });
-  
-  // Асинхронно кидаем в постоянное хранилище браузера (Cache API)
+  // В Cache API сохраняем УЖЕ РАСШИФРОВАННЫЙ файл
   caches.open(CONFIG.CACHE_NAME_FILES).then(cache => {
     cache.put(cidString, new Response(blob));
   }).catch(e => console.warn("Не удалось сохранить в Cache API", e));
@@ -165,6 +220,7 @@ export async function fetchFileFromHelia(
   cidString: string, 
   mimeType: string, 
   serverCid?: string,
+  encryptionKey?: string,
   timeoutMs = 20000
 ): Promise<string | null> {
   if (!cidString) return null;
@@ -198,7 +254,7 @@ export async function fetchFileFromHelia(
       if (await helia.blockstore.has(cid)) {
         const chunks = [];
         for await (const chunk of fs.cat(cid as any)) chunks.push(chunk);
-        return await saveToCacheAndReturn(chunks, mimeType, cidString);
+        return await decryptAndSave(chunks, mimeType, cidString, encryptionKey);
       }
     } catch (e) { /* Игнорируем */ }
 
@@ -219,7 +275,7 @@ export async function fetchFileFromHelia(
           const arrayBuffer = await (await response.blob()).arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
           console.log(`✅ [Kubo Gateway] Успешно скачано: ${cidString}`);
-          return await saveToCacheAndReturn([bytes], mimeType, cidString);
+          return await decryptAndSave([bytes], mimeType, cidString, encryptionKey);
         } else {
           console.warn(`⚠️ [Kubo Gateway] Сервер вернул ошибку: ${response.status}`);
         }
@@ -243,7 +299,7 @@ export async function fetchFileFromHelia(
       clearTimeout(timeoutId); 
       
       console.log(`✅ [Helia P2P] Успешно скачано: ${cidString}`);
-      return await saveToCacheAndReturn(chunks, mimeType, cidString);
+      return await decryptAndSave(chunks, mimeType, cidString, encryptionKey);
     } catch (error: any) {
       console.warn(`⏳ [Helia P2P] Файл недоступен в сети: ${cidString}`);
     }
@@ -394,32 +450,50 @@ export async function processImageForHelia(
   originalFile: File, 
   customName?: string
 ): Promise<File> {
-  if (!originalFile.type.startsWith('image/')) {
+  if (!originalFile.type.startsWith('image/') && !originalFile.name.toLowerCase().endsWith('.heic')) {
     return originalFile;
   }
 
-  const options = {
-    maxSizeMB: 0.5,
-    maxWidthOrHeight: 1920,
-    useWebWorker: true,
-    fileType: 'image/webp',
-    initialQuality: 0.82
-  };
+  let fileToCompress = originalFile;
 
   try {
-    const compressedBlob = await imageCompression(originalFile, options);
-    const timestamp = Date.now();
+    // 🔥 Если это HEIC, сначала конвертируем его в JPEG
+    if (originalFile.name.toLowerCase().endsWith('.heic') || originalFile.type === 'image/heic') {
+      console.log('🔄 Конвертация HEIC в JPEG...');
+      const convertedBlob = await heic2any({
+        blob: originalFile,
+        toType: 'image/jpeg',
+        quality: 0.8
+      }) as Blob;
+      
+      // Создаем новый File из Blob
+      fileToCompress = new File(
+        [convertedBlob], 
+        originalFile.name.replace(/\.heic$/i, '.jpeg'), 
+        { type: 'image/jpeg' }
+      );
+    }
 
-    // 🔥 Если передали customName (например, 'avatar.webp'), берем его.
-    // Иначе генерируем имя с таймстемпом для чата.
+    // Дальше стандартное сжатие
+    const options = {
+      maxSizeMB: 0.5,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+      fileType: 'image/webp',
+      initialQuality: 0.82
+    };
+
+    const compressedBlob = await imageCompression(fileToCompress, options);
+    const timestamp = Date.now();
     const newName = customName || ("ychat_" + timestamp + ".webp");
     
     return new File([compressedBlob], newName, {
       type: 'image/webp',
       lastModified: timestamp,
     });
+
   } catch (error) {
-    console.error('[Image] Ошибка сжатия:', error);
+    console.error('[Image] Ошибка конвертации/сжатия:', error);
     return originalFile; 
   }
 }

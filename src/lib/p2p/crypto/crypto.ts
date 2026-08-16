@@ -176,3 +176,30 @@ export const decryptBlacklist = async (encryptedData: string): Promise<string[]>
   const jsonStr = new TextDecoder().decode(decryptedBuffer);
   return JSON.parse(jsonStr);
 };
+
+// Генерируем уникальный AES-ключ для конкретного файла
+export async function generateFileKey(): Promise<CryptoKey> {
+  return await window.crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    true, // Ключ можно экспортировать, чтобы отправить в чат
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Экспорт ключа в base64 для передачи через OrbitDB
+export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
+  const rawKey = await window.crypto.subtle.exportKey('raw', key);
+  return uint8ArrayToString(new Uint8Array(rawKey), 'base64');
+}
+
+// Импорт ключа из base64 при получении сообщения
+export async function importKeyFromBase64(base64Key: string): Promise<CryptoKey> {
+  const rawKey = uint8ArrayFromString(base64Key, 'base64');
+  return await window.crypto.subtle.importKey(
+    'raw',
+    rawKey as any,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}

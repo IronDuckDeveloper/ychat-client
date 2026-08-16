@@ -200,6 +200,11 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
       let freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
       let freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
       let freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
+      let freshServerCid = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
+      let freshEncryptionKey = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
+      
+      // ДЕБАГ: проверим, что именно прилетает из базы
+      console.log(`🔍 [ProfileSync] DEBUG: Для ${contact.nickname} ключ из БД:`, freshEncryptionKey);
 
       if (!freshName) {
         console.log('⏳ [ProfileSync] Данные профиля еще не среплицировались, ждем сеть (5 сек)...');
@@ -215,6 +220,8 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
               console.log('✅ [ProfileSync] Данные профиля получены из сети!');
               freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
               freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
+              freshServerCid = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
+              freshEncryptionKey = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
               
               clearTimeout(timer);
               resolve();
@@ -231,11 +238,15 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
       const updatedName = freshName || contact.nickname;
       const updatedAvatar = freshAvatar !== undefined ? freshAvatar : contact.avatarCid;
       const updatedBio = freshBio !== undefined ? freshBio : contact.bio;
+      const updatedServerCid = freshServerCid !== undefined ? freshServerCid : contact.avatarServerCid;
+      const updatedEncryptionKey = freshEncryptionKey !== undefined ? freshEncryptionKey : (contact.avatarEncryptionKey || null);
 
       const hasChanges = 
         updatedName !== contact.nickname || 
         updatedAvatar !== contact.avatarCid || 
         updatedBio !== contact.bio ||
+        updatedServerCid !== contact.avatarServerCid ||
+        updatedEncryptionKey !== contact.avatarEncryptionKey ||
         targetDbAddress !== contact.profileDbAddress;
 
       if (hasChanges) {
@@ -243,6 +254,8 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
           nickname: updatedName,
           avatarCid: updatedAvatar,
           bio: updatedBio,
+          avatarServerCid: updatedServerCid,
+          avatarEncryptionKey: updatedEncryptionKey,
           profileDbAddress: targetDbAddress,
           updatedAt: Date.now()
         });

@@ -16,7 +16,7 @@ export async function uploadAvatarToHelia(
   helia: any,
   fileOrBlob: Blob | File,
   oldCid?: string,
-  oldServerCid?: string
+  oldServerCid?: string,
 ): Promise<FileAttachment> {
   // 1. Удаляем старый аватар (если был), чтобы не мусорить в Kubo и кэше
   if (oldCid) {
@@ -44,7 +44,8 @@ export async function fetchAvatarFromHelia(
   helia: any,
   cidString: string,
   timeoutMs = 15000,
-  serverCid?: string,
+  serverCid?: string, 
+  encryptionKey?: string,
   forceRefresh = false
 ): Promise<string | null> {
   if (!cidString) return null;
@@ -60,7 +61,7 @@ export async function fetchAvatarFromHelia(
   }
 
   // Делегируем скачивание fileService с типом 'image/webp'
-  return fetchFileFromHelia(helia, cidString, 'image/webp', serverCid, timeoutMs);
+  return fetchFileFromHelia(helia, cidString, 'image/webp', serverCid, encryptionKey, timeoutMs);
 }
 
 /**

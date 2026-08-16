@@ -162,11 +162,9 @@ export const useContactsLogic = () => {
     return () => stopAddCamera();
   }, [isAddModalOpen]);
 
-// Обновление контактов и АВТО-СИНХРОНИЗАЦИЯ ПРОФИЛЕЙ
+  // Обновление контактов и АВТО-СИНХРОНИЗАЦИЯ ПРОФИЛЕЙ
   useEffect(() => {
     const refreshContactsList = async () => {
-      // 🚀 ФИКС ГОНКИ: Читаем базу напрямую из импорта, а не из стейта React.
-      // Стейт может отставать, но глобальная переменная всегда актуальна в момент события.
       const db = globalContactsDb; 
       if (!db) return; 
 
@@ -174,8 +172,10 @@ export const useContactsLogic = () => {
         const freshContacts = await getAllContacts(db);
         
         setContacts(prev => {
-          const hasRealDiff = JSON.stringify(prev) !== JSON.stringify(freshContacts);
-          return hasRealDiff ? [...freshContacts] : prev;
+          if (JSON.stringify(prev) !== JSON.stringify(freshContacts)) {
+            return [...freshContacts];
+          }
+          return prev;
         });
       } catch (err) {
         console.error('❌ Ошибка обновления:', err);
@@ -217,6 +217,7 @@ export const useContactsLogic = () => {
         const name = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
         const bio = await profileDb.get(CONFIG.PROFILE.KEY_BIO);
         const avatarCID = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
+        const avatarEncryptionKey = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
         const privacy = (await profileDb.get(CONFIG.PROFILE.KEY_PRIVACY)) || 'public';
         setMyPrivacy(privacy);
 
@@ -243,7 +244,7 @@ export const useContactsLogic = () => {
         if (avatarCID && globalHelia && isMounted) {
           const serverCid = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
           // Передаем timeoutMs = 15000 и serverCid для быстрой загрузки с Gateway
-          const url = await fetchAvatarFromHelia(globalHelia, avatarCID, 15000, serverCid);
+          const url = await fetchAvatarFromHelia(globalHelia, avatarCID, 15000, serverCid, avatarEncryptionKey);
           if (isMounted) setMyAvatarUrl(url);
         }
 
@@ -411,6 +412,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       // 1. Достаем ТЕКУЩИЕ (старые) CID аватарки перед загрузкой новой
       let currentAvatarCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_CID);
       let currentAvatarServerCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
+      let currentAvatarEncryptionKey = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
 
       if (newAvatarBlob && globalHelia) {
         // 2. Передаем старые CID в uploadAvatarToHelia — сервис сам удалит их из Kubo и кэшей
@@ -418,11 +420,12 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           globalHelia, 
           newAvatarBlob, 
           currentAvatarCid,        // Старый локальный CID
-          currentAvatarServerCid   // Старый серверный CID (для unpin + GC в Kubo)
+          currentAvatarServerCid,  // Старый серверный CID (для unpin + GC в Kubo)
         );
 
         const newCid = attachment.cid;
         const newServerCid = attachment.serverCid;
+        const newEncryptionKey = attachment.encryptionKey;
 
         try {
           const dht = globalHelia.libp2p.dht;
@@ -437,7 +440,15 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid', newServerCid);
         }
 
+        if (newEncryptionKey) {
+          // Сохраняем ключ в базу
+          await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY, newEncryptionKey);
+        }
+
         currentAvatarCid = newCid; // Обновляем для отправки в broadcast
+        currentAvatarServerCid = newServerCid; // ОБЯЗАТЕЛЬНО обновляем serverCid для бродкаста!
+        currentAvatarEncryptionKey = newEncryptionKey; // обновляем переменную ключа для бродкаста
+
         setMyAvatarUrl(URL.createObjectURL(newAvatarBlob));
       }
       
@@ -452,7 +463,9 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
         await broadcastMyProfile({
           [CONFIG.PROFILE.KEY_NICKNAME]: newNickname,
           [CONFIG.PROFILE.KEY_BIO]: newBio,
-          [CONFIG.PROFILE.KEY_AVATAR_CID]: currentAvatarCid
+          [CONFIG.PROFILE.KEY_AVATAR_CID]: currentAvatarCid,
+          [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid']: currentAvatarServerCid,
+          [CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]: currentAvatarEncryptionKey
         });
       }
 

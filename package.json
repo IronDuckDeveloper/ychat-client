@@ -30,6 +30,7 @@
     "browser-image-compression": "^2.0.2",
     "buffer": "^6.0.3",
     "datastore-level": "10.0.0",
+    "heic2any": "^0.0.4",
     "helia": "4.2.6",
     "it-length-prefixed": "^11.0.1",
     "it-pipe": "^3.0.1",

@@ -160,7 +160,14 @@ export const useChatLogic = () => {
 
     const fetchAvatar = async () => {
       try {
-        const url = await fetchAvatarFromHelia(globalHelia, contact.avatarCid);
+        console.log(`🖼️ [Chat UI] Грузим аватар в чате. Ключ: ${contact.avatarEncryptionKey ? 'ЕСТЬ ✅' : 'НЕТ ❌'}`);
+        const url = await fetchAvatarFromHelia(
+          globalHelia, 
+          contact.avatarCid, 
+          15000, 
+          contact.avatarServerCid, 
+          contact.avatarEncryptionKey
+        );
         if (isMounted) {
           setAvatarUrl(url);
         }
@@ -175,7 +182,7 @@ export const useChatLogic = () => {
     return () => {
       isMounted = false;
     };
-  }, [contact?.avatarCid, isReady]);
+  }, [isReady, contact?.avatarCid, contact?.avatarServerCid, contact?.avatarEncryptionKey]);
 
   // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
