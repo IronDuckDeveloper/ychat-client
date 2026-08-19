@@ -132,7 +132,7 @@ export const useAuthLogic = () => {
         }
       }
 
-      localStorage.setItem(CONFIG.IS_LODING, 'true');
+      localStorage.setItem(CONFIG.IS_LOADING, 'true');
       window.location.href = '/contacts';
 
     } catch (error: any) {
@@ -141,7 +141,7 @@ export const useAuthLogic = () => {
       if (isRegister) {
         console.log('🔄 Откат изменений: удаляем фейковые ключи из памяти...');
         await clearAuthData(); 
-        localStorage.removeItem(CONFIG.IS_LODING);
+        localStorage.removeItem(CONFIG.IS_LOADING);
         setNickname('');
         generateWords(); 
       }
