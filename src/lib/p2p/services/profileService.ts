@@ -137,6 +137,13 @@ export async function getGlobalRegistryDb() {
  * Принудительная синхронизация профиля контакта напрямую через OrbitDB.
  * Если адрес базы неизвестен — ищем его в глобальном реестре DB_PROFILE_GLOBAL.
  */
+function arraysEqual(a?: string[], b?: string[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((val, i) => val === b[i]);
+}
+
 export const forceSyncContactProfile = async (contactsDb: any, contact: ContactItem): Promise<SyncResult> => {
   if (recentlySyncedPeers.has(contact.id)) {
     return { success: false, status: 'TRANSIENT_FAILURE', reason: 'Peer recently synced' };
@@ -202,6 +209,7 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
       let freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
       let freshServerCid = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
       let freshEncryptionKey = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
+      let freshServerRelays = await remoteDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
       
       // ДЕБАГ: проверим, что именно прилетает из базы
       console.log(`🔍 [ProfileSync] DEBUG: Для ${contact.nickname} ключ из БД:`, freshEncryptionKey);
@@ -222,7 +230,8 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
               freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
               freshServerCid = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
               freshEncryptionKey = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
-              
+              freshServerRelays = await remoteDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
+
               clearTimeout(timer);
               resolve();
             }
@@ -240,6 +249,7 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
       const updatedBio = freshBio !== undefined ? freshBio : contact.bio;
       const updatedServerCid = freshServerCid !== undefined ? freshServerCid : contact.avatarServerCid;
       const updatedEncryptionKey = freshEncryptionKey !== undefined ? freshEncryptionKey : (contact.avatarEncryptionKey || null);
+      const updatedServerRelays = freshServerRelays !== undefined ? freshServerRelays : contact.serverRelays;
 
       const hasChanges = 
         updatedName !== contact.nickname || 
@@ -247,6 +257,7 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
         updatedBio !== contact.bio ||
         updatedServerCid !== contact.avatarServerCid ||
         updatedEncryptionKey !== contact.avatarEncryptionKey ||
+        !arraysEqual(updatedServerRelays, contact.serverRelays) ||
         targetDbAddress !== contact.profileDbAddress;
 
       if (hasChanges) {
@@ -256,6 +267,7 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
           bio: updatedBio,
           avatarServerCid: updatedServerCid,
           avatarEncryptionKey: updatedEncryptionKey,
+          serverRelays: updatedServerRelays,
           profileDbAddress: targetDbAddress,
           updatedAt: Date.now()
         });
@@ -305,6 +317,9 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
       [CONFIG.PROFILE.KEY_NICKNAME]: 'Скрытый профиль',
       [CONFIG.PROFILE.KEY_BIO]: '',
       [CONFIG.PROFILE.KEY_AVATAR_CID]: '',
+      [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]: '',
+      [CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]: '',
+      [CONFIG.PROFILE.KEY_SERVER_RELAYS]: [],
       privacyMode
     };
   }
@@ -319,6 +334,9 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
         [CONFIG.PROFILE.KEY_NICKNAME]: 'Только для контактов',
         [CONFIG.PROFILE.KEY_BIO]: '',
         [CONFIG.PROFILE.KEY_AVATAR_CID]: '',
+        [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]: '',
+        [CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]: '',
+        [CONFIG.PROFILE.KEY_SERVER_RELAYS]: [],
         privacyMode
       };
     }
@@ -328,6 +346,9 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
     [CONFIG.PROFILE.KEY_NICKNAME]: await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME),
     [CONFIG.PROFILE.KEY_BIO]: await profileDb.get(CONFIG.PROFILE.KEY_BIO),
     [CONFIG.PROFILE.KEY_AVATAR_CID]: await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID),
+    [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]: await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID),
+    [CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]: await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY),
+    [CONFIG.PROFILE.KEY_SERVER_RELAYS]: await profileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS),
     privacyMode
   };
 

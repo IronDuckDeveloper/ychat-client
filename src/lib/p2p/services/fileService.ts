@@ -6,12 +6,16 @@ import heic2any from 'heic2any';
 import { CONFIG } from '../config';
 import {LruObjectUrlCache} from '../utils/LruObjectUrlCache.ts';
 import { exportKeyToBase64, generateFileKey, importKeyFromBase64 } from '../crypto/crypto.ts';
+import { uploadQueue } from '../networking/uploadQueue.ts';
+import type { RelayConfig } from '../networking/RelayManager.ts';
+
 
 // Интерфейс для описания прикрепленного файла, 
 // именно этот объект мы будем отправлять в OrbitDB сообщении
 export interface FileAttachment {
   cid: string;  // Локальный сид от Helia
   serverCid?: string;   // Сид от Kubo (для удаления с сервера)
+  serverRelays?: string[]; // Релеы, которые использовались для загрузки
   name: string;
   type: string; // MIME-тип (например, 'image/jpeg', 'video/mp4', 'application/pdf')
   size: number;
@@ -23,107 +27,125 @@ export interface FileAttachment {
 const fileCache = new LruObjectUrlCache(50); // Лимит 50–100 файлов оптимален для комфортного скролла без нагрузки на RAM
 const pendingFetches = new Map<string, Promise<string | null>>();
 
-/**
+function getGatewayCandidates(serverRelays?: string[]): string[] {
+  if (!serverRelays || serverRelays.length === 0) {
+    const ip = relayManager.getActiveRelayIp();
+    return ip ? [ip] : [];
+  }
+
+  // Ищем не только в узком пуле ЭТОГО клиента, но и в полном списке известных
+  // релеев из localStorage (его пополняет checkAndSyncRelays) — иначе релей,
+  // которого нет в нашем случайном пуле, не найдётся вообще
+  const knownRaw = localStorage.getItem(CONFIG.KEY_KNOWN_RELAYS);
+  const known: RelayConfig[] = knownRaw ? JSON.parse(knownRaw) : [];
+  const allKnown = [...relayManager.getPool(), ...known];
+
+  const ips: string[] = [];
+  const seen = new Set<string>();
+  for (const peerId of serverRelays) {
+    const relay = allKnown.find(r => r.peerId === peerId);
+    const ip = relay ? relayManager.getRelayIp(relay) : null;
+    if (ip && !seen.has(ip)) {
+      ips.push(ip);
+      seen.add(ip);
+    }
+  }
+
+  if (ips.length === 0) {
+    const fallbackIp = relayManager.getActiveRelayIp();
+    if (fallbackIp) ips.push(fallbackIp);
+  }
+  return ips;
+}
+
+/** ==============================================
  * Загрузка любого файла (File/Blob) в Helia.
  * Возвращает объект с CID и метаданными для отправки в чат.
- */
+ ============================================== */
+function getUploadErrorMessage(error: Error): string {
+  const match = error.message.match(/^UPLOAD_REJECTED_(\d+)$/);
+  const status = match ? parseInt(match[1], 10) : 0;
+  switch (status) {
+    case 401: return 'Не удалось подтвердить личность.';
+    case 403: return 'Загрузка запрещена.';
+    case 413: return 'Файл слишком большой. Максимальный размер — 20 МБ.';
+  }
+  switch (error.message) {
+    case 'MAX_RETRIES_EXCEEDED': return 'Не удалось загрузить файл после нескольких попыток.';
+    case 'ALL_RELAYS_REJECTED': return 'Ни один сервер не принял файл.';
+    case 'NO_RELAYS_AVAILABLE': return 'Нет доступных серверов для загрузки.';
+    case 'NO_SESSION_TOKEN': return 'Нет активной сессии. Перезайдите в приложение.';
+    default: return 'Не удалось загрузить файл. Попробуйте ещё раз.';
+  }
+}
+
 export async function uploadFileToHelia(helia: any, originalFile: File, customName?: string): Promise<FileAttachment> {
   let file: File;
   try {
     file = await processImageForHelia(originalFile, customName);
   } catch (err) {
     console.warn('[Helia FS] Ошибка конвертации, используем оригинал:', err);
-    file = originalFile; // fallback
+    file = originalFile;
   }
 
-  // 🔐 1. ШИФРОВАНИЕ ФАЙЛА перед загрузкой
+  // Шифрование — без изменений
   const aesKey = await generateFileKey();
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  
-  const arrayBuffer = await file.arrayBuffer();
-  const fileBytes = new Uint8Array(arrayBuffer);
-
-  const encryptedBuffer = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    aesKey,
-    fileBytes
-  );
-
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
+  const encryptedBuffer = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, fileBytes);
   const encryptedBytes = new Uint8Array(encryptedBuffer);
-  
-  // Склеиваем IV (12 байт) и зашифрованный файл
+
   const payloadToUpload = new Uint8Array(iv.length + encryptedBytes.length);
   payloadToUpload.set(iv, 0);
   payloadToUpload.set(encryptedBytes, iv.length);
 
-  // 2. Загружаем ЗАШИФРОВАННЫЕ байты в локальную Helia
-  const fs = unixfs(helia);
-  // Отключаем rawLeaves, чтобы сгенерировался правильный CIDv1 (bafy...) формата DAG-PB
-  const cid = await fs.addBytes(payloadToUpload, {
-    rawLeaves: false
-  });
-  const cidString = cid.toString();
-  console.log(`📎 [Helia FS] Файл "${file.name}" зашифрован и загружен локально. CID: ${cidString}`);
-
-  // Переменная для серверного сида
-  let serverCid: string | undefined = undefined; 
-
-  // 3. Прямой Push в Kubo через HTTP API (пушим зашифрованный blob)
-  try {
-    // Получаем IP текущего активного релея, чтобы пушить файл именно на него
-    const relayIp = relayManager.getActiveRelayIp();
-    if (relayIp) {
-      const formData = new FormData();
-      // Оборачиваем зашифрованные байты в Blob
-      const encryptedBlobForKubo = new Blob([payloadToUpload], { type: 'application/octet-stream' });
-      formData.append('file', encryptedBlobForKubo, file.name); // Кидаем зашифрованный файл
-
-      console.log(`🚀 [Helia FS] Пушим файл напрямую в Kubo на ${relayIp}...`);
-      const kuboApiUrl = `http://${relayIp}:5001/api/v0/add?pin=true&cid-version=1&raw-leaves=false`;
-      const response = await fetch(kuboApiUrl, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        // Kubo возвращает NDJSON (строки с JSON). Читаем первую строку безопасно:
-        const text = await response.text();
-        const jsonLine = text.trim().split('\n')[0];
-        const result = JSON.parse(jsonLine);
-        serverCid = result.Hash; // Забираем сид, который сгенерировал Kubo!
-        console.log(`✅ [Helia FS] Файл осел в Kubo! Server CID: ${serverCid}`);
-      } else {
-        console.warn(`⚠️ [Helia FS] Kubo вернул ошибку при пуше: ${response.status}`);
-      }
-    } else {
-      console.warn(`⚠️ [Helia FS] Нет активного IP релея, пуш в Kubo пропущен.`);
-    }
-  } catch (error) {
-    console.error(`❌ [Helia FS] Ошибка прямого пуша в Kubo:`, error);
-    // Не прерываем выполнение! Файл есть локально, чат продолжит работать.
+  const sessionToken = relayManager.getSessionToken();
+  if (!sessionToken) {
+    const message = 'Нет активной сессии. Перезайдите в приложение.';
+    window.dispatchEvent(new CustomEvent('uploadError', { detail: { message, fileName: file.name } }));
+    throw new Error('NO_SESSION_TOKEN');
   }
 
-  // 4. Кэшируем ОРИГИНАЛЬНЫЙ (расшифрованный) файл сразу 
-  // (чтобы отправитель не качал и не расшифровывал его сам у себя)
-  const localUrl = URL.createObjectURL(file);
-  fileCache.set(cidString, localUrl);
-  
-  // Генерируем микро-превью (если это картинка) из оригинала
-  const tinyPreview = await generateTinyPreview(file);
-  
-  // 5. Экспортируем ключ для передачи через OrbitDB
-  const base64Key = await exportKeyToBase64(aesKey);
+  return new Promise((resolve, reject) => {
+    uploadQueue.add({
+      file,
+      payloadToUpload,
+      sessionToken: sessionToken,
+      onSuccess: async (serverCid, serverRelays) => {
+        try {
+          const fs = unixfs(helia);
+          const cid = await fs.addBytes(payloadToUpload, { rawLeaves: false });
+          const cidString = cid.toString();
 
-  return {
-    cid: cidString,
-    serverCid: serverCid, // Отправляем оба сида в OrbitDB
-    name: file.name,
-    type: file.type || 'application/octet-stream',
-    size: file.size,
-    encryptionKey: base64Key, // 👈 Ключ отправляется в БД сообщения чата
-    ...(tinyPreview && { preview: tinyPreview })
-  };
+          const localUrl = URL.createObjectURL(file);
+          fileCache.set(cidString, localUrl);
+          const tinyPreview = await generateTinyPreview(file);
+          const base64Key = await exportKeyToBase64(aesKey);
+
+          resolve({
+            cid: cidString,
+            serverCid,
+            serverRelays,
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            size: file.size,
+            encryptionKey: base64Key,
+            ...(tinyPreview && { preview: tinyPreview }),
+          });
+        } catch (err) {
+          reject(err);
+        }
+      },
+      onFailure: (error) => {
+        window.dispatchEvent(new CustomEvent('uploadError', {
+          detail: { message: getUploadErrorMessage(error), fileName: file.name }
+        }));
+        reject(error);
+      },
+    });
+  });
 }
+//==============================================
 
 // 🚦 ПРОСТОЙ СЕМАФОР ДЛЯ ЗАЩИТЫ СЕРВЕРА ОТ DDOS 
 class FetchSemaphore {
@@ -221,7 +243,8 @@ export async function fetchFileFromHelia(
   mimeType: string, 
   serverCid?: string,
   encryptionKey?: string,
-  timeoutMs = 20000
+  timeoutMs = 20000,
+  serverRelays?: string[]
 ): Promise<string | null> {
   if (!cidString) return null;
   
@@ -259,31 +282,26 @@ export async function fetchFileFromHelia(
     } catch (e) { /* Игнорируем */ }
 
     // 🚀 ПРИОРИТЕТ 1: Gateway серверного Kubo (порт 8081)
-    const relayIp = relayManager.getActiveRelayIp();
-    if (relayIp) {
-      await serverFetchSemaphore.acquire(); 
-      
+    const targetCidForGateway = serverCid || cidString;
+    const candidateRelays = getGatewayCandidates(serverRelays);
+
+    for (const relayIp of candidateRelays) {
+      await serverFetchSemaphore.acquire();
       try {
-        const targetCidForGateway = serverCid || cidString;
-        // Обращаемся к Gateway по обычному HTTP GET
         const url = `http://${relayIp}:8081/ipfs/${targetCidForGateway}`;
-        
-        // Метод GET используется по умолчанию, POST тут не нужен!
-        const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) }); 
-        
+        const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+
         if (response.ok) {
           const arrayBuffer = await (await response.blob()).arrayBuffer();
           const bytes = new Uint8Array(arrayBuffer);
-          console.log(`✅ [Kubo Gateway] Успешно скачано: ${cidString}`);
+          console.log(`✅ [Kubo Gateway] Успешно скачано с ${relayIp}: ${cidString}`);
           return await decryptAndSave([bytes], mimeType, cidString, encryptionKey);
-        } else {
-          console.warn(`⚠️ [Kubo Gateway] Сервер вернул ошибку: ${response.status}`);
         }
+        console.warn(`⚠️ [Kubo Gateway] ${relayIp} вернул ошибку: ${response.status}`);
       } catch (e: any) {
-        // Если ошибка - это AbortError, значит файл просто не найден и Gateway долго думал
-        console.warn(`⚠️ [Kubo Gateway] Ошибка скачивания ${cidString}: ${e.message}`);
+        console.warn(`⚠️ [Kubo Gateway] Ошибка скачивания с ${relayIp}: ${e.message}`);
       } finally {
-        serverFetchSemaphore.release(); 
+        serverFetchSemaphore.release();
       }
     }
 
@@ -375,7 +393,7 @@ const generateTinyPreview = (file: File): Promise<string | undefined> => {
 /**
  * Удаляет файл из локального хранилища Helia, Cache API и удаленного сервера Kubo.
  */
-export async function deleteFileFromHelia(helia: any, cidString: string, serverCid?: string): Promise<boolean> {
+export async function deleteFileFromHelia(helia: any, cidString: string, serverCid?: string, serverRelays?: string[]): Promise<boolean> {
   try {
     console.log(`🗑️ [Helia FS] Начинаем удаление файла: ${cidString}`);
     
@@ -395,41 +413,23 @@ export async function deleteFileFromHelia(helia: any, cidString: string, serverC
     }
 
     // 🔥 3. Удаляем (открепляем) файл с удаленного сервера Kubo и запускаем очистку
-    try {
-      const relayIp = relayManager.getActiveRelayIp();
+    const targetCid = serverCid || cidString;
+    const relayIps = getGatewayCandidates(serverRelays);
 
-      // Выбираем, какой сид откреплять (приоритет у серверного)
-      const targetCid = serverCid || cidString;
-
-      if (relayIp && targetCid) {
-        console.log(`🗑️ [Kubo] Отправляем запрос на unpin файла ${targetCid} на сервере ${relayIp}...`);
-        
-        // 3.1 Открепляем файл
-        const kuboUnpinUrl = `http://${relayIp}:5001/api/v0/pin/rm?arg=${targetCid}`;
-        const unpinResponse = await fetch(kuboUnpinUrl, { method: 'POST' });
-
-      if (!unpinResponse.ok) {
+    await Promise.allSettled(relayIps.map(async (relayIp) => {
+      try {
+        const unpinResponse = await fetch(`http://${relayIp}:5001/api/v0/pin/rm?arg=${targetCid}`, { method: 'POST' });
+        if (!unpinResponse.ok) {
           const errorText = await unpinResponse.text();
-          // 🔥 Если файл уже откреплен, просто радуемся и идем дальше
-          if (errorText.includes("not pinned")) {
-            console.log(`✅ [Kubo] Файл ${targetCid} уже был откреплен (или не существовал). Идем дальше.`);
-          } else {
-            console.warn(`⚠️ [Kubo] Ошибка при unpin. Подробности:`, errorText);
+          if (!errorText.includes('not pinned')) {
+            console.warn(`⚠️ [Kubo] Ошибка unpin на ${relayIp}:`, errorText);
           }
-        } else {
-          console.log(`✅ [Kubo] Файл ${targetCid} успешно откреплен!`);
         }
-
-        // 3.2 ЗАПУСКАЕМ GC (Сборку мусора) на Kubo. 
-        // Без этого Kubo не удалит блоки с жесткого диска до следующей автоматической очистки.
-        console.log(`🧹 [Kubo] Запускаем сборку мусора (GC) для окончательного удаления...`);
-        const kuboGcUrl = `http://${relayIp}:5001/api/v0/repo/gc`;
-        await fetch(kuboGcUrl, { method: 'POST' });
-        console.log(`✅ [Kubo] Мусор очищен.`);
+        await fetch(`http://${relayIp}:5001/api/v0/repo/gc`, { method: 'POST' });
+      } catch (kuboError) {
+        console.error(`❌ [Kubo] Ошибка удаления с ${relayIp}:`, kuboError);
       }
-    } catch (kuboError) {
-      console.error(`❌ [Kubo] Ошибка сети при удалении файла с сервера:`, kuboError);
-    }
+    }));
 
     // 4. Удаляем блок из локального хранилища Helia
     if (helia && helia.blockstore) {

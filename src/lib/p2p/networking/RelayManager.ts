@@ -31,6 +31,16 @@ export class RelayManager {
     console.log(`📦 [RelayManager] Сформирован пул надежности из ${this.relayPool.length} релеев.`);
   }
 
+  private sessionToken: string | null = null; // 👈 НОВОЕ
+
+  public getSessionToken(): string | null {
+    return this.sessionToken;
+  }
+
+  public setSessionToken(token: string | null): void {
+    this.sessionToken = token;
+  }
+
   // Очистить весь карантин (Амнистия)
   public clearQuarantine() {
     this.failedRelays.clear();
@@ -99,6 +109,19 @@ export class RelayManager {
     }
   }
 
+  // Та же логика, что и в getActiveRelayIp(), но для произвольного релея пула, не только активного
+public getRelayIp(relay: RelayConfig): string | null {
+  if (!relay || !relay.address) return null;
+  try {
+    const ma = multiaddr(relay.address);
+    return ma.nodeAddress().address;
+  } catch (err) {
+    console.error('❌ [RelayManager] Ошибка парсинга multiaddr:', err);
+    const parts = relay.address.split('/');
+    return parts[2] || null;
+  }
+}
+
   // Привязываем инстанс libp2p после его старта
   public startMonitoring(libp2p: Libp2p, onRelayChanged?: (newRelay: RelayConfig) => void) {
     this.libp2p = libp2p;
@@ -129,8 +152,6 @@ export class RelayManager {
         // Отправляем упавший релей в карантин
         this.markRelayFailed(disconnectedPeerId);
 
-        // 3. Фризим UI
-        window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: false } }));
         // 4. ПЕРЕКЛЮЧАЕМСЯ НА ЗАПАСНЫЙ РЕЛЕЙ
         await this.switchToNextRelay(onRelayChanged);
       }
@@ -217,9 +238,6 @@ export class RelayManager {
 
         console.log(`✅ [RelayManager] Успешно переключено на резервный релей: ${nextRelay.name}`);
         success = true;
-
-        // Размораживаем UI
-        window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: true } }));
         
         if (onRelayChanged) {
           onRelayChanged(nextRelay);
@@ -305,6 +323,12 @@ export class RelayManager {
             
             if (response.status === CONFIG.MSG.SUCCESS) {
               isSuccess = true;
+
+              if (response.sessionToken) {
+                this.setSessionToken(response.sessionToken);
+                console.log('🔑 [RPC] Токен сессии сохранён.');
+              }
+
               console.log(`✅ [RPC] Успешная регистрация: ${response.message}`);
             } else if (response.status === CONFIG.MSG.FORBIDDEN) { 
               isSuccess = false;

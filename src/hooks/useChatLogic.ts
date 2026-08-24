@@ -166,7 +166,9 @@ export const useChatLogic = () => {
           contact.avatarCid, 
           15000, 
           contact.avatarServerCid, 
-          contact.avatarEncryptionKey
+          contact.avatarEncryptionKey,
+          false,
+          contact.serverRelays
         );
         if (isMounted) {
           setAvatarUrl(url);
@@ -339,10 +341,10 @@ export const useChatLogic = () => {
   };
 
   // ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ
-  const handleDeleteMessage = async (messageId: string, cid?: string, serverCid?: string) => {
+  const handleDeleteMessage = async (messageId: string, cid?: string, serverCid?: string, serverRelays?: string[]) => {
       // 1. Физически сносим файл из IPFS
       if (cid && globalHelia) {
-        await deleteFileFromHelia(globalHelia, cid, serverCid);
+        await deleteFileFromHelia(globalHelia, cid, serverCid, serverRelays);
       }
 
       // 2. Меняем сообщение в локальном UI мгновенно

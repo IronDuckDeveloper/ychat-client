@@ -12,6 +12,7 @@ export interface ContactItem {
   nickname: string;         // Кэш никнейма для моментального UI
   avatarCid: string;        // Кэш аватара для моментального UI
   avatarServerCid?: string; // Кэш серверного CID для удаления из Kubo
+  serverRelays?: string[]; // Кэш списка релеев, где лежит аватар
   avatarEncryptionKey?: string; // Кэш ключа шифрования для удаления из Kubo
   bio?: string;             // Кэш био для моментального UI
   updatedAt: number;        // Таймстемп (для сортировки списка чатов)

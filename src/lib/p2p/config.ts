@@ -17,6 +17,7 @@ export const CONFIG = {
     KEY_LAST_UPDATED: 'lastUpdated', // Ключ для хранения даты последнего обновления профиля
     KEY_AVATAR_CID: 'avatarCID', // Ключ для хранения CID аватара
     KEY_AVATAR_ENCRYPTION_KEY: 'avatar_encryption_key', // Ключ для хранения ключа шифрования аватара
+    KEY_SERVER_RELAYS: 'serverRelays', // Ключ для хранения ключа шифрования аватара
     KEY_PRIVACY: 'privacy_mode', // Режим приватности профиля (public, contacts_only, private)
     MSG_PROFILE_UPDATED: 'PROFILE_UPDATED', // Сообщение об обновлении профиля
     BLACKLIST_KEY : 'ychat_blocked_peers', // Ключ для хранения черного списка
@@ -39,7 +40,8 @@ export const CONFIG = {
   SEED_LENGTH: 32,  // Длина seed для Ed25519 - 32 байта
 
   MAX_RETRIES: 5, // Максимальное количество попыток подключения
-  RELAY_POOL_SIZE: 5, // Размер пула релеев
+  RELAY_POOL_SIZE: 3, // Размер пула релеев
+  FILE_REPLICATION_FACTOR: 2, // сколько релеев должны подтвердить приём — независимо от RELAY_POOL_SIZE
 
   SYNC_INTERVAL_MS: 10800000, // Интервал синхронизации с релеями (3 часа)
   INACTIVITY_TIMEOUT_MS: 10 * 60 * 1000, // Время для пинга на сервер (10 минут)

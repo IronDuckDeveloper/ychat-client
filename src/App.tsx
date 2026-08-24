@@ -12,8 +12,11 @@ import { initNetworkStateMachine } from '../src/lib/p2p/networking/NetworkStateM
 import { syncTopContactsHistory } from './lib/p2p/services/contactsService.ts';
 import { startGlobalNotificationListener, startBackgroundProfileWatcher } from './lib/p2p/services/backgroundServices.ts';
 import { checkAndSyncRelays } from './lib/p2p/networking/connectionManager.ts';
+import { useUploadEvents } from './hooks/useUploadEvents';
 
 function App() {
+  const toasts = useUploadEvents();
+
   useEffect(() => {
     if (isAuthenticated() && !globalHelia) {
       console.log('🔄 Запуск P2P сессии...');
@@ -66,6 +69,9 @@ function App() {
     <>
       <Router>
         <NetworkOverlay />
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.kind}`}>{t.message}</div>
+        ))}
         <Routes>
           <Route path="/" element={<Auth />} />
           <Route 

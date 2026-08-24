@@ -109,12 +109,27 @@ export async function broadcastMyProfile(customProfileData?: any) {
       ? customProfileData[CONFIG.PROFILE.KEY_BIO]
       : await globalProfileDb.get(CONFIG.PROFILE.KEY_BIO);
 
+    const avatarServerCid = customProfileData && customProfileData[CONFIG.PROFILE.KEY_AVATAR_SERVER_CID] !== undefined
+      ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]
+      : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID);
+
+    const avatarEncryptionKey = customProfileData && customProfileData[CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY] !== undefined
+      ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]
+      : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
+
+    const serverRelays = customProfileData && customProfileData[CONFIG.PROFILE.KEY_SERVER_RELAYS] !== undefined
+      ? customProfileData[CONFIG.PROFILE.KEY_SERVER_RELAYS]
+      : await globalProfileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
+
     const updateMsg = {
       type: CONFIG.PROFILE.MSG_PROFILE_UPDATED,
       senderId: myPeerId || '',
       nickname: nickname || 'Аноним',
       avatarCid: avatarCid || '',
       bio: bio || '',
+      avatarServerCid: avatarServerCid || '',
+      avatarEncryptionKey: avatarEncryptionKey || '',
+      serverRelays: serverRelays || [],
       profileDbAddress: globalProfileDb.address.toString() || '',
     };
 
@@ -243,6 +258,9 @@ export async function initializeApp(nicknameForRegistration?: string) {
             chatDbAddress: '', 
             nickname: msg.nickname || senderId.slice(0, 8),
             avatarCid: msg.avatarCid || '',
+            avatarServerCid: msg.avatarServerCid || '',
+            avatarEncryptionKey: msg.avatarEncryptionKey || '',
+            serverRelays: msg.serverRelays || [],
             bio: msg.bio || '',
             profileDbAddress: msg.profileDbAddress || '',
             updatedAt: Date.now(),
@@ -258,8 +276,12 @@ export async function initializeApp(nicknameForRegistration?: string) {
             contact.avatarCid !== msg.avatarCid || 
             contact.nickname !== msg.nickname ||
             contact.bio !== msg.bio ||
+            contact.avatarServerCid !== msg.avatarServerCid ||
+            contact.avatarEncryptionKey !== msg.avatarEncryptionKey ||
             (!contact.profileDbAddress && !!msg.profileDbAddress) ||
             contact.profileDbAddress !== msg.profileDbAddress;
+            // serverRelays намеренно не в сравнении — !== на массивах ломается через reference-inequality,
+            // а поле практически всегда меняется вместе с avatarCid/avatarServerCid, так что подхватится попутно
 
           if (isChanged) {
             console.log(`🔄 [PubSub] Обновляем профиль для контакта: ${msg.nickname || senderId.slice(0, 8)}`);
@@ -267,6 +289,9 @@ export async function initializeApp(nicknameForRegistration?: string) {
             const updatedContact: ContactItem = {
               ...contact,
               avatarCid: msg.avatarCid ?? contact.avatarCid,
+              avatarServerCid: msg.avatarServerCid ?? contact.avatarServerCid,
+              avatarEncryptionKey: msg.avatarEncryptionKey ?? contact.avatarEncryptionKey,
+              serverRelays: msg.serverRelays ?? contact.serverRelays,
               nickname: msg.nickname ?? contact.nickname,
               bio: msg.bio ?? contact.bio,
               profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
@@ -295,61 +320,55 @@ export async function initializeApp(nicknameForRegistration?: string) {
     //   }
     // }, 5000);
 
-    // ==========================================
-    // 4. Логика регистрации С ЧЕСТНЫМ КУВЫРКОМ ПО РЕЛЕЯМ
-    // ==========================================
+  // ==========================================
+  // 4. Логика регистрации/входа — RPC теперь выполняется ВСЕГДА,
+  //    а не только при первой регистрации
+  // ==========================================
+  {
+    const actionType = nicknameForRegistration ? 'REGISTER' : 'LOGIN';
+
     if (nicknameForRegistration) {
       console.log(`📝 [Init] Сохраняем никнейм: ${nicknameForRegistration}`);
-
-      const fingerprint = await generateDeviceFingerprint();
-      const ipAddress = await getClientIpAddress();
-      
       await globalProfileDb.put(CONFIG.PROFILE.KEY_NICKNAME, nicknameForRegistration);
       await globalProfileDb.put(CONFIG.PROFILE.KEY_DATE_CREATED, Date.now());
-      await globalProfileDb.put(CONFIG.KEY_FINGERPRINT, fingerprint);
-      await globalProfileDb.put(CONFIG.KEY_IP_ADDRESS, ipAddress);
+    }
 
-      const profileAddressStr = globalProfileDb.address.toString();
-      
-      const relays = globalRelayManager.getPool();
-      let registrationSuccess = false;
+    const fingerprint = await generateDeviceFingerprint();
+    const ipAddress = await getClientIpAddress();
 
-      for (const relay of relays) {
-        try {
-          console.log(`⏳ [Init] Пробуем зарегистрироваться через релей: ${relay.name}...`);
+    await globalProfileDb.put(CONFIG.KEY_FINGERPRINT, fingerprint);
+    await globalProfileDb.put(CONFIG.KEY_IP_ADDRESS, ipAddress);
 
-          const actionType = nicknameForRegistration ? 'REGISTER' : 'LOGIN';   
-          
-          const isRegistered = await globalRelayManager.registerWithRelay(
-            libp2p,
-            relay,
-            profileAddressStr,
-            fingerprint,
-            ipAddress,
-            actionType
-          );
+    const profileAddressStr = globalProfileDb.address.toString();
+    const relays = globalRelayManager.getPool();
+    let registrationSuccess = false;
 
-          if (isRegistered) {
-            registrationSuccess = true;
-            
-            const activeIdx = relays.indexOf(relay);
-            globalRelayManager.setActiveIndex(activeIdx);
-            
-            console.log(`🎉 [Init] Сетевой антифрод успешно пройден на релее ${relay.name}!`);
-            break; 
-          } else {
-            console.warn(`⚠️ [Init] Релей ${relay.name} отклонил регистрацию (лимит), проверяем следующий...`);
-          }
+    for (const relay of relays) {
+      try {
+        console.log(`⏳ [Init] Пробуем ${actionType === 'REGISTER' ? 'зарегистрироваться' : 'войти'} через релей: ${relay.name}...`);
 
-        } catch (relayError: any) {
-          console.warn(`⚠️ [Init] Релей ${relay.name} недоступен по сети: ${relayError.message || relayError}`);
+        const isRegistered = await globalRelayManager.registerWithRelay(
+          libp2p, relay, profileAddressStr, fingerprint, ipAddress, actionType
+        );
+
+        if (isRegistered) {
+          registrationSuccess = true;
+          const activeIdx = relays.indexOf(relay);
+          globalRelayManager.setActiveIndex(activeIdx);
+          console.log(`🎉 [Init] Сетевой антифрод успешно пройден на релее ${relay.name}!`);
+          break;
+        } else {
+          console.warn(`⚠️ [Init] Релей ${relay.name} отклонил ${actionType === 'REGISTER' ? 'регистрацию' : 'вход'}, проверяем следующий...`);
         }
-      }
-
-      if (!registrationSuccess) {
-        throw new Error('Не удалось зарегистрироваться: все релеи сети недоступны или превышен лимит устройств.');
+      } catch (relayError: any) {
+        console.warn(`⚠️ [Init] Релей ${relay.name} недоступен по сети: ${relayError.message || relayError}`);
       }
     }
+
+    if (!registrationSuccess) {
+      throw new Error(`Не удалось ${actionType === 'REGISTER' ? 'зарегистрироваться' : 'войти'}: все релеи сети недоступны.`);
+    }
+  }
 
     console.log('✅ [Init] Инициализация успешно завершена!');
     

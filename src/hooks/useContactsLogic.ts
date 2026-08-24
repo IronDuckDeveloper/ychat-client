@@ -243,8 +243,10 @@ export const useContactsLogic = () => {
 
         if (avatarCID && globalHelia && isMounted) {
           const serverCid = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
+          const serverRelays = await profileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS || []);
           // Передаем timeoutMs = 15000 и serverCid для быстрой загрузки с Gateway
-          const url = await fetchAvatarFromHelia(globalHelia, avatarCID, 15000, serverCid, avatarEncryptionKey);
+          const url = await fetchAvatarFromHelia(globalHelia, avatarCID, 15000, serverCid, avatarEncryptionKey, false, serverRelays);
+
           if (isMounted) setMyAvatarUrl(url);
         }
 
@@ -413,6 +415,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       let currentAvatarCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_CID);
       let currentAvatarServerCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
       let currentAvatarEncryptionKey = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
+      let serverRelays = await dbInstance.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
 
       if (newAvatarBlob && globalHelia) {
         // 2. Передаем старые CID в uploadAvatarToHelia — сервис сам удалит их из Kubo и кэшей
@@ -421,11 +424,13 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           newAvatarBlob, 
           currentAvatarCid,        // Старый локальный CID
           currentAvatarServerCid,  // Старый серверный CID (для unpin + GC в Kubo)
+          serverRelays
         );
 
         const newCid = attachment.cid;
         const newServerCid = attachment.serverCid;
         const newEncryptionKey = attachment.encryptionKey;
+        const newServerRelays = attachment.serverRelays;
 
         try {
           const dht = globalHelia.libp2p.dht;
@@ -436,18 +441,23 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
 
         // 3. Сохраняем в OrbitDB новый CID и новый Server CID
         await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, newCid);
+
         if (newServerCid) {
           await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid', newServerCid);
         }
 
-        if (newEncryptionKey) {
-          // Сохраняем ключ в базу
+        if (newEncryptionKey) { // Сохраняем ключ в базу
           await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY, newEncryptionKey);
+        }
+
+        if (newServerRelays) {
+          await dbInstance.put(CONFIG.PROFILE.KEY_SERVER_RELAYS, newServerRelays);
         }
 
         currentAvatarCid = newCid; // Обновляем для отправки в broadcast
         currentAvatarServerCid = newServerCid; // ОБЯЗАТЕЛЬНО обновляем serverCid для бродкаста!
         currentAvatarEncryptionKey = newEncryptionKey; // обновляем переменную ключа для бродкаста
+        serverRelays = newServerRelays; 
 
         setMyAvatarUrl(URL.createObjectURL(newAvatarBlob));
       }

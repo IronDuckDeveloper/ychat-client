@@ -151,7 +151,7 @@ useEffect(() => {
                       <MessageAttachment 
                         attachment={message.attachment} 
                         // Передаем и ID, и CID
-                        onDelete={() => handleDeleteMessage(message.id, message.attachment?.cid, message.attachment?.serverCid)}
+                        onDelete={() => handleDeleteMessage(message.id, message.attachment?.cid, message.attachment?.serverCid, message.attachment?.serverRelays)}
                       />
                     )}
                   </div>

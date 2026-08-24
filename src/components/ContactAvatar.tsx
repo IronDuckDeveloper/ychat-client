@@ -8,11 +8,13 @@ import '../styles/contactAvatar.scss';
 function ContactAvatar({ 
   cid, 
   serverCid, 
-  encryptionKey
+  encryptionKey,
+  serverRelays
 }: { 
   cid: string | undefined,
   serverCid?: string,
-  encryptionKey?: string
+  encryptionKey?: string,
+  serverRelays?: string[]
 }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -33,7 +35,8 @@ function ContactAvatar({
           15000, 
           serverCid, 
           encryptionKey,
-          isManualRefresh
+          isManualRefresh,
+          serverRelays
         );
         
         console.log(`🖼️ [Avatar UI] Результат fetch:`, url ? 'Успешно получен Blob URL ✅' : 'URL не получен ❌');

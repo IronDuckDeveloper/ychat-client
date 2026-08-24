@@ -152,9 +152,6 @@ export function createBrowserHelia(): Promise<any> {
 
         // Фиксируем успешный индекс в менеджере
         relayManager.setActiveIndex(currentRelayIndex);
-        
-        // Размораживаем UI
-        window.dispatchEvent(new CustomEvent('networkStatus', { detail: { stable: true } }));
 
       } catch (error: any) {
         console.warn(`⚠️ [HeliaInit] Не удалось подключиться к релею ${relay.name || relay.peerId.slice(-6)}. Ошибка: ${error.message}`);
