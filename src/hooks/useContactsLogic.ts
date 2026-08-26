@@ -4,7 +4,7 @@ import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
 
 
-import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile } from '../lib/p2p/services/authService.ts'; 
+import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile, globalRelayManager } from '../lib/p2p/services/authService.ts'; 
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
@@ -494,6 +494,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       confirmText: 'Выйти',
       isDanger: true,
       onConfirm: () => {
+        globalRelayManager?.clearSession(); // гасит таймер обновления токена от этого аккаунта
         localStorage.clear();
         navigate('/', { replace: true });
         closeDialog();

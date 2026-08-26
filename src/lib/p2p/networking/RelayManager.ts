@@ -31,7 +31,14 @@ export class RelayManager {
     console.log(`📦 [RelayManager] Сформирован пул надежности из ${this.relayPool.length} релеев.`);
   }
 
-  private sessionToken: string | null = null; // 👈 НОВОЕ
+  private sessionToken: string | null = null;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastAuthParams: {
+    libp2p: Libp2p;
+    profileDbAddress: string;
+    fingerprint: string;
+    ipAddress: string;
+  } | null = null;
 
   public getSessionToken(): string | null {
     return this.sessionToken;
@@ -39,6 +46,80 @@ export class RelayManager {
 
   public setSessionToken(token: string | null): void {
     this.sessionToken = token;
+  }
+
+  public getTokenExpiry(): number | null {
+  if (!this.sessionToken) return null;
+  try {
+    const decoded = JSON.parse(atob(this.sessionToken));
+    return typeof decoded.expiry === 'number' ? decoded.expiry : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+private clearRefreshTimer() {
+  if (this.refreshTimer) {
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+  }
+}
+
+private scheduleTokenRefresh() {
+  this.clearRefreshTimer();
+  const expiry = this.getTokenExpiry();
+  if (!expiry) return;
+
+  const REFRESH_MARGIN_MS = 2 * 60 * 60 * 1000; // обновляем за 2 часа до истечения
+  const delay = Math.max(0, expiry - Date.now() - REFRESH_MARGIN_MS);
+
+  this.refreshTimer = setTimeout(() => {
+    this.refreshToken().catch(err => console.error('❌ [RelayManager] Ошибка планового обновления токена:', err));
+  }, delay);
+
+  console.log(`🔑 [RelayManager] Следующее обновление токена через ${(delay / 3600000).toFixed(1)}ч.`);
+}
+
+  /**
+   * Обновляет токен через LOGIN-запрос на релей.
+   * Вызывается как по расписанию (за 2ч до истечения), так и по требованию
+   * из uploadQueue, если вкладка была фоновой и таймер не сработал вовремя.
+   */
+  public async refreshToken(): Promise<boolean> {
+    if (!this.lastAuthParams) {
+      console.warn('⚠️ [RelayManager] Нет сохранённых данных для обновления токена (ещё не было успешного входа).');
+      return false;
+    }
+
+    const { libp2p, profileDbAddress, fingerprint, ipAddress } = this.lastAuthParams;
+
+    for (const relay of this.relayPool) {
+      try {
+        const isRegistered = await this.registerWithRelay(libp2p, relay, profileDbAddress, fingerprint, ipAddress, 'LOGIN');
+        if (isRegistered) {
+          console.log(`🔑 [RelayManager] Токен обновлён через релей ${relay.name}.`);
+          return true;
+        }
+      } catch (err: any) {
+        console.warn(`⚠️ [RelayManager] Релей ${relay.name} недоступен при обновлении токена: ${err.message}`);
+      }
+    }
+
+    console.error('❌ [RelayManager] Не удалось обновить токен ни на одном релее. Повтор через 5 минут.');
+    this.refreshTimer = setTimeout(() => {
+      this.refreshToken().catch(() => {});
+    }, 5 * 60 * 1000);
+    return false;
+  }
+
+  /**
+   * Вызывать при логауте — гасит таймер обновления и сбрасывает сессию,
+   * чтобы после логаута в памяти не тикал таймер от чужого уже профиля.
+   */
+  public clearSession(): void {
+    this.clearRefreshTimer();
+    this.sessionToken = null;
+    this.lastAuthParams = null;
   }
 
   // Очистить весь карантин (Амнистия)
@@ -326,6 +407,10 @@ public getRelayIp(relay: RelayConfig): string | null {
 
               if (response.sessionToken) {
                 this.setSessionToken(response.sessionToken);
+
+                this.lastAuthParams = { libp2p, profileDbAddress, fingerprint, ipAddress };
+                this.scheduleTokenRefresh();          
+
                 console.log('🔑 [RPC] Токен сессии сохранён.');
               }
 

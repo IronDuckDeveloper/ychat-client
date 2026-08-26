@@ -9,6 +9,7 @@ interface QueueItem {
   sessionToken: string;
   succeededRelays: string[];
   excludedRelays: string[];
+  triedRefresh: boolean; 
   firstServerCid?: string;
   retries: number;
   maxRetries: number;
@@ -55,6 +56,7 @@ class UploadQueue {
       id: crypto.randomUUID(),
       succeededRelays: [],
       excludedRelays: [],
+      triedRefresh: false,
       retries: 0,
       maxRetries: RETRY_DELAYS_MS.length,
       nextAttemptAt: Date.now(),
@@ -119,11 +121,19 @@ class UploadQueue {
 
     const results = await Promise.allSettled(targets.map(relay => this.pushToRelay(item, relay)));
 
+    let sawExpiredToken = false;
+
     results.forEach((result, i) => {
       if (result.status === 'fulfilled') {
         item.succeededRelays.push(targets[i].peerId);
         if (!item.firstServerCid) item.firstServerCid = result.value;
-      } else if (result.reason instanceof Error && /^UPLOAD_REJECTED_(401|403|413)$/.test(result.reason.message)) {
+      } else if (result.reason instanceof Error && result.reason.message === 'UPLOAD_REJECTED_401') {
+        if (!item.triedRefresh) {
+          sawExpiredToken = true; // 👈 первый 401 — не исключаем релей, пробуем обновить токен
+        } else {
+          item.excludedRelays.push(targets[i].peerId); // уже обновляли — второй 401 значит что-то другое
+        }
+      } else if (result.reason instanceof Error && /^UPLOAD_REJECTED_(403|413)$/.test(result.reason.message)) {
         item.excludedRelays.push(targets[i].peerId);
       }
     });
@@ -131,6 +141,20 @@ class UploadQueue {
     if (item.succeededRelays.length >= REPLICATION_FACTOR) {
       this.finishAsSuccess(item);
       return;
+    }
+
+      // Токен протух, а таймер в RelayManager почему-то не сработал (фоновая вкладка) — чиним на лету
+    if (sawExpiredToken && !item.triedRefresh) {
+      item.triedRefresh = true;
+      console.log(`🔑 [UploadQueue] "${item.file.name}" — токен истёк, пробуем обновить...`);
+      const refreshed = await relayManager.refreshToken();
+      if (refreshed) {
+        item.sessionToken = relayManager.getSessionToken()!;
+        item.nextAttemptAt = Date.now(); // немедленный повтор, без обычного бэкоффа
+        this.rescheduleTimer();
+        return;
+      }
+      // обновить не удалось — падаем в обычный ретрай ниже
     }
 
     const remaining = pool.filter(r => !item.excludedRelays.includes(r.peerId) && !item.succeededRelays.includes(r.peerId));
