@@ -1,3 +1,4 @@
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;
@@ -180,5 +181,43 @@
   &::after {
     right: 0;
     border-right-color: var(--border);
+  }
+}
+
+.toast-notification .toast {
+  position: fixed;
+  bottom: 2rem; /* Уведомление будет снизу */
+  left: 50%;
+  transform: translateX(-50%); /* Центрирование по горизонтали */
+  
+  /* Заменяем $ на нативные CSS-переменные */
+  background-color: var(--accent-prime); 
+  color: var(--text-variant); 
+  
+  padding: 0.75rem 1.5rem;
+  border-radius: 2rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  
+  /* Вариант 1: Заменить на обычный черный с прозрачностью (самый простой) */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  
+  /* Вариант 2 (Современный CSS): Если --chat-bg-dark это HEX (например #121212) */
+  /* box-shadow: 0 4px 12px color-mix(in srgb, var(--chat-bg-dark) 20%, transparent); */
+  
+  z-index: 1100;
+  pointer-events: none; /* Уведомление не блокирует клики */
+  animation: toastFade 0.3s ease forwards;
+}
+
+/* Не забудьте добавить саму анимацию, если её еще нет: */
+@keyframes toastFade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
   }
 }

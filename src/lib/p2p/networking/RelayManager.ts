@@ -13,6 +13,12 @@ export interface RelayConfig {
   address: string;
 }
 
+export interface RegisterResult {
+  success: boolean;
+  status?: string;
+  message?: string;
+}
+
 export class RelayManager {
   private relayPool: RelayConfig[] = [];
   private currentIdx: number = 0;
@@ -95,8 +101,8 @@ private scheduleTokenRefresh() {
 
     for (const relay of this.relayPool) {
       try {
-        const isRegistered = await this.registerWithRelay(libp2p, relay, profileDbAddress, fingerprint, ipAddress, 'LOGIN');
-        if (isRegistered) {
+        const result = await this.registerWithRelay(libp2p, relay, profileDbAddress, fingerprint, ipAddress, 'LOGIN'); 
+        if (result.success) {
           console.log(`🔑 [RelayManager] Токен обновлён через релей ${relay.name}.`);
           return true;
         }
@@ -347,50 +353,34 @@ public getRelayIp(relay: RelayConfig): string | null {
    * @returns boolean - успешна ли регистрация
    */
   public async registerWithRelay(
-    libp2p: Libp2p,
-    relay: RelayConfig,
-    profileDbAddress: string,
-    fingerprint: string,
-    ipAddress: string,
-    action: 'REGISTER' | 'LOGIN'
-  ): Promise<boolean> {
-
+  libp2p: Libp2p,
+  relay: RelayConfig,
+  profileDbAddress: string,
+  fingerprint: string,
+  ipAddress: string,
+  action: 'REGISTER' | 'LOGIN'
+): Promise<RegisterResult> {
     try {
       console.log(`🔄 [RPC] Отправляем запрос Архивариусу: ${relay.name} (${relay.peerId.slice(-6)})...`);
       
-      // Собираем полный Multiaddr из адреса и ID
       const fullAddress = `${relay.address}/p2p/${relay.peerId}`;
       const target = multiaddr(fullAddress);
-      // dialProtocol принимает multiaddr, и это заставляет libp2p идти по конкретному адресу,
-      // не пытаясь угадать маршрут через PeerStore
       const stream = await libp2p.dialProtocol(target, CONFIG.TOPICS.RPC_PROTOCOL);
 
-    // Достаем адрес самого браузера, чтобы сервер знал, куда стучаться за базой
-    const clientMultiaddrs = libp2p.getMultiaddrs();
-    const clientMa = clientMultiaddrs.length > 0 ? clientMultiaddrs[0].toString() : null;
+      const clientMultiaddrs = libp2p.getMultiaddrs();
+      const clientMa = clientMultiaddrs.length > 0 ? clientMultiaddrs[0].toString() : null;
 
-    const payload = JSON.stringify({
-      action: action,
-      profileDbAddress: profileDbAddress,
-      fingerprint: fingerprint,
-      ipAddress: ipAddress,
-      clientMultiaddr: clientMa // 👈 ВОТ ЭТО СПАСЕТ ПИННИНГ
-    });
+      const payload = JSON.stringify({
+        action: action,
+        profileDbAddress: profileDbAddress,
+        fingerprint: fingerprint,
+        ipAddress: ipAddress,
+        clientMultiaddr: clientMa
+      });
 
-      // ==========================================
-      // 1. ОТПРАВКА ДАННЫХ (Глушим типы pipe полностью)
-      // ==========================================
-      // Передаем lp.encode БЕЗ скобок. Радикально отключаем проверку типов пайпа.
-      await (pipe as any)(
-        [new TextEncoder().encode(payload)],
-        lp.encode,
-        stream.sink
-      );
+      await (pipe as any)([new TextEncoder().encode(payload)], lp.encode, stream.sink);
 
-      // ==========================================
-      // 2. ПОЛУЧЕНИЕ ОТВЕТА
-      // ==========================================
-      let isSuccess = false;
+      let result: RegisterResult = { success: false };
 
       await (pipe as any)(
         stream.source,
@@ -403,23 +393,19 @@ public getRelayIp(relay: RelayConfig): string | null {
             console.log('📬 [RPC] Ответ Архивариуса:', response);
             
             if (response.status === CONFIG.MSG.SUCCESS) {
-              isSuccess = true;
+              result = { success: true, status: response.status, message: response.message };
 
               if (response.sessionToken) {
                 this.setSessionToken(response.sessionToken);
-
                 this.lastAuthParams = { libp2p, profileDbAddress, fingerprint, ipAddress };
-                this.scheduleTokenRefresh();          
-
+                this.scheduleTokenRefresh();
                 console.log('🔑 [RPC] Токен сессии сохранён.');
               }
 
               console.log(`✅ [RPC] Успешная регистрация: ${response.message}`);
-            } else if (response.status === CONFIG.MSG.FORBIDDEN) { 
-              isSuccess = false;
-              console.error(`🚨 [RPC] Отказ в регистрации: ${response.message}`);
             } else {
-              console.error(`🚨 [RPC] Неизвестный статус: ${response.status}`);
+              result = { success: false, status: response.status, message: response.message };
+              console.error(`🚨 [RPC] Отказ: ${response.status} — ${response.message}`);
             }
             break; 
           }
@@ -427,10 +413,9 @@ public getRelayIp(relay: RelayConfig): string | null {
       );
 
       await stream.close();
-      return isSuccess;
+      return result;
     } catch (error: any) {
       console.error('❌ [RPC Error] Ошибка связи с Архивариусом:', error);
-      // РАДИКАЛЬНОЕ РЕШЕНИЕ: вместо return false кидаем ошибку сети наверх
       throw new Error(`Сбой связи с Архивариусом: ${error.message || error}`);
     }
   }

@@ -12,7 +12,9 @@ import { initNetworkStateMachine } from '../src/lib/p2p/networking/NetworkStateM
 import { syncTopContactsHistory } from './lib/p2p/services/contactsService.ts';
 import { startGlobalNotificationListener, startBackgroundProfileWatcher } from './lib/p2p/services/backgroundServices.ts';
 import { checkAndSyncRelays } from './lib/p2p/networking/connectionManager.ts';
-import { useUploadEvents } from './hooks/useUploadEvents';
+import { useUploadEvents } from './hooks/useUploadEvents'
+import { createPortal } from 'react-dom';;
+import './App.css';
 
 function App() {
   const toasts = useUploadEvents();
@@ -20,6 +22,7 @@ function App() {
   useEffect(() => {
     if (isAuthenticated() && !globalHelia) {
       console.log('🔄 Запуск P2P сессии...');
+
       initializeApp()
         .then(() => {
           if (globalHelia && globalRelayManager) {
@@ -61,6 +64,7 @@ function App() {
         })
         .catch(err => {
           console.error('Критическая ошибка при восстановлении P2P:', err);
+          window.dispatchEvent(new CustomEvent('authError', { detail: { message: err.message || 'Не удалось подключиться к P2P-сети.' } }));
         });
     }
   }, []);
@@ -69,9 +73,6 @@ function App() {
     <>
       <Router>
         <NetworkOverlay />
-        {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.kind}`}>{t.message}</div>
-        ))}
         <Routes>
           <Route path="/" element={<Auth />} />
           <Route 
@@ -92,6 +93,15 @@ function App() {
           />
         </Routes>
       </Router>
+
+    {createPortal(
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast-notification toast-${t.kind}`}>{t.message}</div>
+        ))}
+      </div>,
+      document.body
+    )}
     </>
   );
 }

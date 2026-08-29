@@ -24,11 +24,20 @@ export function useUploadEvents() {
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
     };
 
+    const onAuthError = (evt: Event) => {
+      const { message } = (evt as CustomEvent).detail;
+      const id = crypto.randomUUID();
+      setToasts(prev => [...prev, { id, message, kind: 'error' }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 6000);
+    };
+
     window.addEventListener('uploadError', onUploadError);
     window.addEventListener('uploadRetrying', onUploadRetrying);
+    window.addEventListener('authError', onAuthError);
     return () => {
       window.removeEventListener('uploadError', onUploadError);
       window.removeEventListener('uploadRetrying', onUploadRetrying);
+      window.removeEventListener('authError', onAuthError);
     };
   }, []);
 

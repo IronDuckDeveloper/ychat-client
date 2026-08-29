@@ -1,5 +1,6 @@
 import { RefreshCw, Eye, EyeOff, User, HelpCircle, Copy } from 'lucide-react';
 import { useAuthLogic } from '../hooks/useAuthLogic.ts';
+import '../styles/auth.scss';
 
 const AuthScreen = () => {
   const {

@@ -146,6 +146,21 @@ export async function broadcastMyProfile(customProfileData?: any) {
   }
 }
 
+function getFriendlyAuthErrorMessage(status: string | undefined, rawMessage: string | null, actionType: 'REGISTER' | 'LOGIN'): string {
+  if (status === CONFIG.MSG.FORBIDDEN) {
+    if (rawMessage === 'Account has been banned') {
+      return 'Ваш аккаунт заблокирован.';
+    }
+    return actionType === 'REGISTER'
+      ? 'Превышен лимит регистраций для этого устройства/IP. Попробуйте позже.'
+      : 'Вход отклонён сетью.';
+  }
+  if (status === 'NOT_FOUND') {
+    return 'Профиль не найден. Проверьте правильность seed-фразы.';
+  }
+  return `Не удалось ${actionType === 'REGISTER' ? 'зарегистрироваться' : 'войти'}: все релеи сети недоступны.`;
+}
+
 export async function initializeApp(nicknameForRegistration?: string) {
   if (globalHelia && globalProfileDb) {
     console.log('⚡️ [Init] P2P узел уже запущен, пропускаем повторную инициализацию.');
@@ -342,23 +357,27 @@ export async function initializeApp(nicknameForRegistration?: string) {
     const profileAddressStr = globalProfileDb.address.toString();
     const relays = globalRelayManager.getPool();
     let registrationSuccess = false;
+    let lastFailureStatus: string | undefined;
+    let lastFailureMessage: string | null = null;
 
     for (const relay of relays) {
       try {
         console.log(`⏳ [Init] Пробуем ${actionType === 'REGISTER' ? 'зарегистрироваться' : 'войти'} через релей: ${relay.name}...`);
 
-        const isRegistered = await globalRelayManager.registerWithRelay(
+        const result = await globalRelayManager.registerWithRelay(
           libp2p, relay, profileAddressStr, fingerprint, ipAddress, actionType
         );
 
-        if (isRegistered) {
+        if (result.success) {
           registrationSuccess = true;
           const activeIdx = relays.indexOf(relay);
           globalRelayManager.setActiveIndex(activeIdx);
           console.log(`🎉 [Init] Сетевой антифрод успешно пройден на релее ${relay.name}!`);
           break;
         } else {
-          console.warn(`⚠️ [Init] Релей ${relay.name} отклонил ${actionType === 'REGISTER' ? 'регистрацию' : 'вход'}, проверяем следующий...`);
+          lastFailureStatus = result.status;
+          lastFailureMessage = result.message || null;
+          console.warn(`⚠️ [Init] Релей ${relay.name} отклонил ${actionType === 'REGISTER' ? 'регистрацию' : 'вход'}: ${result.message}`);
         }
       } catch (relayError: any) {
         console.warn(`⚠️ [Init] Релей ${relay.name} недоступен по сети: ${relayError.message || relayError}`);
@@ -366,7 +385,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
     }
 
     if (!registrationSuccess) {
-      throw new Error(`Не удалось ${actionType === 'REGISTER' ? 'зарегистрироваться' : 'войти'}: все релеи сети недоступны.`);
+      throw new Error(getFriendlyAuthErrorMessage(lastFailureStatus, lastFailureMessage, actionType));
     }
   }
 
