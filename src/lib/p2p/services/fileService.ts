@@ -113,6 +113,9 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
       sessionToken: sessionToken,
       onSuccess: async (serverCid, serverRelays) => {
         try {
+          // Регистрируем на сервере файл в бд пир к которому он был загружен
+          registerServerFile(serverCid, sessionToken);
+          // Сохраняем локально
           const fs = unixfs(helia);
           const cid = await fs.addBytes(payloadToUpload, { rawLeaves: false });
           const cidString = cid.toString();
@@ -145,6 +148,21 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
     });
   });
 }
+
+async function registerServerFile(cid: string, sessionToken: string): Promise<void> {
+  const relayIp = relayManager.getActiveRelayIp();
+  if (!relayIp) return;
+  try {
+    await fetch(`http://${relayIp}:5001/api/register-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-session-token': sessionToken },
+      body: JSON.stringify({ cid }),
+    });
+  } catch (err) {
+    console.warn('⚠️ [Register-File] Не удалось зарегистрировать владельца:', err);
+  }
+}
+
 //==============================================
 
 // 🚦 ПРОСТОЙ СЕМАФОР ДЛЯ ЗАЩИТЫ СЕРВЕРА ОТ DDOS 
@@ -391,17 +409,26 @@ const generateTinyPreview = (file: File): Promise<string | undefined> => {
 };
 
 /**
- * Удаляет файл из локального хранилища Helia, Cache API и удаленного сервера Kubo.
+ * Удаляет файл локально (RAM-кэш, Cache API, blockstore Helia) — всегда.
+ * Запрос на unpin/gc к серверу отправляется, только если isOwnFile === true —
+ * это не защита (сервер всё равно проверит владельца сам), а просто чтобы
+ * не тратить впустую сетевой запрос и лимит nginx на заведомо отклоняемый вызов.
  */
-export async function deleteFileFromHelia(helia: any, cidString: string, serverCid?: string, serverRelays?: string[]): Promise<boolean> {
+export async function deleteFileFromHelia(
+  helia: any,
+  cidString: string,
+  serverCid?: string,
+  serverRelays?: string[],
+  isOwnFile: boolean = false,
+): Promise<boolean> {
   try {
     console.log(`🗑️ [Helia FS] Начинаем удаление файла: ${cidString}`);
-    
-    // 1. Удаляем из оперативного кэша (RAM)
+
+    // 1. RAM-кэш — всегда
     fileCache.delete(cidString);
     pendingFetches.delete(cidString);
 
-    // 🔥 2. Удаляем из постоянного кэша браузера (Cache API)
+    // 2. Cache API — всегда
     try {
       const cache = await caches.open(CONFIG.CACHE_NAME_FILES);
       const isDeletedFromCache = await cache.delete(cidString);
@@ -412,33 +439,43 @@ export async function deleteFileFromHelia(helia: any, cidString: string, serverC
       console.warn(`⚠️ [Cache API] Ошибка при удалении из кэша:`, cacheError);
     }
 
-    // 🔥 3. Удаляем (открепляем) файл с удаленного сервера Kubo и запускаем очистку
-    const targetCid = serverCid || cidString;
-    const relayIps = getGatewayCandidates(serverRelays);
+    // 3. Запрос на сервер — только если это наш файл
+    if (isOwnFile) {
+      const targetCid = serverCid || cidString;
+      const relayIps = getGatewayCandidates(serverRelays);
+      const sessionToken = relayManager.getSessionToken();
 
-    await Promise.allSettled(relayIps.map(async (relayIp) => {
-      try {
-        const unpinResponse = await fetch(`http://${relayIp}:5001/api/v0/pin/rm?arg=${targetCid}`, { method: 'POST' });
-        if (!unpinResponse.ok) {
-          const errorText = await unpinResponse.text();
-          if (!errorText.includes('not pinned')) {
-            console.warn(`⚠️ [Kubo] Ошибка unpin на ${relayIp}:`, errorText);
+      if (!sessionToken) {
+        console.warn('⚠️ [Delete-File] Нет токена сессии — удаление с сервера пропущено.');
+      } else {
+        await Promise.allSettled(relayIps.map(async (relayIp) => {
+          try {
+            const response = await fetch(`http://${relayIp}:5001/api/delete-file`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-session-token': sessionToken },
+              body: JSON.stringify({ cid: targetCid }),
+            });
+            if (!response.ok) {
+              const text = await response.text();
+              console.warn(`⚠️ [Delete-File] ${relayIp} отклонил удаление (${response.status}): ${text}`);
+            }
+          } catch (kuboError) {
+            console.error(`❌ [Delete-File] Ошибка обращения к ${relayIp}:`, kuboError);
           }
-        }
-        await fetch(`http://${relayIp}:5001/api/v0/repo/gc`, { method: 'POST' });
-      } catch (kuboError) {
-        console.error(`❌ [Kubo] Ошибка удаления с ${relayIp}:`, kuboError);
+        }));
       }
-    }));
+    } else {
+      console.log(`ℹ️ [Helia FS] Файл ${cidString} не мой — только локальная очистка, без запроса на сервер.`);
+    }
 
-    // 4. Удаляем блок из локального хранилища Helia
+    // 4. Локальный blockstore Helia — всегда
     if (helia && helia.blockstore) {
       const cid = CID.parse(cidString);
       await helia.blockstore.delete(cid);
       console.log(`✅ [Helia FS] Блоки файла удалены из локального blockstore.`);
     }
 
-    console.log(`✅ [Helia FS] Полный цикл удаления ${cidString} успешно завершен.`);
+    console.log(`✅ [Helia FS] Локальная очистка ${cidString} завершена.`);
     return true;
   } catch (error) {
     console.error(`❌ [Helia FS] Критическая ошибка при удалении файла ${cidString}:`, error);

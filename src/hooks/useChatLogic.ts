@@ -341,10 +341,15 @@ export const useChatLogic = () => {
   };
 
   // ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ
-  const handleDeleteMessage = async (messageId: string, cid?: string, serverCid?: string, serverRelays?: string[]) => {
-      // 1. Физически сносим файл из IPFS
+  const handleDeleteMessage = async (
+    messageId: string, cid?: string, 
+    serverCid?: string, 
+    serverRelays?: string[],
+    isOwnMessage: boolean = false,
+  ) => {
+      // 1. Локально сносим файл всегда; на сервере — только если сообщение моё
       if (cid && globalHelia) {
-        await deleteFileFromHelia(globalHelia, cid, serverCid, serverRelays);
+        await deleteFileFromHelia(globalHelia, cid, serverCid, serverRelays, isOwnMessage);
       }
 
       // 2. Меняем сообщение в локальном UI мгновенно
