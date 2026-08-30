@@ -352,3 +352,55 @@
     z-index: 3;
   }
 }
+
+// Полноэкранный просмотр фото
+.image-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;          // только на фоне
+  animation: fadeIn 0.18s ease;
+}
+
+.image-fullscreen-img {
+  max-width: 96vw;
+  max-height: 96vh;
+  object-fit: contain;
+  border-radius: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;           // на самом фото — обычный курсор
+  pointer-events: auto;
+}
+
+.image-fullscreen-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.32);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

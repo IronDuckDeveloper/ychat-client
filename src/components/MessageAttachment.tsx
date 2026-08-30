@@ -20,6 +20,7 @@ import {
   convertBlobForDownload,
 } from '../lib/p2p/services/fileService.ts';
 import '../styles/MessageAttachment.scss';
+import { createPortal } from 'react-dom';
 
 interface MessageAttachmentProps {
   attachment: FileAttachment;
@@ -35,6 +36,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   const [downloadError, setDownloadError] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false); // 🔥 Состояние удаленного файла
   const [duration, setDuration] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const fileMimeType = React.useMemo(() => {
     const type = attachment.type;
@@ -120,6 +122,28 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
       isMounted = false;
     };
   }, [attachment.cid, isImage, fileMimeType, isDeleted]);
+
+useEffect(() => {
+  if (!isFullscreen) return;
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') setIsFullscreen(false);
+  };
+
+  document.addEventListener('keydown', handleKeyDown);
+
+  // Блокируем скролл на html и body
+  const prevBody = document.body.style.overflow;
+  const prevHtml = document.documentElement.style.overflow;
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+
+  return () => {
+    document.removeEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = prevBody;
+    document.documentElement.style.overflow = prevHtml;
+  };
+}, [isFullscreen]);
 
   // 🔥 Обработчик удаления
   const handleDeleteFile = async (e: React.MouseEvent) => {
@@ -331,12 +355,13 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   }
 
   if (isImage) {
-    return (
+  return (
+    <>
       <div
         className="attachment-image-wrapper"
         style={{ position: 'relative' }}
       >
-        {/* Контейнер для кнопок поверх картинки */}
+        {/* Кнопки поверх картинки */}
         <div
           style={{
             position: 'absolute',
@@ -394,6 +419,8 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             src={fileUrl}
             alt={attachment.name || 'image'}
             className="attachment-img loaded"
+            onClick={() => setIsFullscreen(true)}
+            style={{ cursor: 'pointer' }}
           />
         ) : (
           <div className="image-loading-placeholder">
@@ -426,8 +453,36 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
           </div>
         )}
       </div>
-    );
-  }
+
+      {/* 🔥 Полноэкранный просмотр */}
+      {isFullscreen && fileUrl && createPortal(
+        <div
+          className="image-fullscreen-overlay"
+          onClick={() => setIsFullscreen(false)}
+        >
+          <button
+            className="image-fullscreen-close"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFullscreen(false);
+            }}
+            title="Закрыть"
+          >
+            ✕
+          </button>
+
+          <img
+            src={fileUrl}
+            alt={attachment.name || 'image'}
+            className="image-fullscreen-img"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
   // 🔥 Карточка аудио с нативным HTML5-плеером
   if (isAudio) {
