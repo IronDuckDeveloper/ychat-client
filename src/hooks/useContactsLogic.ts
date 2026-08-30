@@ -670,8 +670,18 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     }
   };
 
+  const handleCopyContactId = async (e: React.MouseEvent, contactId: string) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(contactId);
+      showToast('📋 Peer ID скопирован в буфер!');
+    } catch {
+      showToast('❌ Ошибка при копировании');
+    }
+  };
+
   return {
-    navigate, isLoading, dbInstance, contacts, filteredContacts, myPrivacy, peerId, dialogConfig, toastMessage,
+    navigate, isLoading, dbInstance, contacts, filteredContacts, myPrivacy, peerId, dialogConfig, toastMessage, handleCopyContactId,
     
     searchQuery, setSearchQuery,
     isProfileOpen, setIsProfileOpen,

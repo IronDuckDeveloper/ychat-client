@@ -1,4 +1,4 @@
-import { User, Search, Share2, Plus, Trash2, RefreshCcw, MoreVertical, Ban, X } from 'lucide-react';
+import { User, Search, Share2, Plus, Trash2, RefreshCcw, MoreVertical, Ban, X, Copy } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import ProfileDrawer from '../components/ProfileDrawer';
 import ContactAvatar from '../components/ContactAvatar.tsx';
@@ -13,7 +13,7 @@ const ContactList = () => {
   const {
     navigate, isLoading, isProfileOpen, setIsProfileOpen,
     myNickname, myBio, myAvatarUrl, myPrivacy, peerId, contacts, filteredContacts, dialogConfig, 
-    toastMessage, showToast, isNetworkReady,
+    toastMessage, showToast, isNetworkReady, handleCopyContactId,
     
     // Стейты UI и поиска
     searchQuery, setSearchQuery,
@@ -233,6 +233,9 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                         <RefreshCcw size={16} /><span>Разблокировать и обновить</span>
                       </button>
                     )}
+                    <button onClick={(e) => { e.stopPropagation(); handleCopyContactId(e, contact.id); setActiveMenuId(null); }}>
+                      <Copy size={16} /><span>Скопировать ID</span>
+                    </button>
                     <button className="delete-option" onClick={(e) => { e.stopPropagation(); handleDeleteContact(e, contact.id); setActiveMenuId(null); }}>
                       <Trash2 size={16} /><span>Удалить</span>
                     </button>
