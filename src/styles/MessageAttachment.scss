@@ -164,3 +164,102 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.attachment-audio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  margin-top: 6px;
+  width: 340px;
+  max-width: 100%; // Чтобы не ломало верстку на узких мобильных экранах
+
+  .audio-card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .audio-player-area {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+
+    .audio-player {
+      width: 100%;
+      height: 32px;
+      // Немного тонируем нативный плеер под тёмную тему
+      // filter: invert(0.85) hue-rotate(180deg);
+      border-radius: 6px;
+    }
+
+    .audio-load-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(59, 130, 246, 0.25);
+      }
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+    }
+
+    .audio-retry {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+
+  .file-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.05); // Легкий полупрозрачный фон
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #a3a3a3; // Дефолтный цвет иконок
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff; // Иконка светлеет при наведении
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  // Специфичный стиль для кнопки удаления (если хотите сделать ее красной при наведении)
+  &.delete-btn {
+    &:hover {
+      background: rgba(255, 77, 79, 0.15);
+      border-color: rgba(255, 77, 79, 0.3);
+      
+      svg { // Обращение к иконке Lucide
+        stroke: #ff4d4f; 
+      }
+    }
+  }
+}
+}
