@@ -151,46 +151,6 @@ position: absolute;
     border: 1px solid rgba(153, 120, 171, 0.1);
     position: relative;
 
-    .attachment-context-menu {
-      position: absolute;
-      bottom: 100%; // Открываем меню вверх (над инпутом)
-      left: 0;
-      margin-bottom: 12px; // Отступ от инпута вверх
-      background-color: $text_variant; // Белый фон (судя по переменным)
-      border: 1px solid rgba($user-bubble, 0.2);
-      border-radius: $radius;
-      box-shadow: 0 -4px 15px rgba($chat-bg-dark, 0.1); // Тень направлена вверх
-      display: flex;
-      flex-direction: column;
-      min-width: 160px;
-      z-index: 150; 
-      overflow: hidden;
-
-      button {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        width: 100%;
-        padding: 12px 16px;
-        background: none;
-        border: none;
-        cursor: pointer;
-        font-size: 14px;
-        color: $text; 
-        transition: background-color 0.2s;
-        text-align: left;
-
-        &:hover {
-          background-color: $chat-bg-light;
-        }
-
-        svg {
-          color: $accent-prime; 
-          flex-shrink: 0;
-        }
-      }
-    }
-
     .attachment-button {
       background: none;
       border: none;

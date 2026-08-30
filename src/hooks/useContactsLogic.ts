@@ -13,7 +13,6 @@ import { forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
 import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts'; 
 
-
 export const useContactsLogic = () => {
   const navigate = useNavigate();
 

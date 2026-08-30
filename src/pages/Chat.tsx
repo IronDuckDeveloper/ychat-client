@@ -8,6 +8,7 @@ import { getPeerRestrictionStatus } from '../lib/p2p/services/contactsService';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
 import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
+import ContextMenu from '../components/ContextMenu';
 
 // Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
@@ -203,23 +204,27 @@ useEffect(() => {
               </button>
 
               {isAttachmentMenuOpen && (
-                <div 
-                  className="attachment-context-menu" 
-                  onClick={(e) => e.stopPropagation()} 
-                >
-                  <button onClick={() => triggerFileInput('image')}>
-                    <ImageIcon size={16} />
-                    <span>Фото/Видео</span>
-                  </button>
-                  <button onClick={() => triggerFileInput('file')}>
-                    <File size={16} />
-                    <span>Файл</span>
-                  </button>
-                  <button onClick={() => triggerFileInput('audio')}>
-                    <Music size={16} />
-                    <span>Аудио</span>
-                  </button>
-                </div>
+                <ContextMenu
+                  className="attachment-context-menu"
+                  onClick={(e) => e.stopPropagation()}
+                  items={[
+                    {
+                      label: 'Фото/Видео',
+                      icon: <ImageIcon size={16} />,
+                      onClick: () => triggerFileInput('image'),
+                    },
+                    {
+                      label: 'Файл',
+                      icon: <File size={16} />,
+                      onClick: () => triggerFileInput('file'),
+                    },
+                    {
+                      label: 'Аудио',
+                      icon: <Music size={16} />,
+                      onClick: () => triggerFileInput('audio'),
+                    },
+                  ]}
+                />
               )}
 
               <textarea

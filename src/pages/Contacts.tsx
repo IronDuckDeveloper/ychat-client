@@ -8,6 +8,7 @@ import HeaderActionButton from '../components/HeaderActionButton.tsx';
 import { useCallback, useRef, useEffect } from 'react';
 import Avatar from '../components/Avatar.tsx';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
+import ContextMenu from '../components/ContextMenu';
 
 const ContactList = () => {
   const {
@@ -123,16 +124,27 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
           />
 
           {isHeaderMenuOpen && (
-            <div className="header-context-menu">
-              <button onClick={() => { setIsAddModalOpen(true); setIsHeaderMenuOpen(false); }}>
-                <Plus size={16} />
-                <span>Добавить</span>
-              </button>
-              <button onClick={() => { setIsShareModalOpen(true); setIsHeaderMenuOpen(false); }}>
-                <Share2 size={16} />
-                <span>Расшарить</span>
-              </button>
-            </div>
+            <ContextMenu
+              className="header-context-menu"
+              items={[
+                {
+                  label: 'Добавить',
+                  icon: <Plus size={16} />,
+                  onClick: () => {
+                    setIsAddModalOpen(true);
+                    setIsHeaderMenuOpen(false);
+                  },
+                },
+                {
+                  label: 'Расшарить',
+                  icon: <Share2 size={16} />,
+                  onClick: () => {
+                    setIsShareModalOpen(true);
+                    setIsHeaderMenuOpen(false);
+                  },
+                },
+              ]}
+            />
           )}
         </div>
       </div>
@@ -218,28 +230,57 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                 </button>
 
                 {activeMenuId === contact.id && (
-                  <div className="context-menu">
-                    {!contact.isBlocked ? (
-                      <>
-                        <button onClick={(e) => { e.stopPropagation(); handleRefreshContact(e, contact.id); setActiveMenuId(null); }}>
-                          <RefreshCcw size={16} /><span>Обновить профиль</span>
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); handleBlockContact(e, contact.id); setActiveMenuId(null); }}>
-                          <Ban size={16} /><span>Заблокировать</span>
-                        </button>
-                      </>
-                    ) : (
-                      <button onClick={(e) => { e.stopPropagation(); handleUnblockAndRefresh(e, contact.id); setActiveMenuId(null); }}>
-                        <RefreshCcw size={16} /><span>Разблокировать и обновить</span>
-                      </button>
-                    )}
-                    <button onClick={(e) => { e.stopPropagation(); handleCopyContactId(e, contact.id); setActiveMenuId(null); }}>
-                      <Copy size={16} /><span>Скопировать ID</span>
-                    </button>
-                    <button className="delete-option" onClick={(e) => { e.stopPropagation(); handleDeleteContact(e, contact.id); setActiveMenuId(null); }}>
-                      <Trash2 size={16} /><span>Удалить</span>
-                    </button>
-                  </div>
+                  <ContextMenu
+                    className="item-context-menu"
+                    items={[
+                      ...(!contact.isBlocked
+                        ? [
+                            {
+                              label: 'Обновить профиль',
+                              icon: <RefreshCcw size={16} />,
+                              onClick: (e: React.MouseEvent) => {
+                                handleRefreshContact(e, contact.id);
+                                setActiveMenuId(null);
+                              },
+                            },
+                            {
+                              label: 'Заблокировать',
+                              icon: <Ban size={16} />,
+                              onClick: (e: React.MouseEvent) => {
+                                handleBlockContact(e, contact.id);
+                                setActiveMenuId(null);
+                              },
+                            },
+                          ]
+                        : [
+                            {
+                              label: 'Разблокировать и обновить',
+                              icon: <RefreshCcw size={16} />,
+                              onClick: (e: React.MouseEvent) => {
+                                handleUnblockAndRefresh(e, contact.id);
+                                setActiveMenuId(null);
+                              },
+                            },
+                          ]),
+                      {
+                        label: 'Скопировать ID',
+                        icon: <Copy size={16} />,
+                        onClick: (e) => {
+                          handleCopyContactId(e, contact.id);
+                          setActiveMenuId(null);
+                        },
+                      },
+                      {
+                        label: 'Удалить',
+                        icon: <Trash2 size={16} />,
+                        danger: true,
+                        onClick: (e) => {
+                          handleDeleteContact(e, contact.id);
+                          setActiveMenuId(null);
+                        },
+                      },
+                    ]}
+                  />
                 )}
               </div>
             </div>
