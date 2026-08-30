@@ -635,3 +635,66 @@ export async function processImageForHelia(
     return originalFile; 
   }
 }
+
+/**
+ * Проверяет, есть ли в изображении реально используемая прозрачность
+ * (не "формат умеет альфу", а хотя бы один не полностью непрозрачный пиксель).
+ * Проверяем на уменьшенной копии — так быстрее и для решения "PNG или JPEG" точность не нужна.
+ */
+async function hasTransparency(imgBlob: Blob): Promise<boolean> {
+  const bitmap = await createImageBitmap(imgBlob);
+  const canvas = document.createElement('canvas');
+  const scale = Math.min(1, 64 / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true; // нашли альфа-канал в деле
+  }
+  return false;
+}
+
+/**
+ * Конвертирует Blob (у нас на реле всегда WebP) в формат, пригодный для сохранения
+ * на диск: PNG — если есть реальная прозрачность, иначе JPEG.
+ * Если конвертация по любой причине не удалась — отдаёт исходный blob как есть.
+ */
+export async function convertBlobForDownload(
+  blob: Blob,
+  baseName: string
+): Promise<{ blob: Blob; name: string }> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { blob, name: baseName };
+
+    const nameWithoutExt = baseName.replace(/\.\w+$/, '');
+    const transparent = await hasTransparency(blob);
+
+    if (transparent) {
+      ctx.drawImage(bitmap, 0, 0);
+      const pngBlob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (pngBlob) return { blob: pngBlob, name: `${nameWithoutExt}.png` };
+    } else {
+      // Без альфы — сразу заливаем белым фоном, чтобы не получить чёрный фон при JPEG-рендере
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0);
+      const jpegBlob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      if (jpegBlob) return { blob: jpegBlob, name: `${nameWithoutExt}.jpg` };
+    }
+  } catch (err) {
+    console.warn('[Download Convert] Конвертация не удалась, отдаём WebP как есть:', err);
+  }
+
+  return { blob, name: baseName };
+}

@@ -99,7 +99,8 @@
     // Если внутри сообщения есть обертка картинки, убираем отступы
     &:has(.attachment-image-wrapper),
     &:has(.attachment-audio-card),
-    &:has(.attachment-video-wrapper) {
+    &:has(.attachment-video-wrapper),
+    &:has(.attachment-file-card) {
       padding: 0.2rem;
     }
 
