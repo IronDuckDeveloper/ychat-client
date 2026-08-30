@@ -122,7 +122,9 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
 
           const localUrl = URL.createObjectURL(file);
           fileCache.set(cidString, localUrl);
-          const tinyPreview = await generateTinyPreview(file);
+          const tinyPreview = file.type.startsWith('video/')
+            ? await generateTinyVideoPreview(file)
+            : await generateTinyPreview(file);
           const base64Key = await exportKeyToBase64(aesKey);
 
           resolve({
@@ -405,6 +407,105 @@ const generateTinyPreview = (file: File): Promise<string | undefined> => {
     };
 
     img.src = objectUrl;
+  });
+};
+
+/**
+ * Генерирует экстремально сжатое JPEG-превью первого кадра видео (~2–4 КБ),
+ * по аналогии с generateTinyPreview для картинок — для хранения прямо
+ * в строке сообщения OrbitDB.
+ */
+const generateTinyVideoPreview = (file: File): Promise<string | undefined> => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('video/')) {
+      return resolve(undefined);
+    }
+
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    // 🔥 На части браузеров (особенно старый WebKit) видео-элемент должен
+    // реально существовать в DOM, чтобы корректно грузить метаданные/кадры
+    video.style.position = 'fixed';
+    video.style.opacity = '0';
+    video.style.pointerEvents = 'none';
+    video.style.width = '1px';
+    video.style.height = '1px';
+
+    const objectUrl = URL.createObjectURL(file);
+    video.src = objectUrl;
+
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute('src');
+      video.load();
+      if (video.parentNode) {
+        video.parentNode.removeChild(video);
+      }
+    };
+
+    const finish = (result: string | undefined) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    // Защита от зависшего файла/кодека, который браузер не смог декодировать
+    const timeoutId = setTimeout(() => finish(undefined), 5000);
+
+    video.onloadedmetadata = () => {
+      // Берём кадр не с самого начала (часто чёрный/пустой кадр), а чуть позже
+      const seekTo = Math.min(0.5, (video.duration || 1) / 4);
+      try {
+        video.currentTime = seekTo;
+      } catch {
+        finish(undefined);
+      }
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+
+        const MAX_SIZE = 40; // чуть крупнее, чем у картинок (20px) — кадр обычно менее "гладкий"
+        let width = video.videoWidth || MAX_SIZE;
+        let height = video.videoHeight || MAX_SIZE;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height = Math.round(height *= MAX_SIZE / width);
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width = Math.round(width *= MAX_SIZE / height);
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return finish(undefined);
+
+        ctx.drawImage(video, 0, 0, width, height);
+        const base64String = canvas.toDataURL('image/jpeg', 0.4);
+        finish(base64String);
+      } catch (e) {
+        console.warn('[Video Preview] Ошибка захвата кадра:', e);
+        finish(undefined);
+      }
+    };
+
+    video.onerror = () => finish(undefined);
+
+    document.body.appendChild(video);
   });
 };
 

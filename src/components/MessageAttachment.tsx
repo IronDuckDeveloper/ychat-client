@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { File, Download, AlertTriangle, Loader2, Trash2, Music, Play } from 'lucide-react';
+import { File, Download, AlertTriangle, Loader2, Trash2, Music, Play, Video as VideoIcon } from 'lucide-react';
 import { globalHelia } from '../lib/p2p/services/authService.ts';
 import { type FileAttachment, fetchFileFromHelia } from '../lib/p2p/services/fileService.ts'; 
 import '../styles/MessageAttachment.scss';
@@ -30,12 +30,17 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({ attachment, onDel
       'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg', 'oga': 'audio/ogg',
       'm4a': 'audio/mp4', 'aac': 'audio/aac', 'flac': 'audio/flac',
       'weba': 'audio/webm', 'opus': 'audio/opus',
+        // 🔥 Видео
+      'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
+      'mkv': 'video/x-matroska', 'avi': 'video/x-msvideo', 'm4v': 'video/x-m4v',
+      '3gp': 'video/3gpp',
     };
     return mimeMap[extension || ''] || 'application/octet-stream';
   }, [attachment]);
 
   const isImage = React.useMemo(() => fileMimeType.startsWith('image/'), [fileMimeType]);
   const isAudio = React.useMemo(() => fileMimeType.startsWith('audio/'), [fileMimeType]);
+  const isVideo = React.useMemo(() => fileMimeType.startsWith('video/'), [fileMimeType]);
 
   useEffect(() => {
     if (!isImage || !globalHelia || !attachment.cid || isDeleted) return;
@@ -92,7 +97,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({ attachment, onDel
       link.click();
       document.body.removeChild(link);
       
-      if (isImage || isAudio) {
+      if (isImage || isAudio || isVideo) {
         setFileUrl(url);
       }
     } catch (err) {
@@ -127,6 +132,31 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({ attachment, onDel
       setIsDownloading(false);
     }
   };
+
+// 🔥 Отдельная загрузка для видео: подгружает и включает плеер,
+// без принудительного скачивания файла (в отличие от handleDownloadFile)
+const handleLoadVideo = async (e: React.MouseEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (!globalHelia || !attachment.cid || isDownloading || isDeleted || fileUrl) return;
+
+  try {
+    setIsDownloading(true);
+    setDownloadError(false);
+    const url = await fetchFileFromHelia(globalHelia, attachment.cid, fileMimeType, attachment.serverCid, attachment.encryptionKey, 20000, attachment.serverRelays);
+    if (url) {
+      setFileUrl(url);
+    } else {
+      setDownloadError(true);
+    }
+  } catch (err) {
+    console.error(`❌ Ошибка загрузки видео ${attachment.cid}:`, err);
+    setDownloadError(true);
+  } finally {
+    setIsDownloading(false);
+  }
+};
 
   const formatDuration = (seconds: number) => {
     if (!seconds || isNaN(seconds)) return '';
@@ -260,6 +290,76 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({ attachment, onDel
             </button>
           )}
         </div>
+      </div>
+    );
+  }
+
+  // 🔥 Карточка видео: превью-бокс фиксированного размера (как у картинки),
+  // плеер подгружается по клику, чтобы не тянуть тяжёлые файлы автоматически
+  if (isVideo) {
+    return (
+      <div className="attachment-video-wrapper">
+        <div style={{ position: 'absolute', top: 5, right: 5, zIndex: 10, display: 'flex', gap: '6px' }}>
+          <button 
+            className="delete-file-btn" 
+            onClick={handleDeleteFile}
+            title="Удалить файл"
+            style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', padding: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Trash2 size={16} color="white" />
+          </button>
+
+          <button
+            className={`file-action-btn ${downloadError && !fileUrl ? 'error' : ''}`}
+            disabled={isDownloading}
+            onClick={handleDownloadFile}
+            title="Скачать файл"
+            style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', padding: '5px', cursor: isDownloading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            {isDownloading && !fileUrl ? <Loader2 size={16} className="animate-spin" color="white" /> : <Download size={16} color="white" />}
+          </button>
+        </div>
+
+        {fileUrl ? (
+          <video 
+            controls 
+            playsInline /* 🔥 Жизненно важно для Safari (iOS/macOS) */
+            webkit-playsinline="true"
+            className="attachment-video loaded" 
+            preload="metadata"
+          >
+            {/* 🔥 Safari лучше воспринимает Blob URL, если явно указать type через source */}
+            <source src={fileUrl} type={fileMimeType} />
+            Ваш браузер не поддерживает воспроизведение видео.
+          </video>
+        ) : (
+          <div className="video-loading-placeholder">
+            {attachment.preview ? (
+              <img src={attachment.preview || undefined} alt="video-preview" className="attachment-img blurred" />
+            ) : (
+              <div className="empty-preview-box video-empty">
+                <VideoIcon size={28} color="#6b7280" />
+              </div>
+            )}
+
+            <div className="placeholder-overlay">
+              {downloadError ? (
+                <button className="retry-file-btn" onClick={handleLoadVideo} title="Ошибка загрузки. Повторить?">
+                  <AlertTriangle size={18} className="error-icon" />
+                  <span>Повторить</span>
+                </button>
+              ) : (
+                <button className="video-play-btn" onClick={handleLoadVideo} disabled={isDownloading} title="Воспроизвести">
+                  {isDownloading ? <Loader2 size={22} className="animate-spin" /> : <Play size={22} fill="white" />}
+                </button>
+              )}
+            </div>
+
+            {attachment.size ? (
+              <span className="video-size-badge">{(attachment.size / 1024 / 1024).toFixed(1)} МБ</span>
+            ) : null}
+          </div>
+        )}
       </div>
     );
   }
