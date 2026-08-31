@@ -12,6 +12,8 @@ import {
   FileArchive,
   FileSpreadsheet,
   FileCode,
+  MoreVertical,
+  Forward,
 } from 'lucide-react';
 import { globalHelia } from '../lib/p2p/services/authService.ts';
 import {
@@ -21,6 +23,7 @@ import {
 } from '../lib/p2p/services/fileService.ts';
 import '../styles/MessageAttachment.scss';
 import { createPortal } from 'react-dom';
+import ContextMenu from './ContextMenu';
 
 interface MessageAttachmentProps {
   attachment: FileAttachment;
@@ -37,6 +40,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   const [isDeleted, setIsDeleted] = useState(false); // 🔥 Состояние удаленного файла
   const [duration, setDuration] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const fileMimeType = React.useMemo(() => {
     const type = attachment.type;
@@ -144,6 +148,13 @@ useEffect(() => {
     document.documentElement.style.overflow = prevHtml;
   };
 }, [isFullscreen]);
+
+useEffect(() => {
+  if (!isMenuOpen) return;
+  const close = () => setIsMenuOpen(false);
+  document.addEventListener('click', close);
+  return () => document.removeEventListener('click', close);
+}, [isMenuOpen]);
 
   // 🔥 Обработчик удаления
   const handleDeleteFile = async (e: React.MouseEvent) => {
@@ -340,6 +351,59 @@ useEffect(() => {
     return { Icon: File, color: '#3b82f6' }; // дефолт — как сейчас
   };
 
+  const attachmentMenu = (
+  <div
+    className="attachment-menu-wrap"
+    onClick={(e) => e.stopPropagation()}
+  >
+    <button
+      type="button"
+      className="attachment-menu-btn"
+      title="Опции"
+      onClick={(e) => {
+        e.stopPropagation();
+        setIsMenuOpen((v) => !v);
+      }}
+    >
+      <MoreVertical size={16} color="white" />
+    </button>
+
+    {isMenuOpen && (
+      <ContextMenu
+        className="attachment-item-menu"
+        items={[
+          {
+            label: 'Скачать',
+            icon: <Download size={16} />,
+            onClick: (e) => {
+              handleDownloadFile(e);
+              setIsMenuOpen(false);
+            },
+          },
+          {
+            label: 'Переслать',
+            icon: <Forward size={16} />, // или <Share2 size={16} />
+            onClick: () => {
+              // TODO: логика пересылки
+              console.log('Переслать', attachment.cid);
+              setIsMenuOpen(false);
+            },
+          },
+          {
+            label: 'Удалить',
+            icon: <Trash2 size={16} />,
+            danger: true,
+            onClick: (e) => {
+              handleDeleteFile(e);
+              setIsMenuOpen(false);
+            },
+          },
+        ]}
+      />
+    )}
+  </div>
+);
+
   // Если файл был удален, показываем заглушку
   if (isDeleted) {
     return (
@@ -361,58 +425,7 @@ useEffect(() => {
         className="attachment-image-wrapper"
         style={{ position: 'relative' }}
       >
-        {/* Кнопки поверх картинки */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 5,
-            right: 5,
-            zIndex: 10,
-            display: 'flex',
-            gap: '6px',
-          }}
-        >
-          <button
-            className="delete-file-btn"
-            onClick={handleDeleteFile}
-            title="Удалить файл"
-            style={{
-              background: 'rgba(0,0,0,0.5)',
-              border: 'none',
-              borderRadius: '50%',
-              padding: '5px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Trash2 size={16} color="white" />
-          </button>
-
-          <button
-            className={`file-action-btn ${downloadError && !fileUrl ? 'error' : ''}`}
-            disabled={isDownloading}
-            onClick={handleDownloadFile}
-            title="Скачать файл"
-            style={{
-              background: 'rgba(0,0,0,0.5)',
-              border: 'none',
-              borderRadius: '50%',
-              padding: '5px',
-              cursor: isDownloading ? 'default' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {isDownloading ? (
-              <Loader2 size={16} className="animate-spin" color="white" />
-            ) : (
-              <Download size={16} color="white" />
-            )}
-          </button>
-        </div>
+        {attachmentMenu}
 
         {fileUrl ? (
           <img
@@ -507,26 +520,8 @@ useEffect(() => {
                   : ''}
             </span>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-            <button
-              className="file-action-btn"
-              onClick={handleDeleteFile}
-              title="Удалить файл"
-            >
-              <Trash2 size={16} color="#ff4d4f" />
-            </button>
-            <button
-              className={`file-action-btn ${downloadError && !fileUrl ? 'error' : ''}`}
-              disabled={isDownloading}
-              onClick={handleDownloadFile}
-              title="Скачать файл"
-            >
-              {isDownloading && !fileUrl ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Download size={16} />
-              )}
-            </button>
+          <div style={{ marginLeft: 'auto' }}>
+            {attachmentMenu}
           </div>
         </div>
 
@@ -575,57 +570,8 @@ useEffect(() => {
   if (isVideo) {
     return (
       <div className="attachment-video-wrapper">
-        <div
-          style={{
-            position: 'absolute',
-            top: 5,
-            right: 5,
-            zIndex: 10,
-            display: 'flex',
-            gap: '6px',
-          }}
-        >
-          <button
-            className="delete-file-btn"
-            onClick={handleDeleteFile}
-            title="Удалить файл"
-            style={{
-              background: 'rgba(0,0,0,0.5)',
-              border: 'none',
-              borderRadius: '50%',
-              padding: '5px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Trash2 size={16} color="white" />
-          </button>
 
-          <button
-            className={`file-action-btn ${downloadError && !fileUrl ? 'error' : ''}`}
-            disabled={isDownloading}
-            onClick={handleDownloadFile}
-            title="Скачать файл"
-            style={{
-              background: 'rgba(0,0,0,0.5)',
-              border: 'none',
-              borderRadius: '50%',
-              padding: '5px',
-              cursor: isDownloading ? 'default' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {isDownloading && !fileUrl ? (
-              <Loader2 size={16} className="animate-spin" color="white" />
-            ) : (
-              <Download size={16} color="white" />
-            )}
-          </button>
-        </div>
+        {attachmentMenu}
 
         {fileUrl ? (
           <video
@@ -714,31 +660,7 @@ useEffect(() => {
           </span>
         </div>
       </div>
-
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          className="file-action-btn delete-btn"
-          onClick={handleDeleteFile}
-          title="Удалить файл"
-        >
-          <Trash2 size={16} color="#ff4d4f" />
-        </button>
-
-        <button
-          className={`file-action-btn ${downloadError ? 'error' : ''}`}
-          disabled={isDownloading}
-          onClick={handleDownloadFile}
-          title="Скачать файл"
-        >
-          {isDownloading ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : downloadError ? (
-            <AlertTriangle size={16} />
-          ) : (
-            <Download size={16} />
-          )}
-        </button>
-      </div>
+      {attachmentMenu}
     </div>
   );
 };

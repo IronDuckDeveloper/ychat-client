@@ -2,7 +2,8 @@
 
 .item-context-menu,
 .header-context-menu,
-.attachment-context-menu {
+.attachment-context-menu,
+.attachment-item-menu {
   position: absolute;
   background-color: $text_variant;
   border: 1px solid rgba($user-bubble, 0.2);
@@ -78,4 +79,11 @@
   right: 0;
   margin-top: 4px;
   min-width: 170px;
+}
+
+.attachment-item-menu {
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  min-width: 160px;
 }

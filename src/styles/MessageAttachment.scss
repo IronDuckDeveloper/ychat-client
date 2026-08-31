@@ -404,3 +404,49 @@
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+.attachment-menu-wrap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+}
+
+// Для карточек аудио/файла (не absolute-превью)
+.attachment-audio-card .attachment-menu-wrap,
+.attachment-file-card .attachment-menu-wrap {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+
+.attachment-menu-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.75);
+  }
+}
+
+// На светлых/карточных блоках кнопка чуть другая
+.attachment-audio-card .attachment-menu-btn,
+.attachment-file-card .attachment-menu-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #a3a3a3;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+}
