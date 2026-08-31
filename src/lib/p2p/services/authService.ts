@@ -5,7 +5,7 @@ import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerpr
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
 import { initContactsDB, getContact, saveContact, type ContactItem, updateContactProfileAddress } from './contactsService.ts';
-import { OrbitDBAccessController } from '@orbitdb/core';
+import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
 
 export let globalHelia: any = null;
 export let globalOrbitDB: any = null;
@@ -59,8 +59,7 @@ export async function getOrOpenDb(addressOrName: string | undefined | null) {
       db = await globalOrbitDB.open(addressOrName, {
         type: 'documents',
         docIndex: '_id',
-        AccessController: OrbitDBAccessController({
-          type: 'orbitdb',
+        AccessController: RateLimitedAccessController({
           write: ['*'],
         }),
       });

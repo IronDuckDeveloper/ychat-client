@@ -1,6 +1,13 @@
-import { createOrbitDB, Identities } from '@orbitdb/core';
+import { createOrbitDB, Identities, useAccessController } from '@orbitdb/core';
 import { HeliaIdentityProvider } from './identity.ts';
 import { CONFIG } from '../config.ts';
+import { RateLimitedAccessController } from './rateLimitedAccessController.ts';
+
+// Регистрируем кастомный AccessController один раз при загрузке модуля —
+// ДО первого orbitdb.open(). Без этого при открытии комнаты по уже
+// существующему адресу orbitdb.js не сможет резолвить тип из манифеста
+// (getAccessController(acType) бросит "not supported").
+useAccessController(RateLimitedAccessController as any);
 
 // Храним синглтон инстанса OrbitDB, чтобы не создавать его заново при смене комнат
 let orbitdbInstance: any = null;

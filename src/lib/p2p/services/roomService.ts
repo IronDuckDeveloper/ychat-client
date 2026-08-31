@@ -4,7 +4,7 @@ import { getOrbitDB } from '../orbit/client.ts';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionManager.ts';
 import { relayManager } from '../networking/heliaClient.ts';
-import { OrbitDBAccessController } from '@orbitdb/core';
+import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
 import { type FileAttachment } from './fileService.ts';
 
 // Конфигурация приложения и интерфейсы для типов сообщений и значений в комнате чата.
@@ -52,8 +52,7 @@ export async function joinRoom(
     const openPromise = orbitdb.open(roomName, {
       type: 'documents',
       docIndex: '_id',
-      AccessController: OrbitDBAccessController({
-        type: 'orbitdb',
+      AccessController: RateLimitedAccessController({
         write: ['*'],
       }),
     });
