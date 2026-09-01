@@ -7,6 +7,10 @@ import {
   Image as ImageIcon,
   File,
   Music,
+  MoreVertical,
+  Download,
+  Forward,
+  Trash2,
 } from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
@@ -36,6 +40,7 @@ const Chat = () => {
   const [isBlocked, setIsBlocked] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
+  const [openTextMenuId, setOpenTextMenuId] = useState<string | null>(null);
 
   const {
     navigate,
@@ -90,6 +95,19 @@ const Chat = () => {
       navigate('/contacts', { replace: true });
     }
   };
+
+  // 🔥 Скачивание текста сообщения как .txt
+const handleDownloadMessageText = (text: string) => {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `message_${Date.now()}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
   return (
     <div className="chat-container">
@@ -167,8 +185,67 @@ const Chat = () => {
                   >
                     {/* Текстовая нода сообщения (если есть) */}
                     {message.text && (
-                      <div className="text-content">{message.text}</div>
-                    )}
+  <>
+    <div className="text-content">{message.text}</div>
+
+    <div
+      className="attachment-menu-wrap"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="attachment-menu-btn"
+        title="Опции"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpenTextMenuId((prev) => (prev === message.id ? null : message.id));
+        }}
+      >
+        <MoreVertical size={14} />
+      </button>
+
+      {openTextMenuId === message.id && (
+        <ContextMenu
+          className="attachment-item-menu"
+          items={[
+            {
+              label: 'Скачать',
+              icon: <Download size={16} />,
+              onClick: () => {
+                handleDownloadMessageText(message.text);
+                setOpenTextMenuId(null);
+              },
+            },
+            {
+              label: 'Переслать',
+              icon: <Forward size={16} />,
+              onClick: () => {
+                // TODO: логика пересылки
+                console.log('Переслать', message.id);
+                setOpenTextMenuId(null);
+              },
+            },
+            {
+              label: 'Удалить',
+              icon: <Trash2 size={16} />,
+              danger: true,
+              onClick: () => {
+                handleDeleteMessage(
+                  message.id,
+                  undefined,
+                  undefined,
+                  undefined,
+                  message.type === 'sent',
+                );
+                setOpenTextMenuId(null);
+              },
+            },
+          ]}
+        />
+      )}
+    </div>
+  </>
+)}
 
                     {/* Вложение файла (если прикреплено) */}
                     {message.attachment && (

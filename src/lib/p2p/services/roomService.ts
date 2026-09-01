@@ -181,7 +181,7 @@ export async function joinRoom(
     sendMessage: async (text: string, attachment?: FileAttachment) => {
       try {
         const messageObject: any = {
-          _id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          _id: `msg_${orbitdb.identity.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           whoSent: orbitdb.identity.id,
           text,
           ts: Date.now(),
