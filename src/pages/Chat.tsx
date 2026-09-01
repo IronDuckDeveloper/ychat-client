@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { ArrowLeft, Send, Paperclip, Image as ImageIcon, File, Music } from 'lucide-react';
+import {
+  ArrowLeft,
+  Send,
+  Paperclip,
+  Image as ImageIcon,
+  File,
+  Music,
+} from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
@@ -9,20 +16,23 @@ import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
 import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
 import ContextMenu from '../components/ContextMenu';
+import { ConfirmModal } from '../components/ConfirmModal.tsx';
 
 // Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
   const date = new Date(ts);
-  return date.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  }).replace(' г.', '');
+  return date
+    .toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+    .replace(' г.', '');
 };
 
 const Chat = () => {
-  const { id } = useParams(); 
-  
+  const { id } = useParams();
+
   const [isBlocked, setIsBlocked] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
@@ -50,20 +60,25 @@ const Chat = () => {
     isUploadingFile,
     acceptedFileTypes,
     triggerFileInput,
-    handleFileUpload
+    handleFileUpload,
+    dialogConfig,
+    closeDialog,
   } = useChatLogic();
 
-useEffect(() => {
+  useEffect(() => {
     const checkAccessStatus = async () => {
       if (!id || !globalContactsDb) return;
-      
-      const { isBlocked: blocked, isDeleted: deleted } = await getPeerRestrictionStatus(globalContactsDb, id);
-      
+
+      const { isBlocked: blocked, isDeleted: deleted } =
+        await getPeerRestrictionStatus(globalContactsDb, id);
+
       setIsBlocked(blocked);
       setIsDeleted(deleted);
 
       if (blocked || deleted) {
-        console.warn(`🚫 Доступ в чат ${id} ограничен: ${blocked ? 'заблокирован' : 'удален'}.`);
+        console.warn(
+          `🚫 Доступ в чат ${id} ограничен: ${blocked ? 'заблокирован' : 'удален'}.`,
+        );
       }
     };
 
@@ -78,7 +93,7 @@ useEffect(() => {
 
   return (
     <div className="chat-container">
-      <ContactProfileDrawer 
+      <ContactProfileDrawer
         isOpen={isContactProfileOpen}
         onClose={() => setIsContactProfileOpen(false)}
         nickname={contact?.nickname || displayName || 'Неизвестный'}
@@ -88,16 +103,22 @@ useEffect(() => {
 
       <header className="chat-header">
         <div className="header-left">
-          <button title='Назад' className="back-button" onClick={() => navigate('/contacts', { replace: true })}>
+          <button
+            title="Назад"
+            className="back-button"
+            onClick={() => navigate('/contacts', { replace: true })}
+          >
             <ArrowLeft className="back-icon" size={20} />
           </button>
-          <span className="contact-name">{contact?.nickname || displayName || 'Неизвестный'}</span>
+          <span className="contact-name">
+            {contact?.nickname || displayName || 'Неизвестный'}
+          </span>
         </div>
 
-        <Avatar 
-          url={avatarUrl} 
-          size={32} 
-          onClick={() => setIsContactProfileOpen(true)} 
+        <Avatar
+          url={avatarUrl}
+          size={32}
+          onClick={() => setIsContactProfileOpen(true)}
         />
       </header>
 
@@ -122,7 +143,7 @@ useEffect(() => {
             {messages.map((message, index) => {
               const nextMessage = messages[index + 1];
               let showDateSeparator = false;
-              
+
               if (!nextMessage) {
                 showDateSeparator = true;
               } else {
@@ -140,29 +161,33 @@ useEffect(() => {
                       message.type === 'sent'
                         ? 'sent'
                         : message.type === 'received'
-                        ? 'received'
-                        : 'system'
+                          ? 'received'
+                          : 'system'
                     }`}
                   >
                     {/* Текстовая нода сообщения (если есть) */}
-                    {message.text && <div className="text-content">{message.text}</div>}
-                    
+                    {message.text && (
+                      <div className="text-content">{message.text}</div>
+                    )}
+
                     {/* Вложение файла (если прикреплено) */}
                     {message.attachment && (
-                      <MessageAttachment 
-                        attachment={message.attachment} 
+                      <MessageAttachment
+                        attachment={message.attachment}
                         // Передаем и ID, и CID
-                        onDelete={() => handleDeleteMessage(
-                          message.id, 
-                          message.attachment?.cid, 
-                          message.attachment?.serverCid, 
-                          message.attachment?.serverRelays,
-                          message.type === 'sent', 
-                        )}
+                        onDelete={() =>
+                          handleDeleteMessage(
+                            message.id,
+                            message.attachment?.cid,
+                            message.attachment?.serverCid,
+                            message.attachment?.serverRelays,
+                            message.type === 'sent',
+                          )
+                        }
                       />
                     )}
                   </div>
-                  
+
                   {showDateSeparator && (
                     <div className="date-separator">
                       {formatDateSeparator(message.ts)}
@@ -171,7 +196,7 @@ useEffect(() => {
                 </React.Fragment>
               );
             })}
-            
+
             {!messages.length && !isLoadingMore && (
               <div className="message received">Привет!</div>
             )}
@@ -179,8 +204,8 @@ useEffect(() => {
 
           <div className="chat-input-area">
             {/* 🔥 Скрытый системный инпут для работы с файловой системой браузера */}
-            <input 
-              title='Выбрать файл'
+            <input
+              title="Выбрать файл"
               type="file"
               ref={fileInputRef}
               style={{ display: 'none' }}
@@ -197,7 +222,17 @@ useEffect(() => {
               >
                 {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
                 {isUploadingFile ? (
-                  <div className="spinner-icon" style={{ width: '18px', height: '18px', border: '2px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <div
+                    className="spinner-icon"
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      border: '2px solid #e2e8f0',
+                      borderTopColor: '#3b82f6',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite',
+                    }}
+                  />
                 ) : (
                   <Paperclip size={20} className="attachment-icon" />
                 )}
@@ -231,7 +266,11 @@ useEffect(() => {
                 value={draft}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
-                placeholder={isUploadingFile ? 'Подготовка файла к отправке P2P...' : getInputPlaceholder()}
+                placeholder={
+                  isUploadingFile
+                    ? 'Подготовка файла к отправке P2P...'
+                    : getInputPlaceholder()
+                }
                 disabled={!isRoomReady || isUploadingFile}
               />
             </div>
@@ -246,6 +285,15 @@ useEffect(() => {
           </div>
         </>
       )}
+      <ConfirmModal
+        isOpen={dialogConfig.isOpen}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        confirmText={dialogConfig.confirmText}
+        isDanger={dialogConfig.isDanger}
+        onConfirm={dialogConfig.onConfirm}
+        onCancel={closeDialog}
+      />
     </div>
   );
 };

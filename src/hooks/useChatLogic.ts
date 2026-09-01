@@ -1,14 +1,25 @@
 import { useRef, useState, useEffect } from 'react';
-import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react'; 
+import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useIPFS } from './useIPFS.ts';
-import { clearEntireChat, getDeterministicRoomName, type ChatMessage, type RoomActions } from '../lib/p2p/services/roomService.ts';
+import {
+  clearEntireChat,
+  getDeterministicRoomName,
+  type ChatMessage,
+  type RoomActions,
+} from '../lib/p2p/services/roomService.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService.ts';
-import { globalContactsDb, globalHelia } from '../lib/p2p/services/authService.ts';
+import {
+  globalContactsDb,
+  globalHelia,
+} from '../lib/p2p/services/authService.ts';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
-import { uploadFileToHelia, deleteFileFromHelia } from '../lib/p2p/services/fileService.ts';
+import {
+  uploadFileToHelia,
+  deleteFileFromHelia,
+} from '../lib/p2p/services/fileService.ts';
 
 interface RouterState {
   contactName?: string;
@@ -17,24 +28,28 @@ interface RouterState {
 
 export const useChatLogic = () => {
   const navigate = useNavigate();
-  const { peerId } = useParams(); 
+  const { peerId } = useParams();
   const location = useLocation();
-  const routerState = location.state as RouterState | null; 
-  
-  const [displayName, setDisplayName] = useState(routerState?.contactName || 'Загрузка...');
-  const [contact, setContact] = useState<ContactItem | null>(routerState?.contact || null);
+  const routerState = location.state as RouterState | null;
+
+  const [displayName, setDisplayName] = useState(
+    routerState?.contactName || 'Загрузка...',
+  );
+  const [contact, setContact] = useState<ContactItem | null>(
+    routerState?.contact || null,
+  );
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const { isReady, nodeId, joinRoom } = useIPFS();
-  
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  
+
   const isUserScrolledUp = useRef(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const isLoadingRef = useRef(false);
-  
+
   const [roomHandle, setRoomHandle] = useState<RoomActions | null>(null);
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
   const isRoomReady = isReady && !!roomHandle && isRoomConnected;
@@ -45,6 +60,19 @@ export const useChatLogic = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
+
+  // --- ДИАЛОГ ---
+  const [dialogConfig, setDialogConfig] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Да',
+    isDanger: true,
+    onConfirm: () => {},
+  });
+
+  const closeDialog = () =>
+    setDialogConfig((prev) => ({ ...prev, isOpen: false }));
 
   const toggleAttachmentMenu = (e?: React.MouseEvent) => {
     e?.stopPropagation(); // Блокируем всплытие, чтобы слушатель document не закрыл меню сразу же
@@ -57,7 +85,7 @@ export const useChatLogic = () => {
     else setAcceptedFileTypes('*/*');
 
     setIsAttachmentMenuOpen(false);
-    
+
     // Небольшой таймаут, чтобы дать реакту обновить атрибут accept на инпуте
     setTimeout(() => {
       fileInputRef.current?.click();
@@ -70,10 +98,10 @@ export const useChatLogic = () => {
 
     try {
       setIsUploadingFile(true);
-      
+
       // 1. Загружаем файл в Helia FS и собираем метаданные + микро-превью
       const attachmentInfo = await uploadFileToHelia(globalHelia, file);
-      
+
       // 2. Публикуем в OrbitDB. Текст сообщения пустой, передаем структуру вложения
       await roomHandle.sendMessage('', attachmentInfo);
       // 3. Отправляем фоновый пуш-коммит через PubSub сети
@@ -81,15 +109,27 @@ export const useChatLogic = () => {
         try {
           const myPeerId = (globalHelia as any).libp2p.peerId.toString();
           const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
-          const notificationData = { from: myPeerId, text: `📎 Файл: ${file.name}`, ts: Date.now() };
-          const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
-          await (globalHelia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
+          const notificationData = {
+            from: myPeerId,
+            text: `📎 Файл: ${file.name}`,
+            ts: Date.now(),
+          };
+          const encoded = new TextEncoder().encode(
+            JSON.stringify(notificationData),
+          );
+          await (globalHelia as any).libp2p.services.pubsub.publish(
+            targetTopic,
+            encoded,
+          );
         } catch (err) {
           console.warn('⚠️ Не удалось отправить фоновый пуш вложения:', err);
         }
-      }          
+      }
     } catch (err) {
-      console.error('❌ Ошибка при обработке и отправке файла через Helia:', err);
+      console.error(
+        '❌ Ошибка при обработке и отправке файла через Helia:',
+        err,
+      );
     } finally {
       setIsUploadingFile(false);
       if (fileInputRef.current) {
@@ -97,7 +137,6 @@ export const useChatLogic = () => {
       }
     }
   };
-  
 
   // Закрытие меню вложений при клике вне его области
   useEffect(() => {
@@ -124,7 +163,10 @@ export const useChatLogic = () => {
   const refreshContactData = async () => {
     if (!peerId || !globalContactsDb) return;
     try {
-      const fetchedContact = await contactsService.getContactById(globalContactsDb, peerId);
+      const fetchedContact = await contactsService.getContactById(
+        globalContactsDb,
+        peerId,
+      );
       if (fetchedContact) {
         setContact(fetchedContact);
         setDisplayName(fetchedContact.nickname || fetchedContact.id);
@@ -140,7 +182,7 @@ export const useChatLogic = () => {
   // Подписываемся на событие обновления контактов
   useEffect(() => {
     window.addEventListener('onContactsUpdated', refreshContactData);
-    
+
     if (isReady && globalContactsDb && peerId) {
       refreshContactData();
     }
@@ -153,22 +195,24 @@ export const useChatLogic = () => {
   // Логика получения аватара из Helia FS
   useEffect(() => {
     if (!isReady || !globalHelia || !contact?.avatarCid) {
-      return; 
+      return;
     }
 
     let isMounted = true;
 
     const fetchAvatar = async () => {
       try {
-        console.log(`🖼️ [Chat UI] Грузим аватар в чате. Ключ: ${contact.avatarEncryptionKey ? 'ЕСТЬ ✅' : 'НЕТ ❌'}`);
+        console.log(
+          `🖼️ [Chat UI] Грузим аватар в чате. Ключ: ${contact.avatarEncryptionKey ? 'ЕСТЬ ✅' : 'НЕТ ❌'}`,
+        );
         const url = await fetchAvatarFromHelia(
-          globalHelia, 
-          contact.avatarCid, 
-          15000, 
-          contact.avatarServerCid, 
+          globalHelia,
+          contact.avatarCid,
+          15000,
+          contact.avatarServerCid,
           contact.avatarEncryptionKey,
           false,
-          contact.serverRelays
+          contact.serverRelays,
         );
         if (isMounted) {
           setAvatarUrl(url);
@@ -184,7 +228,12 @@ export const useChatLogic = () => {
     return () => {
       isMounted = false;
     };
-  }, [isReady, contact?.avatarCid, contact?.avatarServerCid, contact?.avatarEncryptionKey]);
+  }, [
+    isReady,
+    contact?.avatarCid,
+    contact?.avatarServerCid,
+    contact?.avatarEncryptionKey,
+  ]);
 
   // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
@@ -198,47 +247,66 @@ export const useChatLogic = () => {
       setMessages([]);
 
       try {
-        const resolvedRoomDbId = (nodeId && peerId && peerId !== 'global-chat')
-          ? await getDeterministicRoomName(nodeId, peerId)
-          : (peerId ?? 'global-chat');
+        const resolvedRoomDbId =
+          nodeId && peerId && peerId !== 'global-chat'
+            ? await getDeterministicRoomName(nodeId, peerId)
+            : (peerId ?? 'global-chat');
 
-        const roomActions = await joinRoom(resolvedRoomDbId, (message: ChatMessage, isBackgroundSync: boolean = false) => { 
-          if (!isMounted) return;
-          if (message?.text?.startsWith('System:')) return;
+        const roomActions = await joinRoom(
+          resolvedRoomDbId,
+          (message: ChatMessage, isBackgroundSync: boolean = false) => {
+            if (!isMounted) return;
+            if (message?.text?.startsWith('System:')) return;
 
-        setMessages((prev) => {
-            // Ищем, есть ли уже это сообщение в стейте
-            const existingIndex = prev.findIndex((m) => m.id === message.id);
-            
-            if (existingIndex !== -1) {
-              // Если есть — ПЕРЕЗАПИСЫВАЕМ его (это нужно для синхронизации "Сообщение удалено")
-              const updated = [...prev];
-              updated[existingIndex] = message;
-              return updated.sort((a, b) => (b.ts || Date.now()) - (a.ts || Date.now()));
+            setMessages((prev) => {
+              // Ищем, есть ли уже это сообщение в стейте
+              const existingIndex = prev.findIndex((m) => m.id === message.id);
+
+              if (existingIndex !== -1) {
+                // Если есть — ПЕРЕЗАПИСЫВАЕМ его (это нужно для синхронизации "Сообщение удалено")
+                const updated = [...prev];
+                updated[existingIndex] = message;
+                return updated.sort(
+                  (a, b) => (b.ts || Date.now()) - (a.ts || Date.now()),
+                );
+              }
+
+              // Если нет — добавляем новое
+              const updated = [message, ...prev];
+              return updated.sort(
+                (a, b) => (b.ts || Date.now()) - (a.ts || Date.now()),
+              );
+            });
+
+            if (peerId && globalContactsDb && peerId !== 'global-chat') {
+              const isCurrentlyInThisChat =
+                window.location.pathname.includes(peerId);
+              const shouldIncrement =
+                !isCurrentlyInThisChat &&
+                !isBackgroundSync &&
+                message.type !== 'sent';
+
+              // Если текста нет (отправлен только файл), пишем заглушку в список чатов
+              const displayNotificationText =
+                message.text || (message.attachment ? '📎 Вложение' : '');
+              contactsService.updateLastMessage(
+                globalContactsDb,
+                peerId,
+                displayNotificationText,
+                message.ts || Date.now(),
+                shouldIncrement,
+              );
+
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new Event('onContactsUpdated'));
+              }
+
+              if (isCurrentlyInThisChat) {
+                contactsService.clearUnread(globalContactsDb, peerId);
+              }
             }
-            
-            // Если нет — добавляем новое
-            const updated = [message, ...prev];
-            return updated.sort((a, b) => (b.ts || Date.now()) - (a.ts || Date.now()));
-          });
-
-          if (peerId && globalContactsDb && peerId !== 'global-chat') {
-            const isCurrentlyInThisChat = window.location.pathname.includes(peerId);
-            const shouldIncrement = !isCurrentlyInThisChat && !isBackgroundSync && message.type !== 'sent';
-
-            // Если текста нет (отправлен только файл), пишем заглушку в список чатов
-            const displayNotificationText = message.text || (message.attachment ? '📎 Вложение' : '');
-            contactsService.updateLastMessage(globalContactsDb, peerId, displayNotificationText, message.ts || Date.now(), shouldIncrement);
-
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new Event('onContactsUpdated'));
-            }
-
-            if (isCurrentlyInThisChat) {
-              contactsService.clearUnread(globalContactsDb, peerId);
-            }
-          }
-        });
+          },
+        );
 
         if (!isMounted) {
           if (roomActions?.leaveRoom) roomActions.leaveRoom();
@@ -249,7 +317,11 @@ export const useChatLogic = () => {
         setRoomHandle(roomActions);
 
         if (peerId && globalContactsDb && roomActions.dbAddress) {
-          contactsService.updateChatDbAddress(globalContactsDb, peerId, roomActions.dbAddress);
+          contactsService.updateChatDbAddress(
+            globalContactsDb,
+            peerId,
+            roomActions.dbAddress,
+          );
         }
 
         setIsRoomConnected(true);
@@ -275,7 +347,8 @@ export const useChatLogic = () => {
     const scrollOffset = Math.abs(target.scrollTop);
     isUserScrolledUp.current = scrollOffset > 50;
 
-    const isAtTop = scrollOffset + target.clientHeight >= target.scrollHeight - 10;
+    const isAtTop =
+      scrollOffset + target.clientHeight >= target.scrollHeight - 10;
 
     if (isAtTop && roomHandle.hasMoreHistory && roomHandle.hasMoreHistory()) {
       isLoadingRef.current = true;
@@ -283,7 +356,7 @@ export const useChatLogic = () => {
       try {
         await roomHandle.loadMoreHistory();
       } catch (err) {
-        console.error("Ошибка при подгрузке истории:", err);
+        console.error('Ошибка при подгрузке истории:', err);
       } finally {
         isLoadingRef.current = false;
         setIsLoadingMore(false);
@@ -307,12 +380,17 @@ export const useChatLogic = () => {
           const myPeerId = (globalHelia as any).libp2p.peerId.toString();
           const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
           const notificationData = { from: myPeerId, text, ts: now };
-          const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
-          await (globalHelia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
+          const encoded = new TextEncoder().encode(
+            JSON.stringify(notificationData),
+          );
+          await (globalHelia as any).libp2p.services.pubsub.publish(
+            targetTopic,
+            encoded,
+          );
         } catch (err) {
           console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
         }
-      }          
+      }
     } catch {
       console.error('Ошибка отправки сообщения');
     }
@@ -342,35 +420,61 @@ export const useChatLogic = () => {
 
   // ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ
   const handleDeleteMessage = async (
-    messageId: string, cid?: string, 
-    serverCid?: string, 
+    messageId: string,
+    cid?: string,
+    serverCid?: string,
     serverRelays?: string[],
     isOwnMessage: boolean = false,
   ) => {
-      // 1. Локально сносим файл всегда; на сервере — только если сообщение моё
-      if (cid && globalHelia) {
-        await deleteFileFromHelia(globalHelia, cid, serverCid, serverRelays, isOwnMessage);
-      }
-
-      // 2. Меняем сообщение в локальном UI мгновенно
-      setMessages((prev) => prev.map((m) => {
-        if (m.id === messageId) {
-          return { ...m, text: 'Сообщение удалено', attachment: undefined };
+    setDialogConfig({
+      isOpen: true,
+      title: isOwnMessage
+        ? 'Удалить сообщение из сети?'
+        : 'Удалить сообщение со своего устройства?',
+      message: isOwnMessage
+        ? 'Сообщение будет навсегда удалено из сети.'
+        : 'Сообщение будет навсегда удалено с вашего устройства.',
+      confirmText: 'Да',
+      isDanger: true,
+      onConfirm: async () => {
+        // 1. Локально сносим файл всегда; на сервере — только если сообщение моё
+        if (cid && globalHelia) {
+          await deleteFileFromHelia(
+            globalHelia,
+            cid,
+            serverCid,
+            serverRelays,
+            isOwnMessage,
+          );
         }
-        return m;
-      }));
 
-      // 3. Отправляем изменения в OrbitDB, чтобы у собеседника тоже обновилось
-      if (roomHandle && typeof (roomHandle as any).tombstoneMessage === 'function') {
-        await (roomHandle as any).tombstoneMessage(messageId);
-      }
-    };
+        // 2. Меняем сообщение в локальном UI мгновенно
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id === messageId) {
+              return { ...m, text: 'Сообщение удалено', attachment: undefined };
+            }
+            return m;
+          }),
+        );
+
+        // 3. Отправляем изменения в OrbitDB, чтобы у собеседника тоже обновилось
+        if (
+          roomHandle &&
+          typeof (roomHandle as any).tombstoneMessage === 'function'
+        ) {
+          await (roomHandle as any).tombstoneMessage(messageId);
+        }
+        closeDialog();
+      },
+    });
+  };
 
   return {
     navigate,
     displayName,
-    contact,           
-    avatarUrl, 
+    contact,
+    avatarUrl,
     messages,
     draft,
     messagesContainerRef,
@@ -386,12 +490,14 @@ export const useChatLogic = () => {
     setIsAttachmentMenuOpen,
     toggleAttachmentMenu,
     handleDeleteMessage,
-    
+    dialogConfig,
+    closeDialog,
+
     // 🔥 Экспорты для UI вложений
     fileInputRef,
     isUploadingFile,
     acceptedFileTypes,
     triggerFileInput,
-    handleFileUpload
+    handleFileUpload,
   };
 };

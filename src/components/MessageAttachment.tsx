@@ -161,8 +161,6 @@ useEffect(() => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!window.confirm('Удалить этот файл локально?')) return;
-
     if (onDelete) {
       onDelete();
     }

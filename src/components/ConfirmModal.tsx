@@ -1,5 +1,6 @@
 import React from 'react';
 import '../styles/confirmModal.scss';
+import ReactDOM from 'react-dom';
 
 
 export interface ConfirmModalProps {
@@ -25,7 +26,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  return (
+  return ReactDOM.createPortal(
     <div className="confirm-modal-overlay" onClick={onCancel}>
       {/* stopPropagation чтобы клик по самому окну не закрывал его */}
       <div className="confirm-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -44,6 +45,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body // Рендерим модалку напрямую в body
   );
 };
