@@ -41,6 +41,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   const [duration, setDuration] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
   const fileMimeType = React.useMemo(() => {
     const type = attachment.type;
@@ -151,7 +152,10 @@ useEffect(() => {
 
 useEffect(() => {
   if (!isMenuOpen) return;
-  const close = () => setIsMenuOpen(false);
+  const close = () => {
+    setIsMenuOpen(false)
+    setMenuAnchor(null);
+  };
   document.addEventListener('click', close);
   return () => document.removeEventListener('click', close);
 }, [isMenuOpen]);
@@ -360,7 +364,13 @@ useEffect(() => {
       title="Опции"
       onClick={(e) => {
         e.stopPropagation();
-        setIsMenuOpen((v) => !v);
+        if (isMenuOpen) {
+          setIsMenuOpen(false);
+          setMenuAnchor(null);
+        } else {
+          setIsMenuOpen(true);
+          setMenuAnchor(e.currentTarget); // ← якорь
+        }
       }}
     >
       <MoreVertical size={16} color="white" />
@@ -369,6 +379,7 @@ useEffect(() => {
     {isMenuOpen && (
       <ContextMenu
         className="attachment-item-menu"
+        anchorEl={menuAnchor}
         items={[
           {
             label: 'Скачать',
@@ -376,6 +387,7 @@ useEffect(() => {
             onClick: (e) => {
               handleDownloadFile(e);
               setIsMenuOpen(false);
+              setMenuAnchor(null);
             },
           },
           {
@@ -385,6 +397,7 @@ useEffect(() => {
               // TODO: логика пересылки
               console.log('Переслать', attachment.cid);
               setIsMenuOpen(false);
+              setMenuAnchor(null);
             },
           },
           {
@@ -394,6 +407,7 @@ useEffect(() => {
             onClick: (e) => {
               handleDeleteFile(e);
               setIsMenuOpen(false);
+              setMenuAnchor(null);
             },
           },
         ]}

@@ -140,12 +140,22 @@ export const useChatLogic = () => {
 
   // Закрытие меню вложений при клике вне его области
   useEffect(() => {
+    if (!isAttachmentMenuOpen) return;
+
     const handleClickOutside = () => {
       setIsAttachmentMenuOpen(false);
     };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
+
+    // Важно: подписываемся после текущего клика, иначе меню сразу закроется
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [isAttachmentMenuOpen]);
 
   // Очистка уведомлений
   useEffect(() => {
@@ -396,6 +406,19 @@ export const useChatLogic = () => {
     }
   };
 
+    // 🔥 Скачивание текста сообщения как .txt
+  const handleDownloadMessageText = (text: string) => {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `message_${Date.now()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const getInputPlaceholder = () => {
     if (!isReady) return 'Ожидание запуска узла...';
     if (!roomHandle) return 'Открытие базы данных комнаты...';
@@ -492,6 +515,7 @@ export const useChatLogic = () => {
     handleDeleteMessage,
     dialogConfig,
     closeDialog,
+    handleDownloadMessageText,
 
     // 🔥 Экспорты для UI вложений
     fileInputRef,

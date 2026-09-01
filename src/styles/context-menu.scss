@@ -1,8 +1,8 @@
 @import './variables.scss';
 
-.item-context-menu,
+.item-contact-context-menu,
 .header-context-menu,
-.attachment-context-menu,
+.attachment-chat-context-menu,
 .attachment-item-menu {
   position: absolute;
   background-color: $text_variant;
@@ -58,32 +58,4 @@
       }
     }
   }
-}
-
-// Позиционирование — специфично для места использования,
-// поэтому вынесено из общего блока выше
-.attachment-context-menu {
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 12px;
-}
-
-.header-context-menu {
-  top: 100%;
-  right: 0;
-  margin-top: 8px;
-}
-
-.item-context-menu {
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
-  min-width: 170px;
-}
-
-.attachment-item-menu {
-  top: 100%;
-  right: 0;
-  margin-top: 6px;
-  min-width: 160px;
 }

@@ -41,6 +41,18 @@ const Chat = () => {
   const [isDeleted, setIsDeleted] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
   const [openTextMenuId, setOpenTextMenuId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!openTextMenuId) return;
+
+    const close = () => {
+      setOpenTextMenuId(null)
+      setMenuAnchor(null);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [openTextMenuId]);
 
   const {
     navigate,
@@ -68,7 +80,14 @@ const Chat = () => {
     handleFileUpload,
     dialogConfig,
     closeDialog,
+    handleDownloadMessageText,
   } = useChatLogic();
+
+  useEffect(() => {
+    if (!isAttachmentMenuOpen) {
+      setMenuAnchor(null);
+    }
+  }, [isAttachmentMenuOpen]);
 
   useEffect(() => {
     const checkAccessStatus = async () => {
@@ -95,19 +114,6 @@ const Chat = () => {
       navigate('/contacts', { replace: true });
     }
   };
-
-  // 🔥 Скачивание текста сообщения как .txt
-const handleDownloadMessageText = (text: string) => {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `message_${Date.now()}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
 
   return (
     <div className="chat-container">
@@ -185,67 +191,76 @@ const handleDownloadMessageText = (text: string) => {
                   >
                     {/* Текстовая нода сообщения (если есть) */}
                     {message.text && (
-  <>
-    <div className="text-content">{message.text}</div>
+                    <>
+                      <div className="text-content">{message.text}</div>
 
-    <div
-      className="attachment-menu-wrap"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <button
-        type="button"
-        className="attachment-menu-btn"
-        title="Опции"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpenTextMenuId((prev) => (prev === message.id ? null : message.id));
-        }}
-      >
-        <MoreVertical size={14} />
-      </button>
+                      <div
+                        className="message-menu-wrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="message-menu-btn"
+                          title="Опции"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (openTextMenuId === message.id) {
+                              setOpenTextMenuId(null);
+                              setMenuAnchor(null);
+                            } else {
+                              setOpenTextMenuId(message.id);
+                              setMenuAnchor(e.currentTarget);
+                            }
+                          }}
+                        >
+                          <MoreVertical size={14} />
+                        </button>
 
-      {openTextMenuId === message.id && (
-        <ContextMenu
-          className="attachment-item-menu"
-          items={[
-            {
-              label: 'Скачать',
-              icon: <Download size={16} />,
-              onClick: () => {
-                handleDownloadMessageText(message.text);
-                setOpenTextMenuId(null);
-              },
-            },
-            {
-              label: 'Переслать',
-              icon: <Forward size={16} />,
-              onClick: () => {
-                // TODO: логика пересылки
-                console.log('Переслать', message.id);
-                setOpenTextMenuId(null);
-              },
-            },
-            {
-              label: 'Удалить',
-              icon: <Trash2 size={16} />,
-              danger: true,
-              onClick: () => {
-                handleDeleteMessage(
-                  message.id,
-                  undefined,
-                  undefined,
-                  undefined,
-                  message.type === 'sent',
-                );
-                setOpenTextMenuId(null);
-              },
-            },
-          ]}
-        />
-      )}
-    </div>
-  </>
-)}
+                        {openTextMenuId === message.id && (
+                          <ContextMenu
+                            className="attachment-item-menu"
+                            anchorEl={menuAnchor}
+                            items={[
+                              {
+                                label: 'Скачать',
+                                icon: <Download size={16} />,
+                                onClick: () => {
+                                  handleDownloadMessageText(message.text);
+                                  setOpenTextMenuId(null);
+                                },
+                              },
+                              {
+                                label: 'Переслать',
+                                icon: <Forward size={16} />,
+                                onClick: () => {
+                                  // TODO: логика пересылки
+                                  console.log('Переслать', message.id);
+                                  setOpenTextMenuId(null);
+                                  setMenuAnchor(null);
+                                },
+                              },
+                              {
+                                label: 'Удалить',
+                                icon: <Trash2 size={16} />,
+                                danger: true,
+                                onClick: () => {
+                                  handleDeleteMessage(
+                                    message.id,
+                                    undefined,
+                                    undefined,
+                                    undefined,
+                                    message.type === 'sent',
+                                  );
+                                  setOpenTextMenuId(null);
+                                  setMenuAnchor(null);
+                                },
+                              },
+                            ]}
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
 
                     {/* Вложение файла (если прикреплено) */}
                     {message.attachment && (
@@ -295,7 +310,15 @@ const handleDownloadMessageText = (text: string) => {
                 className="attachment-button"
                 aria-label="Attach file"
                 disabled={!isRoomReady || isUploadingFile}
-                onClick={toggleAttachmentMenu}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isAttachmentMenuOpen) {
+                    setMenuAnchor(null);
+                  } else {
+                    setMenuAnchor(e.currentTarget);
+                  }
+                  toggleAttachmentMenu(e);
+                }}
               >
                 {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
                 {isUploadingFile ? (
@@ -317,23 +340,33 @@ const handleDownloadMessageText = (text: string) => {
 
               {isAttachmentMenuOpen && (
                 <ContextMenu
-                  className="attachment-context-menu"
+                  className="attachment-chat-context-menu"
                   onClick={(e) => e.stopPropagation()}
+                  anchorEl={menuAnchor}
                   items={[
                     {
                       label: 'Фото/Видео',
                       icon: <ImageIcon size={16} />,
-                      onClick: () => triggerFileInput('image'),
+                      onClick: () => {
+                        triggerFileInput('image');
+                        setMenuAnchor(null);
+                      },
                     },
                     {
                       label: 'Файл',
                       icon: <File size={16} />,
-                      onClick: () => triggerFileInput('file'),
+                      onClick: () => {
+                        triggerFileInput('file');
+                        setMenuAnchor(null);
+                      },
                     },
                     {
                       label: 'Аудио',
                       icon: <Music size={16} />,
-                      onClick: () => triggerFileInput('audio'),
+                      onClick: () => {
+                        triggerFileInput('audio');
+                        setMenuAnchor(null);
+                      },
                     },
                   ]}
                 />

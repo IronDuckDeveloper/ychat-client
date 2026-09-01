@@ -5,7 +5,7 @@ import ContactAvatar from '../components/ContactAvatar.tsx';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 import HeaderActionButton from '../components/HeaderActionButton.tsx';
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import Avatar from '../components/Avatar.tsx';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 import ContextMenu from '../components/ContextMenu';
@@ -37,6 +37,8 @@ const ContactList = () => {
   const elementsMap = useRef(new Map<Element, any>());
   // Хранит таймеры для каждого элемента на экране
   const scrollTimers = useRef(new Map<Element, NodeJS.Timeout>());
+
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   
   // 1. Создаем обсервер ОДИН РАЗ при монтировании
   useEffect(() => {
@@ -115,9 +117,19 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
           <span className="username">{myNickname}</span>
         </div>
         
-        <div className="header-actions" onClick={(e) => e.stopPropagation()}>
+        <div className="header-actions" onClick={(e) => 
+          e.stopPropagation()}>
           <HeaderActionButton 
-            onClick={toggleHeaderMenu}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isHeaderMenuOpen) {
+                setIsHeaderMenuOpen(false);
+                setMenuAnchor(null);
+              } else {
+                setIsHeaderMenuOpen(true);
+                setMenuAnchor(e.currentTarget);
+              }
+            }}
             icon={<Share2 size={22} />} 
             title="Обменяться контактом" 
             disabled={isLoading}
@@ -126,6 +138,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
           {isHeaderMenuOpen && (
             <ContextMenu
               className="header-context-menu"
+              anchorEl={menuAnchor}
               items={[
                 {
                   label: 'Добавить',
@@ -133,6 +146,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                   onClick: () => {
                     setIsAddModalOpen(true);
                     setIsHeaderMenuOpen(false);
+                    setMenuAnchor(null);
                   },
                 },
                 {
@@ -141,6 +155,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                   onClick: () => {
                     setIsShareModalOpen(true);
                     setIsHeaderMenuOpen(false);
+                    setMenuAnchor(null);
                   },
                 },
               ]}
@@ -223,7 +238,16 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               <div className="contact-actions" onClick={(e) => e.stopPropagation()}>
                 <button 
                   className="menu-button"
-                  onClick={(e) => toggleContactMenu(e, contact.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (activeMenuId === contact.id) {
+                      setActiveMenuId(null);
+                      setMenuAnchor(null);
+                    } else {
+                      setActiveMenuId(contact.id);
+                      setMenuAnchor(e.currentTarget);
+                    }
+                  }}
                   title="Опции"
                 >
                   <MoreVertical size={20} />
@@ -231,7 +255,8 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
 
                 {activeMenuId === contact.id && (
                   <ContextMenu
-                    className="item-context-menu"
+                    className="item-contact-context-menu"
+                    anchorEl={menuAnchor}
                     items={[
                       ...(!contact.isBlocked
                         ? [
@@ -241,6 +266,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                               onClick: (e: React.MouseEvent) => {
                                 handleRefreshContact(e, contact.id);
                                 setActiveMenuId(null);
+                                setMenuAnchor(null);
                               },
                             },
                             {
@@ -249,6 +275,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                               onClick: (e: React.MouseEvent) => {
                                 handleBlockContact(e, contact.id);
                                 setActiveMenuId(null);
+                                setMenuAnchor(null);
                               },
                             },
                           ]
@@ -259,6 +286,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                               onClick: (e: React.MouseEvent) => {
                                 handleUnblockAndRefresh(e, contact.id);
                                 setActiveMenuId(null);
+                                setMenuAnchor(null);
                               },
                             },
                           ]),
@@ -268,6 +296,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                         onClick: (e) => {
                           handleCopyContactId(e, contact.id);
                           setActiveMenuId(null);
+                          setMenuAnchor(null);
                         },
                       },
                       {
@@ -277,6 +306,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                         onClick: (e) => {
                           handleDeleteContact(e, contact.id);
                           setActiveMenuId(null);
+                          setMenuAnchor(null);
                         },
                       },
                     ]}
