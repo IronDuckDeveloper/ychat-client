@@ -21,6 +21,7 @@ import Avatar from '../components/Avatar.tsx';
 import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
 import ContextMenu from '../components/ContextMenu';
 import { ConfirmModal } from '../components/ConfirmModal.tsx';
+import { CONFIG } from '../lib/p2p/config.ts';
 
 // Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
@@ -194,6 +195,7 @@ const Chat = () => {
                     <>
                       <div className="text-content">{message.text}</div>
 
+                    {message.text !== CONFIG.MSG.MESSAGE_DELETED && (
                       <div
                         className="message-menu-wrap"
                         onClick={(e) => e.stopPropagation()}
@@ -259,6 +261,7 @@ const Chat = () => {
                           />
                         )}
                       </div>
+                    )}
                     </>
                   )}
 

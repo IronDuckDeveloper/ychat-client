@@ -453,7 +453,7 @@ export const useChatLogic = () => {
       isOpen: true,
       title: isOwnMessage
         ? 'Удалить сообщение из сети?'
-        : 'Удалить сообщение со своего устройства?',
+        : 'Удалить сообщение с устройства?',
       message: isOwnMessage
         ? 'Сообщение будет навсегда удалено из сети.'
         : 'Сообщение будет навсегда удалено с вашего устройства.',
@@ -475,19 +475,21 @@ export const useChatLogic = () => {
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id === messageId) {
-              return { ...m, text: 'Сообщение удалено', attachment: undefined };
+              return { ...m, text: CONFIG.MSG.MESSAGE_DELETED, attachment: undefined };
             }
             return m;
           }),
         );
 
         // 3. Отправляем изменения в OrbitDB, чтобы у собеседника тоже обновилось
-        if (
-          roomHandle &&
-          typeof (roomHandle as any).tombstoneMessage === 'function'
-        ) {
-          await (roomHandle as any).tombstoneMessage(messageId);
+        if (isOwnMessage) {
+          if (roomHandle && typeof (roomHandle as any).tombstoneMessage === 'function') {
+            await (roomHandle as any).tombstoneMessage(messageId);
+          }
+        } else if (roomHandle && typeof (roomHandle as any).deleteMessageLocally === 'function') {
+          (roomHandle as any).deleteMessageLocally(messageId);
         }
+
         closeDialog();
       },
     });

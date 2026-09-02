@@ -20,7 +20,7 @@ import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
 // import { kadDHT } from '@libp2p/kad-dht';
-import { broadcastMyProfile, globalProfileDb } from '../services/authService.ts';
+import { broadcastMyProfile, globalProfileDb, globalHiddenMessagesDb } from '../services/authService.ts';
 import { multiaddr } from '@multiformats/multiaddr';
 
 let initializationPromise: Promise<any> | null = null;
@@ -179,6 +179,11 @@ export function createBrowserHelia(): Promise<any> {
       if (globalProfileDb) {
         notifyArchivist(heliaNode.libp2p, peerId, globalProfileDb.address.toString());
         console.log(`📢 Оповестили Архивариус о нашей базе профиля`);
+      }
+
+      if (globalHiddenMessagesDb) {
+        notifyArchivist(heliaNode.libp2p, peerId, globalHiddenMessagesDb.address.toString());
+        console.log(`📢 Оповестили Архивариус о нашей базе скрытых сообщений`);
       }
 
       if (heliaNode) {

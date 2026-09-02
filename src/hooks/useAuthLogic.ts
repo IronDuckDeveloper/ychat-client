@@ -92,7 +92,6 @@ export const useAuthLogic = () => {
   };
 
   const handleLoginOrRegister = async () => {
-    showToast('⚠️ Нет слов для копирования');
     if (isRegister) {
       if (!nickname.trim()) {
         showToast('⚠️ Пожалуйста, введите никнейм');

@@ -6,11 +6,13 @@ import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
 import { initContactsDB, getContact, saveContact, type ContactItem, updateContactProfileAddress } from './contactsService.ts';
 import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
+import { initHiddenMessagesDB } from './hiddenMessagesService.ts';
 
 export let globalHelia: any = null;
 export let globalOrbitDB: any = null;
 export let globalProfileDb: any = null;
 export let globalContactsDb: any = null;
+export let globalHiddenMessagesDb: any = null;
 export let globalRelayManager: RelayManager | null = null;
 
 let dbReadyCallbacks: (() => void)[] = [];
@@ -188,6 +190,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
     globalOrbitDB = await getOrbitDB(globalHelia);
     globalProfileDb = await initProfileDB(globalOrbitDB);
     globalContactsDb = await initContactsDB(globalOrbitDB);
+    globalHiddenMessagesDb = await initHiddenMessagesDB(globalOrbitDB);
     await initGlobalRegistryDB(globalOrbitDB);
 
     const pubsub = libp2p.services.pubsub;

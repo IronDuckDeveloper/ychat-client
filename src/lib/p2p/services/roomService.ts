@@ -6,6 +6,7 @@ import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionMan
 import { relayManager } from '../networking/heliaClient.ts';
 import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
 import { type FileAttachment } from './fileService.ts';
+import { isHiddenLocally, hideMessageLocally } from './hiddenMessagesService.ts';
 
 // Конфигурация приложения и интерфейсы для типов сообщений и значений в комнате чата.
 export type MessageType = 'sent' | 'received' | 'system';
@@ -24,6 +25,7 @@ export interface ChatMessage {
 export interface RoomActions {
   sendMessage: (text: string, attachment?: FileAttachment) => Promise<void>;
   tombstoneMessage: (msgId: string) => Promise<void>;
+  deleteMessageLocally: (msgId: string) => void;
   leaveRoom: () => void;
   pingRoom?: () => void;
   dbAddress: string;
@@ -123,11 +125,14 @@ export async function joinRoom(
         // 🔥 Исправлено: проверяем наличие текста ИЛИ вложения, чтобы не пропускать пустые текстовые сообщения с файлами
         if (messageData && (messageData.text || messageData.attachment)) {
           const isMine = messageData.whoSent === orbitdb.identity.id;
+          const msgId = messageData._id || entry.hash;
+          const hiddenLocally = isHiddenLocally(msgId);
+
           onMessage({
-            id: messageData._id || entry.hash, 
+            id: msgId, 
             whoSent: messageData.whoSent,
-            text: messageData.text || '',
-            attachment: messageData.attachment, // 🔥 Передаем вложение в UI
+            text: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : (messageData.text || ''),
+            attachment: hiddenLocally ? undefined : messageData.attachment,
             ts: messageData.ts || Date.now(),
             type: isMine ? 'sent' : 'received'
           }, true);
@@ -148,11 +153,14 @@ export async function joinRoom(
     const messageData = entry.payload?.value || entry.value;
     if (messageData && (messageData.text || messageData.attachment)) {
       const isMine = messageData.whoSent === orbitdb.identity.id;
+      const msgId = messageData._id || entry.hash || entry.key;
+      const hiddenLocally = isHiddenLocally(msgId);
+
       onMessage({
-        id: messageData._id || entry.hash || entry.key,
+        id: msgId,
         whoSent: messageData.whoSent,
-        text: messageData.text || '',
-        attachment: messageData.attachment, // Передаем вложение в UI при "живом" обновлении базы
+        text: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : (messageData.text || ''),
+        attachment: hiddenLocally ? undefined : messageData.attachment,
         ts: messageData.ts || Date.now(),
         type: isMine ? 'sent' : 'received',
       }, false);
@@ -225,13 +233,16 @@ tombstoneMessage: async (msgId: string) => {
           await db.put({
             ...targetDoc,
             _id: msgId,
-            text: 'Сообщение удалено',
+            text: CONFIG.MSG.MESSAGE_DELETED,
             attachment: null
           });
         }
       } catch (err: any) {
         console.error(`❌ [OrbitDB] Ошибка обновления сообщения:`, err?.message || err);
       }
+    },
+    deleteMessageLocally: (msgId: string) => {
+      hideMessageLocally(msgId);
     },
     pingRoom: () => {
       if (relayManagerInstance && typeof relayManagerInstance.announceRoom === 'function' && db) {

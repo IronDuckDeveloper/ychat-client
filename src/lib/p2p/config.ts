@@ -23,6 +23,7 @@ export const CONFIG = {
     BLACKLIST_KEY : 'ychat_blocked_peers', // Ключ для хранения черного списка
     DB_BLACKLIST_KEY : 'encrypted_blacklist', // Ключ для хранения зашифрованного черного списка
     KEY_AVATAR_SERVER_CID: 'avatar_server_cid', // Ключ для хранения серверного CID аватара
+    DB_HIDDEN_MESSAGES: 'ychat-hidden-messages', // Ключ для хранения скрытых сообщений
   },
 
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
@@ -53,6 +54,7 @@ export const CONFIG = {
     SUCCESS : 'SUCCESS',
     FORBIDDEN : 'FORBIDDEN',
     WAKEUP : 'WAKEUP_PING',
+    MESSAGE_DELETED : 'Сообщение удалено',
   },
 
   TOPICS: {
