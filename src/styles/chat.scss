@@ -99,11 +99,42 @@
     position: relative; // важно для absolute-кнопки
     z-index: 1;
 
+      &.sent {
+      .text-content .chat-message-link {
+        color: $secondary;
+      }
+    }
+
+    &.received {
+      .text-content .chat-message-link {
+        color: $secondary;
+      }
+    }
+
     // Текст сообщения
     .text-content {
       word-break: break-word;
       padding-right: 28px; // чуть больше, чтобы текст не заходил под кнопку
       line-height: 1.4;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+
+      .chat-message-link {
+        color: $secondary;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        word-break: break-all;
+        transition: color 0.15s ease, opacity 0.15s ease;
+
+        &:hover {
+          opacity: 0.8;
+          text-decoration: underline;
+        }
+
+        &:active {
+          opacity: 0.6;
+        }
+      }
     }
 
     // Кнопка с тремя точками

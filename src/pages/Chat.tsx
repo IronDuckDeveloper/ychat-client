@@ -116,6 +116,47 @@ const Chat = () => {
     }
   };
 
+  // Вспомогательная функция для распознавания и рендеринга ссылок в тексте
+  const renderMessageText = (text: string) => {
+    if (!text) return null;
+
+    // Регулярное выражение для поиска веб-ссылок (http, https, www)
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+    const parts = text.split(urlRegex);
+
+    return parts.map((part, index) => {
+      const isUrl = /^https?:\/\/|^www\./i.test(part);
+
+      if (isUrl) {
+        // Отделяем знаки препинания в конце ссылки (например, "https://example.com.")
+        const match = part.match(/^(.*?)([.?!,)]*)$/);
+        const cleanUrl = match ? match[1] : part;
+        const trailingPunctuation = match ? match[2] : '';
+
+        const href = cleanUrl.toLowerCase().startsWith('www.')
+          ? `https://${cleanUrl}`
+          : cleanUrl;
+
+        return (
+          <React.Fragment key={index}>
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="chat-message-link"
+              onClick={(e) => e.stopPropagation()} // Предотвращаем клик по контекстному меню сообщения
+            >
+              {cleanUrl}
+            </a>
+            {trailingPunctuation}
+          </React.Fragment>
+        );
+      }
+
+      return part;
+    });
+  };
+
   return (
     <div className="chat-container">
       <ContactProfileDrawer
@@ -193,7 +234,7 @@ const Chat = () => {
                     {/* Текстовая нода сообщения (если есть) */}
                     {message.text && (
                     <>
-                      <div className="text-content">{message.text}</div>
+                      <div className="text-content">{renderMessageText(message.text)}</div>
 
                     {message.text !== CONFIG.MSG.MESSAGE_DELETED && (
                       <div
