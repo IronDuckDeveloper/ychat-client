@@ -60,6 +60,9 @@ export const useChatLogic = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
+  // 🔥 Логика скрытых сообщений
+  const [isHiddenMode, setIsHiddenMode] = useState(false);
+  const toggleHiddenMode = () => setIsHiddenMode((prev) => !prev);
 
   // --- ДИАЛОГ ---
   const [dialogConfig, setDialogConfig] = useState({
@@ -96,6 +99,8 @@ export const useChatLogic = () => {
     const file = event.target.files?.[0];
     if (!file || !roomHandle || !globalHelia) return;
 
+    const sendAsHidden = isHiddenMode;
+
     try {
       setIsUploadingFile(true);
 
@@ -103,7 +108,10 @@ export const useChatLogic = () => {
       const attachmentInfo = await uploadFileToHelia(globalHelia, file);
 
       // 2. Публикуем в OrbitDB. Текст сообщения пустой, передаем структуру вложения
-      await roomHandle.sendMessage('', attachmentInfo);
+      await roomHandle.sendMessage('', attachmentInfo, sendAsHidden);
+      setDraft('');
+      setIsHiddenMode(false); // 👈 сбрасываем тумблер после отправки
+
       // 3. Отправляем фоновый пуш-коммит через PubSub сети
       if (globalHelia && peerId) {
         try {
@@ -305,6 +313,7 @@ export const useChatLogic = () => {
                 displayNotificationText,
                 message.ts || Date.now(),
                 shouldIncrement,
+                message.hidden || false
               );
 
               if (typeof window !== 'undefined') {
@@ -379,11 +388,13 @@ export const useChatLogic = () => {
     if (!text || !roomHandle) return;
 
     isUserScrolledUp.current = false;
+    const sendAsHidden = isHiddenMode;
 
     try {
       const now = Date.now();
-      await roomHandle.sendMessage(text);
+      await roomHandle.sendMessage(text, undefined, sendAsHidden);
       setDraft('');
+      setIsHiddenMode(false); // 👈 сбрасываем режим после отправки — по умолчанию не "залипает" на следующее сообщение
 
       if (globalHelia && peerId) {
         try {
@@ -525,5 +536,6 @@ export const useChatLogic = () => {
     acceptedFileTypes,
     triggerFileInput,
     handleFileUpload,
+    isHiddenMode, toggleHiddenMode
   };
 };

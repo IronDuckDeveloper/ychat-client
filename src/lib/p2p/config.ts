@@ -55,6 +55,7 @@ export const CONFIG = {
     FORBIDDEN : 'FORBIDDEN',
     WAKEUP : 'WAKEUP_PING',
     MESSAGE_DELETED : 'Сообщение удалено',
+    HIDDEN_MESSAGE_LABEL: 'Скрытое сообщение',
   },
 
   TOPICS: {

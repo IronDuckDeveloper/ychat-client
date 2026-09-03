@@ -256,7 +256,8 @@ export const updateLastMessage = async (
   peerId: string, 
   text: string, 
   timestamp: number,
-  incrementUnread: boolean = false
+  incrementUnread: boolean = false,
+  isHidden: boolean = false
 ) => {
   if (!db || !peerId) return;
   
@@ -279,7 +280,8 @@ export const updateLastMessage = async (
     // ✅ Иммутабельное создание объекта
     const updatedContact: ContactItem = {
       ...contact,
-      lastMessage: text || '',
+      // 👇 Если скрытое — жестко пишем текст, иначе берем оригинальный text
+      lastMessage: isHidden ? 'Скрытое сообщение' : (text || ''),
       lastMessageTime: timestamp,
       updatedAt: Math.max(contact.updatedAt || 0, timestamp),
       unreadCount: incrementUnread ? (contact.unreadCount || 0) + 1 : contact.unreadCount
@@ -438,7 +440,11 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
 
               const freshContact = await getContact(contactsDb, contact.id) || contact;
               const newUnreadCount = !isCurrentlyInThisChat ? (freshContact.unreadCount || 0) + newMessages.length : 0;
-              const textPreview = latestMsg.text ? latestMsg.text : (latestMsg.attachment ? '📎 Вложение' : '');
+              
+              // 👇 Проверяем флаг внутри сообщения OrbitDB (замените .hidden на нужное свойство, если оно называется иначе)
+              const textPreview = latestMsg.hidden 
+                ? 'Скрытое сообщение' 
+                : (latestMsg.text ? latestMsg.text : (latestMsg.attachment ? '📎 Вложение' : ''));
 
               await saveContact(contactsDb, {
                 ...freshContact,

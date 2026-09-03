@@ -111,6 +111,12 @@
       }
     }
 
+    &.system {
+      .text-content .chat-message-link {
+        color: $secondary;
+      }
+    }
+
     // Текст сообщения
     .text-content {
       word-break: break-word;
@@ -207,6 +213,14 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
       align-self: flex-end;
       margin-left: auto;
+    }
+
+    &.system {
+      background-color: $secondary;
+      background-color: $secondary;
+      color: white;
+      border-radius: $radius $radius $radius 0;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
     }
   }
 }
@@ -337,5 +351,61 @@
     &:hover {
       background-color: #dc2626;
     }
+  }
+}
+
+.hidden-mode-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $hint;
+  margin-left: 6px;
+  padding: 6px;
+  border-radius: 50%;
+  transition: color 0.15s ease, background 0.15s ease;
+
+  &:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
+  &.active { color: $accent-prime; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.hidden-message-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font-style: italic;
+  opacity: 0.85;
+  padding-right: 28px;
+  color: inherit;
+}
+
+.hidden-message-arrow {
+  transition: transform 0.2s ease;
+  &.expanded { transform: rotate(180deg); }
+}
+
+.hidden-message-collapse-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+  color: inherit;
+}
+
+.attachment-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  
+  .attachment-collapse-wrap {
+    display: flex;
+    justify-content: flex-end;
   }
 }

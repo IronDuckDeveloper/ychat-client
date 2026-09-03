@@ -11,6 +11,9 @@ import {
   Download,
   Forward,
   Trash2,
+  Eye,
+  EyeOff,
+  ChevronUp,
 } from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
@@ -48,7 +51,7 @@ const Chat = () => {
     if (!openTextMenuId) return;
 
     const close = () => {
-      setOpenTextMenuId(null)
+      setOpenTextMenuId(null);
       setMenuAnchor(null);
     };
     document.addEventListener('click', close);
@@ -82,7 +85,22 @@ const Chat = () => {
     dialogConfig,
     closeDialog,
     handleDownloadMessageText,
+    isHiddenMode,
+    toggleHiddenMode,
   } = useChatLogic();
+
+  const [expandedHiddenIds, setExpandedHiddenIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const toggleHiddenExpand = (id: string) => {
+    setExpandedHiddenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!isAttachmentMenuOpen) {
@@ -156,7 +174,7 @@ const Chat = () => {
       return part;
     });
   };
-
+  
   return (
     <div className="chat-container">
       <ContactProfileDrawer
@@ -231,97 +249,208 @@ const Chat = () => {
                           : 'system'
                     }`}
                   >
-                    {/* Текстовая нода сообщения (если есть) */}
-                    {message.text && (
-                    <>
-                      <div className="text-content">{renderMessageText(message.text)}</div>
+                    {(() => {
+                      const isDeleted =
+                        message.text === CONFIG.MSG.MESSAGE_DELETED;
+                      const isHiddenCollapsed =
+                        message.hidden &&
+                        !expandedHiddenIds.has(message.id) &&
+                        !isDeleted;
 
-                    {message.text !== CONFIG.MSG.MESSAGE_DELETED && (
-                      <div
-                        className="message-menu-wrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          className="message-menu-btn"
-                          title="Опции"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (openTextMenuId === message.id) {
-                              setOpenTextMenuId(null);
-                              setMenuAnchor(null);
-                            } else {
-                              setOpenTextMenuId(message.id);
-                              setMenuAnchor(e.currentTarget);
-                            }
-                          }}
-                        >
-                          <MoreVertical size={14} />
-                        </button>
+                      return (
+                        <>
+                          {isHiddenCollapsed ? (
+                            // --- 1. СВЕРНУТОЕ СОСТОЯНИЕ (Для любых сообщений) ---
+                            <>
+                              <div
+                                className="hidden-message-collapsed"
+                                onClick={() => toggleHiddenExpand(message.id)}
+                              >
+                                <span>{CONFIG.MSG.HIDDEN_MESSAGE_LABEL}</span>
+                                <ChevronUp
+                                  size={16}
+                                  className="hidden-message-arrow"
+                                />
+                              </div>
 
-                        {openTextMenuId === message.id && (
-                          <ContextMenu
-                            className="attachment-item-menu"
-                            anchorEl={menuAnchor}
-                            items={[
-                              {
-                                label: 'Скачать',
-                                icon: <Download size={16} />,
-                                onClick: () => {
-                                  handleDownloadMessageText(message.text);
-                                  setOpenTextMenuId(null);
-                                },
-                              },
-                              {
-                                label: 'Переслать',
-                                icon: <Forward size={16} />,
-                                onClick: () => {
-                                  // TODO: логика пересылки
-                                  console.log('Переслать', message.id);
-                                  setOpenTextMenuId(null);
-                                  setMenuAnchor(null);
-                                },
-                              },
-                              {
-                                label: 'Удалить',
-                                icon: <Trash2 size={16} />,
-                                danger: true,
-                                onClick: () => {
-                                  handleDeleteMessage(
-                                    message.id,
-                                    undefined,
-                                    undefined,
-                                    undefined,
-                                    message.type === 'sent',
-                                  );
-                                  setOpenTextMenuId(null);
-                                  setMenuAnchor(null);
-                                },
-                              },
-                            ]}
-                          />
-                        )}
-                      </div>
-                    )}
-                    </>
-                  )}
+                              {/* Меню только для свернутого состояния (чтобы можно было удалить не раскрывая) */}
+                              <div
+                                className="message-menu-wrap"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className="message-menu-btn"
+                                  title="Опции"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (openTextMenuId === message.id) {
+                                      setOpenTextMenuId(null);
+                                      setMenuAnchor(null);
+                                    } else {
+                                      setOpenTextMenuId(message.id);
+                                      setMenuAnchor(e.currentTarget);
+                                    }
+                                  }}
+                                >
+                                  <MoreVertical size={14} />
+                                </button>
 
-                    {/* Вложение файла (если прикреплено) */}
-                    {message.attachment && (
-                      <MessageAttachment
-                        attachment={message.attachment}
-                        // Передаем и ID, и CID
-                        onDelete={() =>
-                          handleDeleteMessage(
-                            message.id,
-                            message.attachment?.cid,
-                            message.attachment?.serverCid,
-                            message.attachment?.serverRelays,
-                            message.type === 'sent',
-                          )
-                        }
-                      />
-                    )}
+                                {openTextMenuId === message.id && (
+                                  <ContextMenu
+                                    className="attachment-item-menu"
+                                    anchorEl={menuAnchor}
+                                    items={[
+                                      {
+                                        label: 'Удалить',
+                                        icon: <Trash2 size={16} />,
+                                        danger: true,
+                                        onClick: () => {
+                                          handleDeleteMessage(
+                                            message.id,
+                                            message.attachment?.cid,
+                                            message.attachment?.serverCid,
+                                            message.attachment?.serverRelays,
+                                            message.type === 'sent',
+                                          );
+                                          setOpenTextMenuId(null);
+                                          setMenuAnchor(null);
+                                        },
+                                      },
+                                    ]}
+                                  />
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            // --- 2. РАЗВЕРНУТОЕ СОСТОЯНИЕ ---
+                            <>
+                              {/* А. Если есть ТЕКСТ */}
+                              {message.text && (
+                                <>
+                                  <div className="text-content">
+                                    {renderMessageText(message.text)}
+
+                                    {/* Кнопка "Свернуть" только для текста (если нет вложения) */}
+                                    {message.hidden &&
+                                      !isDeleted &&
+                                      !message.attachment && (
+                                        <button
+                                          type="button"
+                                          className="hidden-message-collapse-btn"
+                                          title="Свернуть"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleHiddenExpand(message.id);
+                                          }}
+                                        >
+                                          <ChevronUp
+                                            size={16}
+                                            className="hidden-message-arrow expanded"
+                                          />
+                                        </button>
+                                      )}
+                                  </div>
+
+                                  {/* Меню с тремя точками для ТЕКСТА (как у вас было изначально) */}
+                                  {!isDeleted && (
+                                    <div
+                                      className="message-menu-wrap"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        className="message-menu-btn"
+                                        title="Опции"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (openTextMenuId === message.id) {
+                                            setOpenTextMenuId(null);
+                                            setMenuAnchor(null);
+                                          } else {
+                                            setOpenTextMenuId(message.id);
+                                            setMenuAnchor(e.currentTarget);
+                                          }
+                                        }}
+                                      >
+                                        <MoreVertical size={14} />
+                                      </button>
+
+                                      {openTextMenuId === message.id && (
+                                        <ContextMenu
+                                          className="attachment-item-menu"
+                                          anchorEl={menuAnchor}
+                                          items={[
+                                            {
+                                              label: 'Скачать',
+                                              icon: <Download size={16} />,
+                                              onClick: () => {
+                                                handleDownloadMessageText(
+                                                  message.text,
+                                                );
+                                                setOpenTextMenuId(null);
+                                              },
+                                            },
+                                            {
+                                              label: 'Переслать',
+                                              icon: <Forward size={16} />,
+                                              onClick: () => {
+                                                console.log(
+                                                  'Переслать',
+                                                  message.id,
+                                                );
+                                                setOpenTextMenuId(null);
+                                                setMenuAnchor(null);
+                                              },
+                                            },
+                                            {
+                                              label: 'Удалить',
+                                              icon: <Trash2 size={16} />,
+                                              danger: true,
+                                              onClick: () => {
+                                                handleDeleteMessage(
+                                                  message.id,
+                                                  message.attachment?.cid,
+                                                  message.attachment?.serverCid,
+                                                  message.attachment
+                                                    ?.serverRelays,
+                                                  message.type === 'sent',
+                                                );
+                                                setOpenTextMenuId(null);
+                                                setMenuAnchor(null);
+                                              },
+                                            },
+                                          ]}
+                                        />
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+
+                              {/* Б. Если есть ВЛОЖЕНИЕ */}
+                              {/* Меню с тремя точками при свернутом состоянии отображатся из данного фрагмента. Если развернуто, то из вложения */}
+                              {message.attachment && (
+                                <MessageAttachment
+                                  attachment={message.attachment}
+                                  hidden={message.hidden && !isDeleted}
+                                  onToggleCollapse={() => toggleHiddenExpand(message.id)}
+                                  onDelete={() =>
+                                    handleDeleteMessage(
+                                      message.id,
+                                      message.attachment?.cid,
+                                      message.attachment?.serverCid,
+                                      message.attachment?.serverRelays,
+                                      message.type === 'sent',
+                                    )
+                                  }
+                                />
+                              )}
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {showDateSeparator && (
@@ -334,7 +463,7 @@ const Chat = () => {
             })}
 
             {!messages.length && !isLoadingMore && (
-              <div className="message received">Привет!</div>
+              <div className="message system">Загрузка старых сообщений..</div>
             )}
           </div>
 
@@ -380,6 +509,21 @@ const Chat = () => {
                 ) : (
                   <Paperclip size={20} className="attachment-icon" />
                 )}
+              </button>
+
+              <button
+                type="button"
+                className={`hidden-mode-button ${isHiddenMode ? 'active' : ''}`}
+                aria-label="Скрытое сообщение"
+                title={
+                  isHiddenMode
+                    ? 'Сообщение будет скрыто'
+                    : 'Отправить как скрытое'
+                }
+                disabled={!isRoomReady || isUploadingFile}
+                onClick={toggleHiddenMode}
+              >
+                {isHiddenMode ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
 
               {isAttachmentMenuOpen && (

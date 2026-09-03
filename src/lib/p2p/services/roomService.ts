@@ -19,11 +19,12 @@ export interface ChatMessage {
   type: MessageType;
   ts: number;
   attachment?: FileAttachment;
+  hidden?: boolean;
 }
 
 // Интерфейс для действий в комнате, который возвращается при присоединении к комнате
 export interface RoomActions {
-  sendMessage: (text: string, attachment?: FileAttachment) => Promise<void>;
+  sendMessage: (text: string, attachment?: FileAttachment, hidden?: boolean) => Promise<void>;
   tombstoneMessage: (msgId: string) => Promise<void>;
   deleteMessageLocally: (msgId: string) => void;
   leaveRoom: () => void;
@@ -134,7 +135,8 @@ export async function joinRoom(
             text: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : (messageData.text || ''),
             attachment: hiddenLocally ? undefined : messageData.attachment,
             ts: messageData.ts || Date.now(),
-            type: isMine ? 'sent' : 'received'
+            type: isMine ? 'sent' : 'received',
+            hidden: messageData.hidden === true,
           }, true);
         }
       }
@@ -163,6 +165,7 @@ export async function joinRoom(
         attachment: hiddenLocally ? undefined : messageData.attachment,
         ts: messageData.ts || Date.now(),
         type: isMine ? 'sent' : 'received',
+        hidden: messageData.hidden === true
       }, false);
     }
   };
@@ -186,7 +189,7 @@ export async function joinRoom(
   libp2p.getPeers().forEach((peerId: PeerId) => notifyArchivist(libp2p, peerId, dbAddress));
 
   return {
-    sendMessage: async (text: string, attachment?: FileAttachment) => {
+    sendMessage: async (text: string, attachment?: FileAttachment, hidden?: boolean) => {
       try {
         const messageObject: any = {
           _id: `msg_${orbitdb.identity.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -198,6 +201,7 @@ export async function joinRoom(
         if (attachment) {
           messageObject.attachment = attachment; // 🔥 Сохраняем структуру файла в OrbitDB
         }
+        if (hidden) messageObject.hidden = true;
 
         await db.put(messageObject);
       } catch (err: any) {
@@ -220,7 +224,7 @@ export async function joinRoom(
         }
       }
     },
-tombstoneMessage: async (msgId: string) => {
+    tombstoneMessage: async (msgId: string) => {
       try {
         const result = await db.get(msgId);
         
@@ -234,7 +238,8 @@ tombstoneMessage: async (msgId: string) => {
             ...targetDoc,
             _id: msgId,
             text: CONFIG.MSG.MESSAGE_DELETED,
-            attachment: null
+            attachment: null,
+            hidden: false, 
           });
         }
       } catch (err: any) {

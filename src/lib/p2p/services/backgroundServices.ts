@@ -132,7 +132,8 @@ export const startGlobalNotificationListener = async (globalHelia: any, globalCo
             payload.from, 
             payload.text, 
             payload.ts || Date.now(), 
-            !isCurrentlyInThisChat
+            !isCurrentlyInThisChat,
+            payload.hidden || false
           );
         }
       } catch (err) {

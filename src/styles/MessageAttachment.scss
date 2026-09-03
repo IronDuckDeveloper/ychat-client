@@ -282,6 +282,18 @@
   justify-content: center;
   flex-shrink: 0;
 
+  .attachment-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Чтобы превью не обрезалось и не растягивалось */
+    display: block;
+    transition: filter 0.3s ease;
+
+    &.blurred {
+      filter: blur(10px) scale(1.15);
+    }
+  }
+
   .attachment-video {
     width: 100%;
     height: 100%;
@@ -423,32 +435,40 @@
 }
 
 .attachment-menu-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: white;
-  transition: background 0.2s;
+  padding: 0;
+  transition:
+    background-color 0.2s,
+    transform 0.15s;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.75);
+    transform: scale(1.08);
   }
 }
 
-// На светлых/карточных блоках кнопка чуть другая
-.attachment-audio-card .attachment-menu-btn,
-.attachment-file-card .attachment-menu-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #a3a3a3;
+// Кружок на ПОЛУЧЕННЫХ сообщениях
+.message.received .attachment-menu-btn {
+  background: rgba(0, 0, 0, 0.06);
+  color: $text;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: rgba(0, 0, 0, 0.12);
+  }
+}
+
+// Кружок на ОТПРАВЛЕННЫХ сообщениях
+.message.sent .attachment-menu-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.35);
   }
 }

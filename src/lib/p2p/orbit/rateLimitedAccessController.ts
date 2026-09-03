@@ -14,6 +14,7 @@ const type = 'ychat-rate-limited';
 const MAX_MESSAGES = 15;         // сообщений
 const WINDOW_MS = 10_000;        // за 10 секунд
 const MAX_TEXT_LENGTH = 10_000;  // символов — защита от гигантских "сообщений"
+const BACKLOG_THRESHOLD_MS = 30_000; // старше 30с от текущего момента — считаем "историей", не живым потоком
 
 interface RateLimitedOptions {
   write?: string[];
@@ -37,7 +38,10 @@ export const RateLimitedAccessController = (options: RateLimitedOptions = {}) =>
 
     const history = new Map<string, number[]>();
 
+    const verifiedHashes = new Set<string>();
+
     const canAppend = async (entry: any): Promise<boolean> => {
+      if (verifiedHashes.has(entry.hash)) return true; // уже проверяли эту же запись — не считаем повторно
       // 1. Базовая проверка прав на запись + подписи identity —
       // как и раньше, полностью делегируем штатному контроллеру.
       const baseAllowed = await base.canAppend(entry);
@@ -66,16 +70,20 @@ export const RateLimitedAccessController = (options: RateLimitedOptions = {}) =>
       // на этой машине), а НЕ по полю value.ts — это поле выставляет сам
       // отправитель и легко подделывает, чтобы обойти проверку.
       const now = Date.now();
-      const recent = (history.get(id) || []).filter((t) => now - t < WINDOW_MS);
+      const claimedTs = typeof value?.ts === 'number' ? value.ts : now;
+      const isBacklog = now - claimedTs > BACKLOG_THRESHOLD_MS;
 
-      if (recent.length >= MAX_MESSAGES) {
-        console.warn(`🚫 [AntiSpam] Rate limit: ${id.slice(-12)} — больше ${MAX_MESSAGES} записей за ${WINDOW_MS}мс`);
-        return false;
+      if (!isBacklog) { // 👈 частоту считаем только для "живых" записей
+        const recent = (history.get(id) || []).filter((t) => now - t < WINDOW_MS);
+        if (recent.length >= MAX_MESSAGES) {
+          console.warn(`🚫 [AntiSpam] Rate limit: ${id.slice(-12)} — больше ${MAX_MESSAGES} записей за ${WINDOW_MS}мс`);
+          return false;
+        }
+        recent.push(now);
+        history.set(id, recent);
       }
 
-      recent.push(now);
-      history.set(id, recent);
-
+      verifiedHashes.add(entry.hash);
       return true;
     };
 
