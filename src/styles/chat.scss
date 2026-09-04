@@ -237,9 +237,16 @@
   // Вместо чистого transparent делаем трендовое размытие заднего фона (iOS style):
   background-color: transparent; // Цвет твоего фона чата с прозрачностью 70%
 
+  // Колонка: сверху превью выбранного файла (если есть), снизу — строка ввода
   display: flex;
-  align-items: flex-end;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  .chat-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+  }
 
   .input-container {
     flex: 1;

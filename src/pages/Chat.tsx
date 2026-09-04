@@ -22,6 +22,7 @@ import { getPeerRestrictionStatus } from '../lib/p2p/services/contactsService';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
 import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
+import SelectedFilePreview from '../components/SelectedFilePreview.tsx'; // 🔥 Превью файла перед отправкой
 import ContextMenu from '../components/ContextMenu';
 import { ConfirmModal } from '../components/ConfirmModal.tsx';
 import { CONFIG } from '../lib/p2p/config.ts';
@@ -81,7 +82,9 @@ const Chat = () => {
     isUploadingFile,
     acceptedFileTypes,
     triggerFileInput,
-    handleFileUpload,
+    handleFileSelect,
+    selectedFile,
+    removeSelectedFile,
     dialogConfig,
     closeDialog,
     handleDownloadMessageText,
@@ -475,111 +478,129 @@ const Chat = () => {
               ref={fileInputRef}
               style={{ display: 'none' }}
               accept={acceptedFileTypes}
-              onChange={handleFileUpload}
+              onChange={handleFileSelect}
             />
 
-            <div className="input-container">
-              <button
-                className="attachment-button"
-                aria-label="Attach file"
-                disabled={!isRoomReady || isUploadingFile}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isAttachmentMenuOpen) {
-                    setMenuAnchor(null);
-                  } else {
-                    setMenuAnchor(e.currentTarget);
-                  }
-                  toggleAttachmentMenu(e);
-                }}
-              >
-                {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
-                {isUploadingFile ? (
-                  <div
-                    className="spinner-icon"
-                    style={{
-                      width: '18px',
-                      height: '18px',
-                      border: '2px solid #e2e8f0',
-                      borderTopColor: '#3b82f6',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite',
-                    }}
-                  />
-                ) : (
-                  <Paperclip size={20} className="attachment-icon" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                className={`hidden-mode-button ${isHiddenMode ? 'active' : ''}`}
-                aria-label="Скрытое сообщение"
-                title={
-                  isHiddenMode
-                    ? 'Сообщение будет скрыто'
-                    : 'Отправить как скрытое'
-                }
-                disabled={!isRoomReady || isUploadingFile}
-                onClick={toggleHiddenMode}
-              >
-                {isHiddenMode ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-
-              {isAttachmentMenuOpen && (
-                <ContextMenu
-                  className="attachment-chat-context-menu"
-                  onClick={(e) => e.stopPropagation()}
-                  anchorEl={menuAnchor}
-                  items={[
-                    {
-                      label: 'Фото/Видео',
-                      icon: <ImageIcon size={16} />,
-                      onClick: () => {
-                        triggerFileInput('image');
-                        setMenuAnchor(null);
-                      },
-                    },
-                    {
-                      label: 'Файл',
-                      icon: <File size={16} />,
-                      onClick: () => {
-                        triggerFileInput('file');
-                        setMenuAnchor(null);
-                      },
-                    },
-                    {
-                      label: 'Аудио',
-                      icon: <Music size={16} />,
-                      onClick: () => {
-                        triggerFileInput('audio');
-                        setMenuAnchor(null);
-                      },
-                    },
-                  ]}
-                />
-              )}
-
-              <textarea
-                value={draft}
-                onChange={handleInput}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  isUploadingFile
-                    ? 'Подготовка файла к отправке P2P...'
-                    : getInputPlaceholder()
-                }
-                disabled={!isRoomReady || isUploadingFile}
+            {/* 🔥 Превью выбранного, но ещё не отправленного файла */}
+            {selectedFile && (
+              <SelectedFilePreview
+                file={selectedFile}
+                onRemove={removeSelectedFile}
+                disabled={isUploadingFile}
               />
+            )}
+
+            <div className="chat-input-row">
+              <div className="input-container">
+                {/* Скрепка пропадает, пока в превью лежит файл */}
+                {!selectedFile && (
+                  <button
+                    className="attachment-button"
+                    aria-label="Attach file"
+                    disabled={!isRoomReady || isUploadingFile}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isAttachmentMenuOpen) {
+                        setMenuAnchor(null);
+                      } else {
+                        setMenuAnchor(e.currentTarget);
+                      }
+                      toggleAttachmentMenu(e);
+                    }}
+                  >
+                    {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
+                    {isUploadingFile ? (
+                      <div
+                        className="spinner-icon"
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          border: '2px solid #e2e8f0',
+                          borderTopColor: '#3b82f6',
+                          borderRadius: '50%',
+                          animation: 'spin 1s linear infinite',
+                        }}
+                      />
+                    ) : (
+                      <Paperclip size={20} className="attachment-icon" />
+                    )}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className={`hidden-mode-button ${isHiddenMode ? 'active' : ''}`}
+                  aria-label="Скрытое сообщение"
+                  title={
+                    isHiddenMode
+                      ? 'Сообщение будет скрыто'
+                      : 'Отправить как скрытое'
+                  }
+                  disabled={!isRoomReady || isUploadingFile}
+                  onClick={toggleHiddenMode}
+                >
+                  {isHiddenMode ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+
+                {isAttachmentMenuOpen && (
+                  <ContextMenu
+                    className="attachment-chat-context-menu"
+                    onClick={(e) => e.stopPropagation()}
+                    anchorEl={menuAnchor}
+                    items={[
+                      {
+                        label: 'Фото/Видео',
+                        icon: <ImageIcon size={16} />,
+                        onClick: () => {
+                          triggerFileInput('image');
+                          setMenuAnchor(null);
+                        },
+                      },
+                      {
+                        label: 'Файл',
+                        icon: <File size={16} />,
+                        onClick: () => {
+                          triggerFileInput('file');
+                          setMenuAnchor(null);
+                        },
+                      },
+                      {
+                        label: 'Аудио',
+                        icon: <Music size={16} />,
+                        onClick: () => {
+                          triggerFileInput('audio');
+                          setMenuAnchor(null);
+                        },
+                      },
+                    ]}
+                  />
+                )}
+
+                <textarea
+                  value={draft}
+                  onChange={handleInput}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    isUploadingFile
+                      ? 'Подготовка файла к отправке P2P...'
+                      : getInputPlaceholder()
+                  }
+                  disabled={!isRoomReady || isUploadingFile}
+                />
+              </div>
+              <button
+                className="send-button"
+                aria-label="Send message"
+                onClick={handleSendMessage}
+                disabled={
+                  !isRoomReady ||
+                  isUploadingFile ||
+                  (!draft.trim() && !selectedFile)
+                }
+              >
+                <Send size={20} />
+              </button>
             </div>
-            <button
-              className="send-button"
-              aria-label="Send message"
-              onClick={handleSendMessage}
-              disabled={!isRoomReady || !draft.trim() || isUploadingFile}
-            >
-              <Send size={20} />
-            </button>
           </div>
         </>
       )}

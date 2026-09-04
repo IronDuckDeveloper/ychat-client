@@ -19,6 +19,7 @@ import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 import {
   uploadFileToHelia,
   deleteFileFromHelia,
+  type FileAttachment,
 } from '../lib/p2p/services/fileService.ts';
 
 interface RouterState {
@@ -60,6 +61,8 @@ export const useChatLogic = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
+  // Файл, выбранный пользователем, но ещё не отправленный (превью над инпутом)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   // 🔥 Логика скрытых сообщений
   const [isHiddenMode, setIsHiddenMode] = useState(false);
   const toggleHiddenMode = () => setIsHiddenMode((prev) => !prev);
@@ -95,54 +98,18 @@ export const useChatLogic = () => {
     }, 10);
   };
 
-  const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+  // 🔥 Файл больше не грузится сразу: выбор кладёт File в selectedFile,
+  // реальная загрузка в Helia происходит в handleSendMessage при отправке.
+  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !roomHandle || !globalHelia) return;
+    if (!file) return;
+    setSelectedFile(file);
+  };
 
-    const sendAsHidden = isHiddenMode;
-
-    try {
-      setIsUploadingFile(true);
-
-      // 1. Загружаем файл в Helia FS и собираем метаданные + микро-превью
-      const attachmentInfo = await uploadFileToHelia(globalHelia, file);
-
-      // 2. Публикуем в OrbitDB. Текст сообщения пустой, передаем структуру вложения
-      await roomHandle.sendMessage('', attachmentInfo, sendAsHidden);
-      setDraft('');
-      setIsHiddenMode(false); // 👈 сбрасываем тумблер после отправки
-
-      // 3. Отправляем фоновый пуш-коммит через PubSub сети
-      if (globalHelia && peerId) {
-        try {
-          const myPeerId = (globalHelia as any).libp2p.peerId.toString();
-          const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
-          const notificationData = {
-            from: myPeerId,
-            text: `📎 Файл: ${file.name}`,
-            ts: Date.now(),
-          };
-          const encoded = new TextEncoder().encode(
-            JSON.stringify(notificationData),
-          );
-          await (globalHelia as any).libp2p.services.pubsub.publish(
-            targetTopic,
-            encoded,
-          );
-        } catch (err) {
-          console.warn('⚠️ Не удалось отправить фоновый пуш вложения:', err);
-        }
-      }
-    } catch (err) {
-      console.error(
-        '❌ Ошибка при обработке и отправке файла через Helia:',
-        err,
-      );
-    } finally {
-      setIsUploadingFile(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''; // Сбрасываем инпут для возможности повторного выбора
-      }
+  const removeSelectedFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // Сбрасываем инпут для возможности повторного выбора того же файла
     }
   };
 
@@ -385,22 +352,40 @@ export const useChatLogic = () => {
 
   const handleSendMessage = async () => {
     const text = draft.trim();
-    if (!text || !roomHandle) return;
+    if ((!text && !selectedFile) || !roomHandle) return;
 
     isUserScrolledUp.current = false;
     const sendAsHidden = isHiddenMode;
+    const fileToSend = selectedFile;
 
     try {
       const now = Date.now();
-      await roomHandle.sendMessage(text, undefined, sendAsHidden);
+      let attachmentInfo: FileAttachment | undefined;
+
+      // Если к сообщению прикреплён файл — грузим его в Helia прямо сейчас,
+      // в момент отправки (а не сразу при выборе из проводника).
+      if (fileToSend) {
+        if (!globalHelia) return;
+        setIsUploadingFile(true);
+        attachmentInfo = await uploadFileToHelia(globalHelia, fileToSend);
+      }
+
+      await roomHandle.sendMessage(text, attachmentInfo, sendAsHidden);
       setDraft('');
       setIsHiddenMode(false); // 👈 сбрасываем режим после отправки — по умолчанию не "залипает" на следующее сообщение
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
 
       if (globalHelia && peerId) {
         try {
           const myPeerId = (globalHelia as any).libp2p.peerId.toString();
           const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
-          const notificationData = { from: myPeerId, text, ts: now };
+          const notificationText = attachmentInfo
+            ? text || `📎 Файл: ${attachmentInfo.name}`
+            : text;
+          const notificationData = { from: myPeerId, text: notificationText, ts: now };
           const encoded = new TextEncoder().encode(
             JSON.stringify(notificationData),
           );
@@ -412,8 +397,12 @@ export const useChatLogic = () => {
           console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
         }
       }
-    } catch {
-      console.error('Ошибка отправки сообщения');
+    } catch (err) {
+      // Файл и текст умышленно НЕ сбрасываем при ошибке — чтобы можно было
+      // повторить отправку, не выбирая файл заново.
+      console.error('Ошибка отправки сообщения:', err);
+    } finally {
+      setIsUploadingFile(false);
     }
   };
 
@@ -535,7 +524,9 @@ export const useChatLogic = () => {
     isUploadingFile,
     acceptedFileTypes,
     triggerFileInput,
-    handleFileUpload,
+    handleFileSelect,
+    selectedFile,
+    removeSelectedFile,
     isHiddenMode, toggleHiddenMode
   };
 };
