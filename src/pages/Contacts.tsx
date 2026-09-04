@@ -9,6 +9,7 @@ import { useCallback, useRef, useEffect, useState } from 'react';
 import Avatar from '../components/Avatar.tsx';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 import ContextMenu from '../components/ContextMenu';
+import { CONFIG } from '../lib/p2p/config.ts';
 
 const ContactList = () => {
   const {
@@ -228,7 +229,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                 </div>
               </div>
               <div className="contact-time">
-                {contact.lastMessageTime && (
+                {contact.lastMessageTime && contact.lastMessage && contact.lastMessage !== CONFIG.MSG.MESSAGE_DELETED && (
                   <span>
                     {new Date(contact.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>

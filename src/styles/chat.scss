@@ -57,76 +57,157 @@
 .chat-messages {
   contain: content;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch; /* Включает плавный скролл на старых iOS */
-  overscroll-behavior-y: none; /* Запрещает передавать скролл родителю */
-  touch-action: pan-y; /* Разрешаем браузеру считывать свайпы вверх/вниз в этой зоне */
-  overscroll-behavior: none; /* Запрещаем отскок внутри контейнера на Mac */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+  touch-action: pan-y;
+  overscroll-behavior: none;
   flex: 1;
   padding: 1rem 1rem 95px 1rem;
   display: flex;
   flex-direction: column-reverse;
   gap: 1rem;
-  min-height: 0; /* ВАЖНО для корректной работы flex и overflow */
+  min-height: 0;
 
-  // Стили для разделителя по датам
+  // Разделитель по датам
   .date-separator {
-    align-self: center; // По центру
-    padding: 0.25rem 0.75rem; // Небольшие отступы для формы "пилюли"
-    background-color: rgba(
-      $hint,
-      0.15
-    ); // Используем цвет $hint с прозрачностью 15%
-    color: $hint; // Твой серый цвет из переменных
+    align-self: center;
+    padding: 0.25rem 0.75rem;
+    background-color: rgba($hint, 0.15);
+    color: $hint;
     border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 500;
     margin: 0.5rem 0;
-    text-transform: lowercase; // "28 мая 2026" смотрится мягче со строчной буквы
-
-    // Кроссбраузерный запрет выделения текста
-    -webkit-user-select: none; /* Safari и Safari на iOS */
-    -moz-user-select: none; /* Firefox */
-    -ms-user-select: none; /* IE 10+ и старый Edge */
-    user-select: none; /* Стандартное свойство */
+    text-transform: lowercase;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
   }
 
-  .message {
+  // 🔥 ОБЁРТКА СООБЩЕНИЯ И ВРЕМЕНИ
+  .message-wrapper {
+    display: flex;
+    flex-direction: column;
     max-width: 80%;
-    width: fit-content;
-    padding: 0.75rem;
-    border-radius: $radius;
-    font-size: 0.875rem;
-    position: relative; // важно для absolute-кнопки
-    z-index: 1;
 
-      &.sent {
-      .text-content .chat-message-link {
-        color: $secondary;
+    // --- ОТПРАВЛЕННОЕ СООБЩЕНИЕ ---
+    &.sent {
+      align-self: flex-end;
+      align-items: flex-end;
+
+      .message {
+        background-color: $user-bubble;
+        color: white;
+        border-radius: $radius $radius 0 $radius;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+        .text-content .chat-message-link {
+          color: $secondary;
+        }
+
+        .message-menu-btn {
+          background: rgba(255, 255, 255, 0.2);
+          color: #ffffff;
+
+          &:hover {
+            background: rgba(255, 255, 255, 0.35);
+          }
+        }
       }
     }
 
+    // --- ПОЛУЧЕННОЕ СООБЩЕНИЕ ---
     &.received {
-      .text-content .chat-message-link {
-        color: $secondary;
+      align-self: flex-start;
+      align-items: flex-start;
+
+      .message {
+        background-color: white;
+        color: $text;
+        border-radius: $radius $radius $radius 0;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+
+        .text-content .chat-message-link {
+          color: $secondary;
+        }
+
+        .message-menu-btn {
+          background: rgba(0, 0, 0, 0.06);
+          color: $text;
+
+          &:hover {
+            background: rgba(0, 0, 0, 0.12);
+          }
+        }
       }
     }
 
+    // --- СИСТЕМНОЕ СООБЩЕНИЕ (В ОБЁРТКЕ) ---
     &.system {
+      align-self: center;
+      align-items: center;
+
+      .message {
+        background-color: $secondary;
+        color: white;
+        border-radius: $radius;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+
+        .text-content .chat-message-link {
+          color: white;
+        }
+      }
+    }
+
+    // Время под бабблом
+    .message-time {
+      font-size: 0.68rem;
+      color: $hint;
+      line-height: 1;
+      margin-top: 3px;
+      padding: 0 4px;
+
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+  }
+
+  // 🔥 САМ БАББЛ СООБЩЕНИЯ И ОДИНОЧНЫЕ СИСТЕМНЫЕ ПЛАШКИ
+  .message {
+    width: fit-content;
+    max-width: 100%;
+    padding: 0.75rem;
+    font-size: 0.875rem;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    // 🔥 Прямое системное сообщение без обертки (например, "Загрузка...")
+    &.system {
+      align-self: center;
+      background-color: $secondary;
+      color: white;
+      border-radius: $radius;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+
       .text-content .chat-message-link {
-        color: $secondary;
+        color: white;
       }
     }
 
     // Текст сообщения
     .text-content {
-      word-break: break-word;
-      padding-right: 28px; // чуть больше, чтобы текст не заходил под кнопку
+      padding-right: 28px;
       line-height: 1.4;
       word-break: break-word;
       overflow-wrap: anywhere;
 
       .chat-message-link {
-        color: $secondary;
         text-decoration: underline;
         text-underline-offset: 3px;
         word-break: break-all;
@@ -143,7 +224,7 @@
       }
     }
 
-    // Кнопка с тремя точками
+    // Меню "три точки"
     .message-menu-wrap {
       position: absolute;
       top: 9px;
@@ -161,66 +242,23 @@
       justify-content: center;
       cursor: pointer;
       padding: 0;
-      transition:
-        background-color 0.2s,
-        transform 0.15s;
+      transition: background-color 0.2s, transform 0.15s;
 
       &:hover {
         transform: scale(1.08);
       }
     }
 
-    // Кружок на ПОЛУЧЕННЫХ сообщениях
-    &.received .message-menu-btn {
-      background: rgba(0, 0, 0, 0.06);
-      color: $text;
-
-      &:hover {
-        background: rgba(0, 0, 0, 0.12);
-      }
-    }
-
-    // Кружок на ОТПРАВЛЕННЫХ сообщениях
-    &.sent .message-menu-btn {
-      background: rgba(255, 255, 255, 0.2);
-      color: #ffffff;
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.35);
-      }
-    }
-
-    // Если внутри есть вложение — уменьшаем padding
+    // Компактный отступ при наличии вложений
     &:has(.attachment-image-wrapper),
     &:has(.attachment-audio-card),
     &:has(.attachment-video-wrapper),
     &:has(.attachment-file-card) {
       padding: 0.2rem;
-    }
 
-    &.received {
-      align-self: flex-start;
-      background-color: white;
-      color: $text;
-      border-radius: $radius $radius $radius 0;
-      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-    }
-
-    &.sent {
-      background-color: $user-bubble;
-      color: white;
-      border-radius: $radius $radius 0 $radius;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      align-self: flex-end;
-      margin-left: auto;
-    }
-
-    &.system {
-      background-color: $secondary;
-      background-color: $secondary;
-      color: white;
-      border-radius: $radius $radius $radius 0;
-      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+      .text-content {
+        padding: 0.4rem 0.55rem 0.3rem 0.55rem;
+      }
     }
   }
 }

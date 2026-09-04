@@ -325,6 +325,21 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
       className="attachment-menu-wrap"
       onClick={(e) => e.stopPropagation()}
     >
+      {/* 🔥 Добавляем кнопку сворачивания прямо перед тремя точками */}
+      {hidden && onToggleCollapse && (
+        <button
+          type="button"
+          className="hidden-message-collapse-btn"
+          title="Свернуть"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse();
+          }}
+        >
+          <ChevronUp size={16} className="hidden-message-arrow expanded" />
+        </button>
+      )}
+
       <button
         type="button"
         className="attachment-menu-btn"
@@ -382,23 +397,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
     </div>
   );
 
-  // 🔥 Компонент кнопки сворачивания
-  const collapseButton = hidden && onToggleCollapse && (
-    <div className="attachment-collapse-wrap">
-      <button
-        type="button"
-        className="hidden-message-collapse-btn"
-        title="Свернуть"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleCollapse();
-        }}
-      >
-        <ChevronUp size={16} className="hidden-message-arrow expanded" />
-      </button>
-    </div>
-  );
-
   if (isDeleted) {
     return (
       <div className="attachment-wrapper">
@@ -410,7 +408,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             </span>
           </div>
         </div>
-        {collapseButton}
       </div>
     );
   }
@@ -464,9 +461,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
               </div>
             )}
           </div>
-          
-          {/* 🔥 Кнопка сворачивания безопасно лежит снаружи .attachment-image-wrapper */}
-          {collapseButton}
         </div>
 
         {isFullscreen && fileUrl && createPortal(
@@ -562,8 +556,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             )}
           </div>
         </div>
-        
-        {collapseButton}
       </div>
     );
   }
@@ -632,8 +624,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             </div>
           )}
         </div>
-        
-        {collapseButton}
       </div>
     );
   }
@@ -665,8 +655,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
         </div>
         {attachmentMenu}
       </div>
-
-      {collapseButton}
     </div>
   );
 };

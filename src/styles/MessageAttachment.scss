@@ -424,6 +424,10 @@
   top: 6px;
   right: 6px;
   z-index: 10;
+  /* 🔥 Выстраиваем элементы (стрелку и 3 точки) в ряд */
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 // Для карточек аудио/файла (не absolute-превью)
