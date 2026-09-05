@@ -8,23 +8,28 @@ import { RateLimitedAccessController } from '../orbit/rateLimitedAccessControlle
 import { type FileAttachment } from './fileService.ts';
 import { isHiddenLocally, hideMessageLocally } from './hiddenMessagesService.ts';
 
-// Конфигурация приложения и интерфейсы для типов сообщений и значений в комнате чата.
 export type MessageType = 'sent' | 'received' | 'system';
 
-// Интерфейс для сообщений в чате
+export interface ReplyInfo {
+  id: string;
+  text?: string;
+  attachmentName?: string;
+  attachmentMime?: string;
+}
+
 export interface ChatMessage {
   id: string;
   whoSent: string;
-  text: string; // Может быть пустым, если отправили только фото
+  text: string;
   type: MessageType;
   ts: number;
   attachment?: FileAttachment;
   hidden?: boolean;
+  replyTo?: ReplyInfo;
 }
 
-// Интерфейс для действий в комнате, который возвращается при присоединении к комнате
 export interface RoomActions {
-  sendMessage: (text: string, attachment?: FileAttachment, hidden?: boolean) => Promise<void>;
+  sendMessage: (text: string, attachment?: FileAttachment, hidden?: boolean, replyTo?: ReplyInfo) => Promise<void>;
   tombstoneMessage: (msgId: string) => Promise<void>;
   deleteMessageLocally: (msgId: string) => void;
   leaveRoom: () => void;
@@ -77,7 +82,6 @@ export async function joinRoom(
 
   const dbAddress = db.address.toString();
 
-  // === ВНУТРЕННЯЯ ЛОГИКА ПАГИНАЦИИ И ИСТОРИИ СЕССИИ ===
   let oldestHash: string | null = null; 
   let hasMore = true; 
 
@@ -109,21 +113,17 @@ export async function joinRoom(
       console.error('❌ Ошибка чтения чанка OrbitDB:', e);
     }
 
-    // Если база вернула меньше записей, чем просили — это конец истории
     if (chunk.length < limit) {
       hasMore = false; 
     }
 
     if (chunk.length > 0) {
-      // Последний считанный элемент — самый старый в этой пачке
       oldestHash = chunk[chunk.length - 1].hash;
 
-      // Разворачиваем пачку обратно в хронологический порядок, как было в твоей рабочей версии
       const chronologicalChunk = [...chunk].reverse();
 
       for (const entry of chronologicalChunk) {
         const messageData = entry.payload?.value || entry.value;
-        // 🔥 Исправлено: проверяем наличие текста ИЛИ вложения, чтобы не пропускать пустые текстовые сообщения с файлами
         if (messageData && (messageData.text || messageData.attachment)) {
           const isMine = messageData.whoSent === orbitdb.identity.id;
           const msgId = messageData._id || entry.hash;
@@ -137,16 +137,15 @@ export async function joinRoom(
             ts: messageData.ts || Date.now(),
             type: isMine ? 'sent' : 'received',
             hidden: messageData.hidden === true,
+            replyTo: hiddenLocally ? undefined : messageData.replyTo,
           }, true);
         }
       }
     }
   };
 
-  // Автоматически выкачиваем первую страницу при открытии комнаты
   const chunkSize = CONFIG.CHUNK_SIZE || 15;
   await loadHistoryChunk(chunkSize);
-  // ===================================================
 
   const onDbUpdate = (...args: any[]) => {
     const entry = args.length === 1 ? args[0] : args.find(a => a && (a.payload || a.value));
@@ -165,7 +164,8 @@ export async function joinRoom(
         attachment: hiddenLocally ? undefined : messageData.attachment,
         ts: messageData.ts || Date.now(),
         type: isMine ? 'sent' : 'received',
-        hidden: messageData.hidden === true
+        hidden: messageData.hidden === true,
+        replyTo: hiddenLocally ? undefined : messageData.replyTo,
       }, false);
     }
   };
@@ -189,7 +189,7 @@ export async function joinRoom(
   libp2p.getPeers().forEach((peerId: PeerId) => notifyArchivist(libp2p, peerId, dbAddress));
 
   return {
-    sendMessage: async (text: string, attachment?: FileAttachment, hidden?: boolean) => {
+    sendMessage: async (text: string, attachment?: FileAttachment, hidden?: boolean, replyTo?: ReplyInfo) => {
       try {
         const messageObject: any = {
           _id: `msg_${orbitdb.identity.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -199,9 +199,10 @@ export async function joinRoom(
         };
 
         if (attachment) {
-          messageObject.attachment = attachment; // 🔥 Сохраняем структуру файла в OrbitDB
+          messageObject.attachment = attachment;
         }
         if (hidden) messageObject.hidden = true;
+        if (replyTo) messageObject.replyTo = replyTo;
 
         await db.put(messageObject);
       } catch (err: any) {
@@ -228,7 +229,6 @@ export async function joinRoom(
       try {
         const result = await db.get(msgId);
         
-        // В OrbitDB documents метод get() возвращает МАССИВ
         const doc = Array.isArray(result) ? result[0] : result;
         
         if (doc) {
@@ -288,7 +288,6 @@ export const clearEntireChat = async (db: any) => {
   try {
     console.log(`🗑️ Запуск полного удаления базы: ${db.address.toString()}`);
     
-    // Метод drop() полностью удаляет локальную базу данных в OrbitDB
     await db.drop();
     
     console.log('✅ База чата успешно и безвозвратно удалена локально');

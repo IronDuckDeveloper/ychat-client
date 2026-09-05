@@ -1,0 +1,82 @@
+@import './variables.scss';
+
+.reply-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: $radius;
+
+  &-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+  }
+
+  &-text {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &-remove {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.06);
+    color: $text;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.12);
+      transform: scale(1.05);
+    }
+  }
+
+  &--composer {
+    padding: 0.5rem 0.75rem;
+    background-color: white;
+    border: 1px solid rgba(153, 120, 171, 0.15);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06);
+
+    .reply-preview-icon {
+      width: 40px;
+      height: 40px;
+    }
+
+    .reply-preview-text {
+      font-size: 0.8rem;
+      color: $text;
+    }
+  }
+
+  &--quote {
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    cursor: pointer;
+
+    .reply-preview-icon {
+      width: 36px;
+      height: 36px;
+    }
+
+    .reply-preview-text {
+      font-size: 12px;
+      opacity: 0.85;
+    }
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+}
