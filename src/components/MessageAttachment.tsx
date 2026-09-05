@@ -14,7 +14,8 @@ import {
   FileCode,
   MoreVertical,
   Forward,
-  ChevronUp, // 🔥 Добавили иконку для кнопки сворачивания
+  Reply,
+  ChevronUp,
 } from 'lucide-react';
 import { globalHelia } from '../lib/p2p/services/authService.ts';
 import {
@@ -29,13 +30,15 @@ import ContextMenu from './ContextMenu';
 interface MessageAttachmentProps {
   attachment: FileAttachment;
   onDelete?: () => void;
-  hidden?: boolean; // 🔥 Проп для скрытых сообщений
-  onToggleCollapse?: () => void; // 🔥 Обработчик сворачивания
+  onReply?: () => void;
+  hidden?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   attachment,
   onDelete,
+  onReply,
   hidden,
   onToggleCollapse,
 }) => {
@@ -325,7 +328,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
       className="attachment-menu-wrap"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 🔥 Добавляем кнопку сворачивания прямо перед тремя точками */}
       {hidden && onToggleCollapse && (
         <button
           type="button"
@@ -363,6 +365,20 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
           className="attachment-item-menu"
           anchorEl={menuAnchor}
           items={[
+            ...(onReply
+              ? [
+                  {
+                    label: 'Ответить',
+                    icon: <Reply size={16} />,
+                    onClick: (e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      onReply();
+                      setIsMenuOpen(false);
+                      setMenuAnchor(null);
+                    },
+                  },
+                ]
+              : []),
             {
               label: 'Скачать',
               icon: <Download size={16} />,

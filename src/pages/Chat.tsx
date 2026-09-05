@@ -11,6 +11,7 @@ import {
   Download,
   Forward,
   Trash2,
+  Reply,
   Eye,
   EyeOff,
   ChevronUp,
@@ -21,13 +22,13 @@ import { globalContactsDb } from '../lib/p2p/services/authService.ts';
 import { getPeerRestrictionStatus } from '../lib/p2p/services/contactsService';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
-import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
-import SelectedFilePreview from '../components/SelectedFilePreview.tsx'; // 🔥 Превью файла перед отправкой
+import MessageAttachment from '../components/MessageAttachment.tsx';
+import SelectedFilePreview from '../components/SelectedFilePreview.tsx';
+import ReplyPreview from '../components/ReplyPreview.tsx';
 import ContextMenu from '../components/ContextMenu';
 import { ConfirmModal } from '../components/ConfirmModal.tsx';
 import { CONFIG } from '../lib/p2p/config.ts';
 
-// Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
   const date = new Date(ts);
   return date
@@ -55,6 +56,7 @@ const Chat = () => {
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
   const [openTextMenuId, setOpenTextMenuId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!openTextMenuId) return;
@@ -93,6 +95,9 @@ const Chat = () => {
     handleFileSelect,
     selectedFile,
     removeSelectedFile,
+    replyingTo,
+    handleReplyToMessage,
+    cancelReply,
     dialogConfig,
     closeDialog,
     handleDownloadMessageText,
@@ -111,6 +116,16 @@ const Chat = () => {
       else next.add(id);
       return next;
     });
+  };
+
+  const scrollToMessage = (messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedId(messageId);
+    window.setTimeout(() => {
+      setHighlightedId((prev) => (prev === messageId ? null : prev));
+    }, 1200);
   };
 
   useEffect(() => {
@@ -145,11 +160,9 @@ const Chat = () => {
     }
   };
 
-  // Вспомогательная функция для распознавания и рендеринга ссылок в тексте
   const renderMessageText = (text: string) => {
     if (!text) return null;
 
-    // Регулярное выражение для поиска веб-ссылок (http, https, www)
     const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
     const parts = text.split(urlRegex);
 
@@ -157,7 +170,6 @@ const Chat = () => {
       const isUrl = /^https?:\/\/|^www\./i.test(part);
 
       if (isUrl) {
-        // Отделяем знаки препинания в конце ссылки (например, "https://example.com.")
         const match = part.match(/^(.*?)([.?!,)]*)$/);
         const cleanUrl = match ? match[1] : part;
         const trailingPunctuation = match ? match[2] : '';
@@ -173,7 +185,7 @@ const Chat = () => {
               target="_blank"
               rel="noopener noreferrer"
               className="chat-message-link"
-              onClick={(e) => e.stopPropagation()} // Предотвращаем клик по контекстному меню сообщения
+              onClick={(e) => e.stopPropagation()}
             >
               {cleanUrl}
             </a>
@@ -251,17 +263,16 @@ const Chat = () => {
 
               return (
                 <React.Fragment key={message.id}>
-                  {/* 🔥 Общая обёртка сообщения и времени */}
                   <div
+                    id={`msg-${message.id}`}
                     className={`message-wrapper ${
                       message.type === 'sent'
                         ? 'sent'
                         : message.type === 'received'
                           ? 'received'
                           : 'system'
-                    }`}
+                    } ${highlightedId === message.id ? 'highlighted' : ''}`}
                   >
-                    {/* 1. БАББЛ СООБЩЕНИЯ */}
                     <div className="message">
                       {(() => {
                         const isDeleted =
@@ -274,7 +285,6 @@ const Chat = () => {
                         return (
                           <>
                             {isHiddenCollapsed ? (
-                              /* --- СВЕРНУТОЕ СОСТОЯНИЕ --- */
                               <>
                                 <div
                                   className="hidden-message-collapsed"
@@ -336,13 +346,23 @@ const Chat = () => {
                                 </div>
                               </>
                             ) : (
-                              /* --- РАЗВЕРНУТОЕ СОСТОЯНИЕ --- */
                               <>
+                                {message.replyTo && (
+                                  <ReplyPreview
+                                    replyTo={message.replyTo}
+                                    variant="quote"
+                                    onClick={() =>
+                                      scrollToMessage(message.replyTo!.id)
+                                    }
+                                  />
+                                )}
+
                                 {message.attachment && (
                                   <MessageAttachment
                                     attachment={message.attachment}
                                     hidden={message.hidden && !isDeleted}
                                     onToggleCollapse={() => toggleHiddenExpand(message.id)}
+                                    onReply={() => handleReplyToMessage(message)}
                                     onDelete={() =>
                                       handleDeleteMessage(
                                         message.id,
@@ -409,6 +429,15 @@ const Chat = () => {
                                             anchorEl={menuAnchor}
                                             items={[
                                               {
+                                                label: 'Ответить',
+                                                icon: <Reply size={16} />,
+                                                onClick: () => {
+                                                  handleReplyToMessage(message);
+                                                  setOpenTextMenuId(null);
+                                                  setMenuAnchor(null);
+                                                },
+                                              },
+                                              {
                                                 label: 'Скачать',
                                                 icon: <Download size={16} />,
                                                 onClick: () => {
@@ -457,7 +486,6 @@ const Chat = () => {
                       })()}
                     </div>
 
-                  {/* 2. ВРЕМЯ (показываем, только если есть ts и сообщение НЕ удалено) */}
                   {message.ts && message.text !== CONFIG.MSG.MESSAGE_DELETED && (
                     <span className="message-time">
                       {formatTime(message.ts)}
@@ -480,7 +508,6 @@ const Chat = () => {
           </div>
 
           <div className="chat-input-area">
-            {/* 🔥 Скрытый системный инпут для работы с файловой системой браузера */}
             <input
               title="Выбрать файл"
               type="file"
@@ -490,7 +517,6 @@ const Chat = () => {
               onChange={handleFileSelect}
             />
 
-            {/* 🔥 Превью выбранного, но ещё не отправленного файла */}
             {selectedFile && (
               <SelectedFilePreview
                 file={selectedFile}
@@ -499,10 +525,17 @@ const Chat = () => {
               />
             )}
 
+            {replyingTo && (
+              <ReplyPreview
+                replyTo={replyingTo}
+                variant="composer"
+                onRemove={cancelReply}
+              />
+            )}
+
             <div className="chat-input-row">
               <div className="input-container">
-                {/* Скрепка пропадает, пока в превью лежит файл */}
-                {!selectedFile && (
+                {!selectedFile && !replyingTo && (
                   <button
                     className="attachment-button"
                     aria-label="Attach file"
@@ -517,7 +550,6 @@ const Chat = () => {
                       toggleAttachmentMenu(e);
                     }}
                   >
-                    {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
                     {isUploadingFile ? (
                       <div
                         className="spinner-icon"

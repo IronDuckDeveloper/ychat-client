@@ -1,13 +1,12 @@
 @import './variables.scss';
 
-// Chat page styles
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100%; /* Контейнер занимает все 100% высоты зафиксированного body */
+  height: 100%;
   width: 100%;
   background-color: $chat-bg-light;
-  overflow: hidden; /* Не даем контенту вывалиться за пределы контейнера */
+  overflow: hidden;
   position: relative;
 }
 
@@ -20,7 +19,7 @@
   background-color: $accent-prime;
   border-bottom: 1px solid $border;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-  box-sizing: border-box; // Гарантирует, что padding не раздует высоту больше 60px
+  box-sizing: border-box;
 
   .header-left {
     display: flex;
@@ -68,7 +67,6 @@
   gap: 1rem;
   min-height: 0;
 
-  // Разделитель по датам
   .date-separator {
     align-self: center;
     padding: 0.25rem 0.75rem;
@@ -85,13 +83,16 @@
     user-select: none;
   }
 
-  // 🔥 ОБЁРТКА СООБЩЕНИЯ И ВРЕМЕНИ
   .message-wrapper {
     display: flex;
     flex-direction: column;
     max-width: 80%;
+    border-radius: $radius;
 
-    // --- ОТПРАВЛЕННОЕ СООБЩЕНИЕ ---
+    &.highlighted .message {
+      animation: replyHighlight 1.2s ease;
+    }
+
     &.sent {
       align-self: flex-end;
       align-items: flex-end;
@@ -117,7 +118,6 @@
       }
     }
 
-    // --- ПОЛУЧЕННОЕ СООБЩЕНИЕ ---
     &.received {
       align-self: flex-start;
       align-items: flex-start;
@@ -143,7 +143,6 @@
       }
     }
 
-    // --- СИСТЕМНОЕ СООБЩЕНИЕ (В ОБЁРТКЕ) ---
     &.system {
       align-self: center;
       align-items: center;
@@ -160,7 +159,6 @@
       }
     }
 
-    // Время под бабблом
     .message-time {
       font-size: 0.68rem;
       color: $hint;
@@ -175,7 +173,6 @@
     }
   }
 
-  // 🔥 САМ БАББЛ СООБЩЕНИЯ И ОДИНОЧНЫЕ СИСТЕМНЫЕ ПЛАШКИ
   .message {
     width: fit-content;
     max-width: 100%;
@@ -187,7 +184,6 @@
     flex-direction: column;
     gap: 6px;
 
-    // 🔥 Прямое системное сообщение без обертки (например, "Загрузка...")
     &.system {
       align-self: center;
       background-color: $secondary;
@@ -200,7 +196,6 @@
       }
     }
 
-    // Текст сообщения
     .text-content {
       padding-right: 28px;
       line-height: 1.4;
@@ -224,7 +219,6 @@
       }
     }
 
-    // Меню "три точки"
     .message-menu-wrap {
       position: absolute;
       top: 9px;
@@ -249,7 +243,6 @@
       }
     }
 
-    // Компактный отступ при наличии вложений
     &:has(.attachment-image-wrapper),
     &:has(.attachment-audio-card),
     &:has(.attachment-video-wrapper),
@@ -263,19 +256,23 @@
   }
 }
 
+@keyframes replyHighlight {
+  0% { box-shadow: 0 0 0 2px rgba(132, 87, 160, 0); }
+  25% { box-shadow: 0 0 0 2px rgba(132, 87, 160, 0.6); }
+  100% { box-shadow: 0 0 0 2px rgba(132, 87, 160, 0); }
+}
+
 .chat-input-area {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 10; // 👈 Чтобы инпут всегда был выше летящих сообщений
+  z-index: 10;
 
   padding: 1rem;
 
-  // Вместо чистого transparent делаем трендовое размытие заднего фона (iOS style):
-  background-color: transparent; // Цвет твоего фона чата с прозрачностью 70%
+  background-color: transparent;
 
-  // Колонка: сверху превью выбранного файла (если есть), снизу — строка ввода
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -354,11 +351,10 @@
     justify-content: center;
     flex-shrink: 0;
 
-    // Добавьте эти строки:
-    border: none; // Убирает стандартную рамку Safari
-    appearance: none; // Убирает системный вид кнопок Safari
-    box-shadow: none; // Ваше правило
-    outline: none; // Убирает контур при фокусе
+    border: none;
+    appearance: none;
+    box-shadow: none;
+    outline: none;
 
     transition: transform 0.2s;
 
@@ -369,23 +365,23 @@
 }
 
 .blocked-dialog-overlay {
-  flex: 1; // Занимает все пространство между шапкой и низом
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background-color: var(--bg-secondary); // Твоя переменная для фона
+  background-color: var(--bg-secondary);
   gap: 16px;
 
   p {
     font-size: 1.1rem;
-    color: var(--text-muted); // Твоя переменная для серого текста
+    color: var(--text-muted);
     font-weight: 500;
   }
 
   .unblock-delete-btn {
     padding: 10px 20px;
-    background-color: #ef4444; // Красный цвет (опасная зона)
+    background-color: #ef4444;
     color: white;
     border: none;
     border-radius: 8px;
