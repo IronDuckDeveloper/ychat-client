@@ -119,12 +119,15 @@ export const useChatLogic = () => {
   // Ответ на сообщение: кладём денормализованный снимок в replyingTo.
   // Аттач при ответе запрещён — сбрасываем уже выбранный файл, если был.
   const handleReplyToMessage = (message: ChatMessage) => {
-    setReplyingTo({
-      id: message.id,
-      text: message.text || undefined,
-      attachmentName: message.attachment?.name,
-      attachmentMime: message.attachment?.type,
-    });
+    // Важно: НЕ присваивать undefined полям объекта — IPLD (dag-cbor)
+    // в отличие от JSON.stringify не дропает такие ключи молча, а падает
+    // с ошибкой при db.put(). Добавляем поле, только если значение есть.
+    const info: ReplyInfo = { id: message.id };
+    if (message.text) info.text = message.text;
+    if (message.attachment?.name) info.attachmentName = message.attachment.name;
+    if (message.attachment?.type) info.attachmentMime = message.attachment.type;
+
+    setReplyingTo(info);
     removeSelectedFile();
   };
 
