@@ -58,14 +58,19 @@ export const useChatLogic = () => {
 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
+  // 🔥 Логика чистой архитектуры для вложений файлов
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
+  // Файл, выбранный пользователем, но ещё не отправленный (превью над инпутом)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Сообщение, на которое отвечаем (превью над инпутом); аттач и ответ взаимоисключающие
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
+  // 🔥 Логика скрытых сообщений
   const [isHiddenMode, setIsHiddenMode] = useState(false);
   const toggleHiddenMode = () => setIsHiddenMode((prev) => !prev);
 
+  // --- ДИАЛОГ ---
   const [dialogConfig, setDialogConfig] = useState({
     isOpen: false,
     title: '',
@@ -79,7 +84,7 @@ export const useChatLogic = () => {
     setDialogConfig((prev) => ({ ...prev, isOpen: false }));
 
   const toggleAttachmentMenu = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
+    e?.stopPropagation(); // Блокируем всплытие, чтобы слушатель document не закрыл меню сразу же
     setIsAttachmentMenuOpen(!isAttachmentMenuOpen);
   };
 
@@ -90,11 +95,14 @@ export const useChatLogic = () => {
 
     setIsAttachmentMenuOpen(false);
 
+    // Небольшой таймаут, чтобы дать реакту обновить атрибут accept на инпуте
     setTimeout(() => {
       fileInputRef.current?.click();
     }, 10);
   };
 
+  // 🔥 Файл больше не грузится сразу: выбор кладёт File в selectedFile,
+  // реальная загрузка в Helia происходит в handleSendMessage при отправке.
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -104,10 +112,12 @@ export const useChatLogic = () => {
   const removeSelectedFile = () => {
     setSelectedFile(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = ''; // Сбрасываем инпут для возможности повторного выбора того же файла
     }
   };
 
+  // Ответ на сообщение: кладём денормализованный снимок в replyingTo.
+  // Аттач при ответе запрещён — сбрасываем уже выбранный файл, если был.
   const handleReplyToMessage = (message: ChatMessage) => {
     setReplyingTo({
       id: message.id,
@@ -120,6 +130,7 @@ export const useChatLogic = () => {
 
   const cancelReply = () => setReplyingTo(null);
 
+  // Закрытие меню вложений при клике вне его области
   useEffect(() => {
     if (!isAttachmentMenuOpen) return;
 
@@ -127,6 +138,7 @@ export const useChatLogic = () => {
       setIsAttachmentMenuOpen(false);
     };
 
+    // Важно: подписываемся после текущего клика, иначе меню сразу закроется
     const timeoutId = setTimeout(() => {
       document.addEventListener('click', handleClickOutside);
     }, 0);
@@ -137,6 +149,7 @@ export const useChatLogic = () => {
     };
   }, [isAttachmentMenuOpen]);
 
+  // Очистка уведомлений
   useEffect(() => {
     if (globalContactsDb && peerId) {
       contactsService.clearUnread(globalContactsDb, peerId);
@@ -148,6 +161,7 @@ export const useChatLogic = () => {
     };
   }, [peerId]);
 
+  // Функция получения и обновления данных контакта из локальной базы
   const refreshContactData = async () => {
     if (!peerId || !globalContactsDb) return;
     try {
@@ -167,6 +181,7 @@ export const useChatLogic = () => {
     }
   };
 
+  // Подписываемся на событие обновления контактов
   useEffect(() => {
     window.addEventListener('onContactsUpdated', refreshContactData);
 
@@ -179,6 +194,7 @@ export const useChatLogic = () => {
     };
   }, [peerId, isReady]);
 
+  // Логика получения аватара из Helia FS
   useEffect(() => {
     if (!isReady || !globalHelia || !contact?.avatarCid) {
       return;
@@ -221,6 +237,7 @@ export const useChatLogic = () => {
     contact?.avatarEncryptionKey,
   ]);
 
+  // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
     if (!isReady || !joinRoom) return;
 
@@ -244,9 +261,11 @@ export const useChatLogic = () => {
             if (message?.text?.startsWith('System:')) return;
 
             setMessages((prev) => {
+              // Ищем, есть ли уже это сообщение в стейте
               const existingIndex = prev.findIndex((m) => m.id === message.id);
 
               if (existingIndex !== -1) {
+                // Если есть — ПЕРЕЗАПИСЫВАЕМ его (это нужно для синхронизации "Сообщение удалено")
                 const updated = [...prev];
                 updated[existingIndex] = message;
                 return updated.sort(
@@ -254,6 +273,7 @@ export const useChatLogic = () => {
                 );
               }
 
+              // Если нет — добавляем новое
               const updated = [message, ...prev];
               return updated.sort(
                 (a, b) => (b.ts || Date.now()) - (a.ts || Date.now()),
@@ -268,6 +288,7 @@ export const useChatLogic = () => {
                 !isBackgroundSync &&
                 message.type !== 'sent';
 
+              // Если текста нет (отправлен только файл), пишем заглушку в список чатов
               const displayNotificationText =
                 message.text || (message.attachment ? '📎 Вложение' : '');
               contactsService.updateLastMessage(
@@ -348,7 +369,7 @@ export const useChatLogic = () => {
 
   const handleSendMessage = async () => {
     const text = draft.trim();
-    if ((!text && !selectedFile) || !roomHandle) return;
+    if ((!text && !selectedFile && !replyingTo) || !roomHandle) return;
 
     isUserScrolledUp.current = false;
     const sendAsHidden = isHiddenMode;
@@ -359,6 +380,8 @@ export const useChatLogic = () => {
       const now = Date.now();
       let attachmentInfo: FileAttachment | undefined;
 
+      // Если к сообщению прикреплён файл — грузим его в Helia прямо сейчас,
+      // в момент отправки (а не сразу при выборе из проводника).
       if (fileToSend) {
         if (!globalHelia) return;
         setIsUploadingFile(true);
@@ -372,7 +395,7 @@ export const useChatLogic = () => {
         replyToSend ?? undefined,
       );
       setDraft('');
-      setIsHiddenMode(false);
+      setIsHiddenMode(false); // 👈 сбрасываем режим после отправки — по умолчанию не "залипает" на следующее сообщение
       setSelectedFile(null);
       setReplyingTo(null);
       if (fileInputRef.current) {
@@ -399,12 +422,15 @@ export const useChatLogic = () => {
         }
       }
     } catch (err) {
+      // Файл, текст и ответ умышленно НЕ сбрасываем при ошибке — чтобы можно было
+      // повторить отправку, не выбирая файл/сообщение заново.
       console.error('Ошибка отправки сообщения:', err);
     } finally {
       setIsUploadingFile(false);
     }
   };
 
+    // 🔥 Скачивание текста сообщения как .txt
   const handleDownloadMessageText = (text: string) => {
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -439,6 +465,7 @@ export const useChatLogic = () => {
     setDraft(textarea.value);
   };
 
+  // ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ
   const handleDeleteMessage = async (
     messageId: string,
     cid?: string,
@@ -457,6 +484,7 @@ export const useChatLogic = () => {
       confirmText: 'Да',
       isDanger: true,
       onConfirm: async () => {
+        // 1. Локально сносим файл всегда; на сервере — только если сообщение моё
         if (cid && globalHelia) {
           await deleteFileFromHelia(
             globalHelia,
@@ -467,6 +495,7 @@ export const useChatLogic = () => {
           );
         }
 
+        // 2. Меняем сообщение в локальном UI мгновенно
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id === messageId) {
@@ -476,6 +505,7 @@ export const useChatLogic = () => {
           }),
         );
 
+        // 3. Отправляем изменения в OrbitDB, чтобы у собеседника тоже обновилось
         if (isOwnMessage) {
           if (roomHandle && typeof (roomHandle as any).tombstoneMessage === 'function') {
             await (roomHandle as any).tombstoneMessage(messageId);
@@ -513,6 +543,7 @@ export const useChatLogic = () => {
     closeDialog,
     handleDownloadMessageText,
 
+    // 🔥 Экспорты для UI вложений
     fileInputRef,
     isUploadingFile,
     acceptedFileTypes,
@@ -521,6 +552,7 @@ export const useChatLogic = () => {
     selectedFile,
     removeSelectedFile,
 
+    // 🔥 Экспорты для UI ответа на сообщение
     replyingTo,
     handleReplyToMessage,
     cancelReply,
