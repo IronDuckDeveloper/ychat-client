@@ -28,6 +28,7 @@ import ReplyPreview from '../components/ReplyPreview.tsx'; // 🔥 Цитата 
 import ContextMenu from '../components/ContextMenu';
 import { ConfirmModal } from '../components/ConfirmModal.tsx';
 import { CONFIG } from '../lib/p2p/config.ts';
+import { buildReplyInfo } from '../lib/p2p/services/roomService.ts';
 
 // Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
@@ -105,6 +106,8 @@ const Chat = () => {
     handleDownloadMessageText,
     isHiddenMode,
     toggleHiddenMode,
+    cancelForward,
+    forwardMessage,
   } = useChatLogic();
 
   const [expandedHiddenIds, setExpandedHiddenIds] = useState<Set<string>>(
@@ -383,6 +386,13 @@ const Chat = () => {
                                         message.type === 'sent',
                                       )
                                     }
+                                    onForward={() => {
+                                      navigate('/contacts', {
+                                        state: {
+                                          forwardMessage: buildReplyInfo(message),
+                                        },
+                                      });
+                                    }}
                                   />
                                 )}
 
@@ -464,6 +474,12 @@ const Chat = () => {
                                                 onClick: () => {
                                                   setOpenTextMenuId(null);
                                                   setMenuAnchor(null);
+
+                                                  navigate('/contacts', {
+                                                    state: {
+                                                      forwardMessage: buildReplyInfo(message),
+                                                    },
+                                                  });
                                                 },
                                               },
                                               {
@@ -548,10 +564,20 @@ const Chat = () => {
               />
             )}
 
+            {/* 🔥 Плашка пересланного сообщения */}
+            {forwardMessage && (
+              <ReplyPreview
+                replyTo={forwardMessage}
+                title="Переслано"
+                variant="composer"
+                onRemove={cancelForward}
+              />
+            )}
+
             <div className="chat-input-row">
               <div className="input-container">
                 {/* Скрепка пропадает, пока в превью лежит файл или готовится ответ */}
-                {!selectedFile && !replyingTo && (
+                {!selectedFile && !replyingTo && !forwardMessage && (
                   <button
                     className="attachment-button"
                     aria-label="Attach file"
@@ -653,7 +679,7 @@ const Chat = () => {
                 disabled={
                   !isRoomReady ||
                   isUploadingFile ||
-                  (!draft.trim() && !selectedFile && !replyingTo)
+                  (!draft.trim() && !selectedFile && !replyingTo && !forwardMessage)
                 }
               >
                 <Send size={20} />

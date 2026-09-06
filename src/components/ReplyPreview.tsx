@@ -16,6 +16,7 @@ import '../styles/ReplyPreview.scss';
 interface ReplyPreviewProps {
   replyTo: ReplyInfo;
   variant?: 'composer' | 'quote';
+  title?: string;
   onRemove?: () => void;
   onClick?: () => void;
 }
@@ -57,6 +58,8 @@ const getReplyIconMeta = (replyTo: ReplyInfo): IconMeta => {
   return getFileIconMetaByName(replyTo.attachmentName);
 };
 
+// Текст важнее плейсхолдера вложения: если есть подпись/сообщение — показываем
+// её, даже если к сообщению приложен файл.
 const getReplySnippet = (replyTo: ReplyInfo): string => {
   if (replyTo.text?.trim()) return replyTo.text.trim();
   if (replyTo.attachmentName) return `📎 ${replyTo.attachmentName}`;
@@ -66,6 +69,7 @@ const getReplySnippet = (replyTo: ReplyInfo): string => {
 const ReplyPreview: React.FC<ReplyPreviewProps> = ({
   replyTo,
   variant = 'quote',
+  title,
   onRemove,
   onClick,
 }) => {
@@ -87,14 +91,17 @@ const ReplyPreview: React.FC<ReplyPreviewProps> = ({
         <Icon size={isComposer ? 18 : 16} />
       </div>
 
-      <span className="reply-preview-text">{snippet}</span>
+      <div className="reply-preview-body">
+        {title && <span className="reply-preview-title">{title}</span>}
+        <span className="reply-preview-text">{snippet}</span>
+      </div>
 
       {isComposer && onRemove && (
         <button
           type="button"
           className="reply-preview-remove"
-          title="Отменить ответ"
-          aria-label="Отменить ответ"
+          title="Убрать"
+          aria-label="Убрать"
           onClick={(e) => {
             e.stopPropagation();
             onRemove();

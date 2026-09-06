@@ -1,4 +1,7 @@
 import { User, Search, Share2, Plus, Trash2, RefreshCcw, MoreVertical, Ban, X, Copy } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import ReplyPreview from '../components/ReplyPreview.tsx';
+import type { ReplyInfo } from '../lib/p2p/services/roomService.ts';
 import { QRCodeSVG } from 'qrcode.react';
 import ProfileDrawer from '../components/ProfileDrawer';
 import ContactAvatar from '../components/ContactAvatar.tsx';
@@ -12,8 +15,20 @@ import ContextMenu from '../components/ContextMenu';
 import { CONFIG } from '../lib/p2p/config.ts';
 
 const ContactList = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const forwardMessage = location.state?.forwardMessage as ReplyInfo | undefined;
+
+  // 🔥 Закрыть плашку пересылки: чистим forwardMessage из location.state через
+  // replace-навигацию на ту же страницу. Простой setState тут не поможет —
+  // после reload страницы forwardMessage снова прочитается из истории браузера.
+  const dismissForwardMessage = () => {
+    const { forwardMessage: _drop, ...rest } = (location.state as any) || {};
+    navigate(location.pathname, { replace: true, state: rest });
+  };
+
   const {
-    navigate, isLoading, isProfileOpen, setIsProfileOpen,
+    navigate: navigateLogic, isLoading, isProfileOpen, setIsProfileOpen,
     myNickname, myBio, myAvatarUrl, myPrivacy, peerId, contacts, filteredContacts, dialogConfig, 
     toastMessage, showToast, isNetworkReady, handleCopyContactId,
     
@@ -209,8 +224,12 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                   e.stopPropagation();
                   return;
                 }
-                navigate(`/chat/${contact.id}`, { 
-                  state: { contactName: contact.nickname || contact.id, contact: contact } 
+                navigateLogic(`/chat/${contact.id}`, { 
+                  state: { 
+                    contactName: contact.nickname || contact.id, 
+                    contact: contact,
+                    forwardMessage: forwardMessage, // 🔥 Прокидываем сообщение в целевой чат
+                  } 
                 });
               }}
             >
@@ -319,6 +338,18 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
         )
       }
       </div>
+
+      {/* 🔥 Плашка пересылки */}
+      {forwardMessage && (
+        <div className="forward-preview-container">
+          <ReplyPreview
+            replyTo={forwardMessage}
+            title="Переслано"
+            variant="composer"
+            onRemove={dismissForwardMessage}
+          />
+        </div>
+      )}
 
       {isShareModalOpen && (
         <div className="modal-overlay" onClick={() => setIsShareModalOpen(false)}>

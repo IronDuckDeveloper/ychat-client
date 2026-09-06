@@ -210,6 +210,20 @@
   }
 }
 
+// 🔥 Плашка пересылаемого сообщения (внизу списка контактов, выбор адресата)
+.forward-preview-container {
+  padding: 12px 16px;
+  background-color: $text_variant;
+  border-top: 1px solid rgba($chat-bg-dark, 0.1);
+  flex-shrink: 0;
+  box-shadow: 0 -4px 12px rgba($chat-bg-dark, 0.05);
+  z-index: 10;
+
+  .reply-preview {
+    margin: 0;
+  }
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;

@@ -28,6 +28,23 @@ export interface ChatMessage {
   replyTo?: ReplyInfo;
 }
 
+// Строит денормализованный снимок сообщения для "Ответить"/"Переслать".
+// Важно: не присваивать полям undefined — IPLD (dag-cbor), в отличие от
+// JSON.stringify, не дропает такие ключи молча, а роняет db.put() с ошибкой
+// "`undefined` is not supported by the IPLD Data Model". Поэтому добавляем
+// поле только тогда, когда значение реально есть.
+export const buildReplyInfo = (message: {
+  id: string;
+  text?: string;
+  attachment?: FileAttachment;
+}): ReplyInfo => {
+  const info: ReplyInfo = { id: message.id };
+  if (message.text) info.text = message.text;
+  if (message.attachment?.name) info.attachmentName = message.attachment.name;
+  if (message.attachment?.type) info.attachmentMime = message.attachment.type;
+  return info;
+};
+
 export interface RoomActions {
   sendMessage: (text: string, attachment?: FileAttachment, hidden?: boolean, replyTo?: ReplyInfo) => Promise<void>;
   tombstoneMessage: (msgId: string) => Promise<void>;

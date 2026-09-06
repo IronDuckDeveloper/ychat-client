@@ -5,6 +5,7 @@ import { useIPFS } from './useIPFS.ts';
 import {
   clearEntireChat,
   getDeterministicRoomName,
+  buildReplyInfo,
   type ChatMessage,
   type RoomActions,
   type ReplyInfo,
@@ -26,6 +27,7 @@ import {
 interface RouterState {
   contactName?: string;
   contact?: ContactItem;
+  forwardMessage?: ReplyInfo;
 }
 
 export const useChatLogic = () => {
@@ -66,6 +68,10 @@ export const useChatLogic = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   // Сообщение, на которое отвечаем (превью над инпутом); аттач и ответ взаимоисключающие
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
+  // 🔥 Стейт для пересылаемого сообщения (берётся из роутера)
+  const [forwardMessage, setForwardMessage] = useState<ReplyInfo | null>(
+    routerState?.forwardMessage || null
+  );
   // 🔥 Логика скрытых сообщений
   const [isHiddenMode, setIsHiddenMode] = useState(false);
   const toggleHiddenMode = () => setIsHiddenMode((prev) => !prev);
@@ -119,19 +125,28 @@ export const useChatLogic = () => {
   // Ответ на сообщение: кладём денормализованный снимок в replyingTo.
   // Аттач при ответе запрещён — сбрасываем уже выбранный файл, если был.
   const handleReplyToMessage = (message: ChatMessage) => {
-    // Важно: НЕ присваивать undefined полям объекта — IPLD (dag-cbor)
-    // в отличие от JSON.stringify не дропает такие ключи молча, а падает
-    // с ошибкой при db.put(). Добавляем поле, только если значение есть.
-    const info: ReplyInfo = { id: message.id };
-    if (message.text) info.text = message.text;
-    if (message.attachment?.name) info.attachmentName = message.attachment.name;
-    if (message.attachment?.type) info.attachmentMime = message.attachment.type;
-
-    setReplyingTo(info);
+    setReplyingTo(buildReplyInfo(message));
     removeSelectedFile();
   };
 
   const cancelReply = () => setReplyingTo(null);
+
+  // 🔥 Пересылаемое сообщение приходит через location.state, который браузер
+  // сохраняет в истории. Если просто сбросить forwardMessage в React-стейте,
+  // после reload той же страницы initializer снова прочитает location.state
+  // и плашка "воскреснет". Поэтому при отмене/отправке дополнительно чистим
+  // сам location.state через navigate(..., { replace: true }).
+  const clearForwardRouteState = () => {
+    if (routerState && 'forwardMessage' in routerState) {
+      const { forwardMessage: _drop, ...rest } = routerState;
+      navigate(location.pathname, { replace: true, state: rest });
+    }
+  };
+
+  const cancelForward = () => {
+    setForwardMessage(null);
+    clearForwardRouteState();
+  };
 
   // Закрытие меню вложений при клике вне его области
   useEffect(() => {
@@ -372,12 +387,12 @@ export const useChatLogic = () => {
 
   const handleSendMessage = async () => {
     const text = draft.trim();
-    if ((!text && !selectedFile && !replyingTo) || !roomHandle) return;
+    if ((!text && !selectedFile && !replyingTo && !forwardMessage) || !roomHandle) return;
 
     isUserScrolledUp.current = false;
     const sendAsHidden = isHiddenMode;
     const fileToSend = selectedFile;
-    const replyToSend = replyingTo;
+    const replyToSend = replyingTo || forwardMessage;
 
     try {
       const now = Date.now();
@@ -401,6 +416,9 @@ export const useChatLogic = () => {
       setIsHiddenMode(false); // 👈 сбрасываем режим после отправки — по умолчанию не "залипает" на следующее сообщение
       setSelectedFile(null);
       setReplyingTo(null);
+      setForwardMessage(null);
+      clearForwardRouteState(); // иначе после reload этой же страницы плашка пересылки вернётся
+
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -554,6 +572,8 @@ export const useChatLogic = () => {
     handleFileSelect,
     selectedFile,
     removeSelectedFile,
+    forwardMessage,
+    cancelForward,
 
     // 🔥 Экспорты для UI ответа на сообщение
     replyingTo,
