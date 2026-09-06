@@ -31,6 +31,7 @@ interface MessageAttachmentProps {
   attachment: FileAttachment;
   onDelete?: () => void;
   onReply?: () => void;
+  onForward?: () => void;
   hidden?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -39,6 +40,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   attachment,
   onDelete,
   onReply,
+  onForward,
   hidden,
   onToggleCollapse,
 }) => {
@@ -388,15 +390,20 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 setMenuAnchor(null);
               },
             },
-            {
-              label: 'Переслать',
-              icon: <Forward size={16} />,
-              onClick: () => {
-                console.log('Переслать', attachment.cid);
-                setIsMenuOpen(false);
-                setMenuAnchor(null);
-              },
-            },
+              ...(onForward
+                ? [
+                  {
+                    label: 'Переслать',
+                    icon: <Forward size={16} />,
+                    onClick: (e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      onForward();
+                      setIsMenuOpen(false);
+                      setMenuAnchor(null);
+                    },
+                  },
+                ]
+              : []),
             {
               label: 'Удалить',
               icon: <Trash2 size={16} />,
