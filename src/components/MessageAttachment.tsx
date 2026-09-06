@@ -443,8 +443,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             className="attachment-image-wrapper"
             style={{ position: 'relative' }}
           >
-            {attachmentMenu}
-
             {fileUrl ? (
               <img
                 src={fileUrl}
@@ -483,6 +481,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 </div>
               </div>
             )}
+            {attachmentMenu}
           </div>
         </div>
 
@@ -587,8 +586,6 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
     return (
       <div className="attachment-wrapper">
         <div className="attachment-video-wrapper">
-          {attachmentMenu}
-
           {fileUrl ? (
             <video
               key={fileUrl}
@@ -646,6 +643,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
               ) : null}
             </div>
           )}
+          {attachmentMenu}
         </div>
       </div>
     );

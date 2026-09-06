@@ -15,6 +15,12 @@ export interface ReplyInfo {
   text?: string;
   attachmentName?: string;
   attachmentMime?: string;
+  attachment?: FileAttachment;
+}
+
+export interface ForwardedFrom {
+    senderId: string;
+    senderName: string;
 }
 
 export interface ChatMessage {
@@ -26,6 +32,7 @@ export interface ChatMessage {
   attachment?: FileAttachment;
   hidden?: boolean;
   replyTo?: ReplyInfo;
+  forwardedFrom?: ForwardedFrom;
 }
 
 // Строит денормализованный снимок сообщения для "Ответить"/"Переслать".
@@ -42,11 +49,18 @@ export const buildReplyInfo = (message: {
   if (message.text) info.text = message.text;
   if (message.attachment?.name) info.attachmentName = message.attachment.name;
   if (message.attachment?.type) info.attachmentMime = message.attachment.type;
+  if (message.attachment) info.attachment = message.attachment;
   return info;
 };
 
 export interface RoomActions {
-  sendMessage: (text: string, attachment?: FileAttachment, hidden?: boolean, replyTo?: ReplyInfo) => Promise<void>;
+  sendMessage: (
+    text: string, 
+    attachment?: FileAttachment, 
+    hidden?: boolean, 
+    replyTo?: ReplyInfo,
+    forwardedFrom?: { senderId: string; senderName: string }
+  ) => Promise<void>;
   tombstoneMessage: (msgId: string) => Promise<void>;
   deleteMessageLocally: (msgId: string) => void;
   leaveRoom: () => void;
@@ -141,7 +155,8 @@ export async function joinRoom(
 
       for (const entry of chronologicalChunk) {
         const messageData = entry.payload?.value || entry.value;
-        if (messageData && (messageData.text || messageData.attachment)) {
+        
+        if (messageData && (messageData.text || messageData.attachment || messageData.replyTo)) {
           const isMine = messageData.whoSent === orbitdb.identity.id;
           const msgId = messageData._id || entry.hash;
           const hiddenLocally = isHiddenLocally(msgId);
@@ -155,6 +170,7 @@ export async function joinRoom(
             type: isMine ? 'sent' : 'received',
             hidden: messageData.hidden === true,
             replyTo: hiddenLocally ? undefined : messageData.replyTo,
+            forwardedFrom: hiddenLocally ? undefined : messageData.forwardedFrom,
           }, true);
         }
       }
@@ -169,7 +185,8 @@ export async function joinRoom(
     if (!entry) return;
 
     const messageData = entry.payload?.value || entry.value;
-    if (messageData && (messageData.text || messageData.attachment)) {
+
+    if (messageData && (messageData.text || messageData.attachment || messageData.replyTo)) {
       const isMine = messageData.whoSent === orbitdb.identity.id;
       const msgId = messageData._id || entry.hash || entry.key;
       const hiddenLocally = isHiddenLocally(msgId);
@@ -183,6 +200,7 @@ export async function joinRoom(
         type: isMine ? 'sent' : 'received',
         hidden: messageData.hidden === true,
         replyTo: hiddenLocally ? undefined : messageData.replyTo,
+        forwardedFrom: hiddenLocally ? undefined : messageData.forwardedFrom,
       }, false);
     }
   };
@@ -206,7 +224,13 @@ export async function joinRoom(
   libp2p.getPeers().forEach((peerId: PeerId) => notifyArchivist(libp2p, peerId, dbAddress));
 
   return {
-    sendMessage: async (text: string, attachment?: FileAttachment, hidden?: boolean, replyTo?: ReplyInfo) => {
+    sendMessage: async (
+      text: string, 
+      attachment?: FileAttachment, 
+      hidden?: boolean, 
+      replyTo?: ReplyInfo, 
+      forwardedFrom?: ForwardedFrom
+    ) => {
       try {
         const messageObject: any = {
           _id: `msg_${orbitdb.identity.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -215,11 +239,10 @@ export async function joinRoom(
           ts: Date.now(),
         };
 
-        if (attachment) {
-          messageObject.attachment = attachment;
-        }
+        if (attachment) messageObject.attachment = attachment;
         if (hidden) messageObject.hidden = true;
         if (replyTo) messageObject.replyTo = replyTo;
+        if (forwardedFrom) messageObject.forwardedFrom = forwardedFrom;
 
         await db.put(messageObject);
       } catch (err: any) {
@@ -256,6 +279,8 @@ export async function joinRoom(
             _id: msgId,
             text: CONFIG.MSG.MESSAGE_DELETED,
             attachment: null,
+            replyTo: null,
+            forwardedFrom: null,
             hidden: false, 
           });
         }

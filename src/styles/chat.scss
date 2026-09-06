@@ -184,6 +184,21 @@
     flex-direction: column;
     gap: 6px;
 
+    &:has(.attachment-wrapper) {
+    .forwarded-message-indicator {
+      padding-top: 6px;
+      padding-left: 6px;
+      padding-right: 36px; // Защита от наезда на три точки меню
+    }
+  }
+
+    &:has(.reply-preview),
+    &:has(.forwarded-message-preview),
+    &:has(.reply-message-preview),
+    &.has-forwarded {
+      padding-top: 36px;
+    }
+
     &.system {
       align-self: center;
       background-color: $secondary;
@@ -224,6 +239,9 @@
       top: 9px;
       right: 6px;
       z-index: 2;
+      display: flex;          /* Выстраиваем элементы в ряд */
+      align-items: center;    /* Выравниваем по вертикали */
+      gap: 4px;               /* Задаем отступ между кнопками */
     }
 
     .message-menu-btn {
@@ -448,5 +466,22 @@
   .attachment-collapse-wrap {
     display: flex;
     justify-content: flex-end;
+  }
+}
+
+.forwarded-message-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #64748b; // или цвет под вашу тему
+  margin-bottom: 6px;
+  font-style: italic;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding-right: 32px;
+
+  .forwarded-icon {
+    color: #3b82f6; // Синий акцент для иконки
   }
 }

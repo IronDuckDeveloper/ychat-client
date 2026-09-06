@@ -306,9 +306,11 @@ export const useChatLogic = () => {
                 !isBackgroundSync &&
                 message.type !== 'sent';
 
-              // Если текста нет (отправлен только файл), пишем заглушку в список чатов
               const displayNotificationText =
-                message.text || (message.attachment ? '📎 Вложение' : '');
+                message.text ||
+                (message.attachment ? '📎 Вложение' : '') ||
+                (message.replyTo ? `↪️ ${message.replyTo.text || 'Пересланное сообщение'}` : '');
+
               contactsService.updateLastMessage(
                 globalContactsDb,
                 peerId,
@@ -387,37 +389,70 @@ export const useChatLogic = () => {
 
   const handleSendMessage = async () => {
     const text = draft.trim();
-    if ((!text && !selectedFile && !replyingTo && !forwardMessage) || !roomHandle) return;
+    if ((!text && !selectedFile && !forwardMessage) || !roomHandle) return;
 
     isUserScrolledUp.current = false;
     const sendAsHidden = isHiddenMode;
     const fileToSend = selectedFile;
-    const replyToSend = replyingTo || forwardMessage;
+
+    const replyToSend = replyingTo ? buildReplyInfo(replyingTo) : undefined;
+    
+    // Безопасно собираем данные о пересылке
+    const forwardedFromData = forwardMessage
+      ? {
+          senderId: (forwardMessage as any).forwardedFrom?.senderId || (forwardMessage as any).whoSent || (forwardMessage as any).senderId || '',
+          senderName: (forwardMessage as any).forwardedFrom?.senderName || (forwardMessage as any).senderName || 'Неизвестный',
+        }
+      : undefined;
 
     try {
       const now = Date.now();
       let attachmentInfo: FileAttachment | undefined;
 
-      // Если к сообщению прикреплён файл — грузим его в Helia прямо сейчас,
-      // в момент отправки (а не сразу при выборе из проводника).
       if (fileToSend) {
         if (!globalHelia) return;
         setIsUploadingFile(true);
         attachmentInfo = await uploadFileToHelia(globalHelia, fileToSend);
       }
 
-      await roomHandle.sendMessage(
-        text,
-        attachmentInfo,
-        sendAsHidden,
-        replyToSend ?? undefined,
-      );
+      // --- ЛОГИКА ОТПРАВКИ ---
+      if (forwardMessage) {
+        // 1. Отправляем пересылаемое сообщение в его оригинальном виде (текст и/или файл)
+        await roomHandle.sendMessage(
+          forwardMessage.text || '', // Оригинальный текст
+          forwardMessage.attachment, // 🔥 Оригинальный файл (теперь он есть!)
+          sendAsHidden,
+          undefined, 
+          forwardedFromData,
+        );
+
+        // 2. Если ты еще и свой текст/файл добавил, отправляем его ВТОРЫМ сообщением следом
+        if (text || attachmentInfo) {
+          await roomHandle.sendMessage(
+            text,
+            attachmentInfo,
+            sendAsHidden,
+            undefined,
+            undefined,
+          );
+        }
+      } else {
+        // Обычная отправка или ответ
+        await roomHandle.sendMessage(
+          text,
+          attachmentInfo,
+          sendAsHidden,
+          replyToSend,
+          undefined,
+        );
+      }
+
       setDraft('');
-      setIsHiddenMode(false); // 👈 сбрасываем режим после отправки — по умолчанию не "залипает" на следующее сообщение
+      setIsHiddenMode(false);
       setSelectedFile(null);
       setReplyingTo(null);
       setForwardMessage(null);
-      clearForwardRouteState(); // иначе после reload этой же страницы плашка пересылки вернётся
+      clearForwardRouteState();
 
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -427,24 +462,21 @@ export const useChatLogic = () => {
         try {
           const myPeerId = (globalHelia as any).libp2p.peerId.toString();
           const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
-          const notificationText = attachmentInfo
-            ? text || `📎 Файл: ${attachmentInfo.name}`
-            : text;
+
+          let notificationText = 'Новое сообщение';
+          if (text) notificationText = text;
+          else if (attachmentInfo) notificationText = `📎 Файл: ${attachmentInfo.name}`;
+          else if (forwardMessage) notificationText = `↪️ Пересланное сообщение: ${forwardMessage.text || 'Вложение'}`;
+          else if (replyToSend) notificationText = `↩️ Ответ: ${replyToSend.text || 'Вложение'}`;
+
           const notificationData = { from: myPeerId, text: notificationText, ts: now };
-          const encoded = new TextEncoder().encode(
-            JSON.stringify(notificationData),
-          );
-          await (globalHelia as any).libp2p.services.pubsub.publish(
-            targetTopic,
-            encoded,
-          );
+          const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
+          await (globalHelia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
         } catch (err) {
           console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
         }
       }
     } catch (err) {
-      // Файл, текст и ответ умышленно НЕ сбрасываем при ошибке — чтобы можно было
-      // повторить отправку, не выбирая файл/сообщение заново.
       console.error('Ошибка отправки сообщения:', err);
     } finally {
       setIsUploadingFile(false);
@@ -520,7 +552,7 @@ export const useChatLogic = () => {
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id === messageId) {
-              return { ...m, text: CONFIG.MSG.MESSAGE_DELETED, attachment: undefined };
+              return { ...m, text: CONFIG.MSG.MESSAGE_DELETED, attachment: undefined, replyTo: undefined, };
             }
             return m;
           }),
