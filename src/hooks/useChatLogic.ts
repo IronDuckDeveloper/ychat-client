@@ -387,7 +387,7 @@ export const useChatLogic = () => {
     }
   };
 
-  const handleSendMessage = async () => {
+const handleSendMessage = async () => {
     const text = draft.trim();
     if ((!text && !selectedFile && !forwardMessage) || !roomHandle) return;
 
@@ -398,12 +398,72 @@ export const useChatLogic = () => {
     const replyToSend = replyingTo ? buildReplyInfo(replyingTo) : undefined;
     
     // Безопасно собираем данные о пересылке
-    const forwardedFromData = forwardMessage
-      ? {
-          senderId: (forwardMessage as any).forwardedFrom?.senderId || (forwardMessage as any).whoSent || (forwardMessage as any).senderId || '',
-          senderName: (forwardMessage as any).forwardedFrom?.senderName || (forwardMessage as any).senderName || 'Неизвестный',
+    let forwardedFromData = undefined;
+    if (forwardMessage) {
+      const fMsg = forwardMessage as any;
+      const origForwarded = fMsg.forwardedFrom;
+
+      // 1. Извлекаем ID отправителя оригинального сообщения
+      let senderId =
+        origForwarded?.senderId ||
+        fMsg.senderId ||
+        fMsg.whoSent ||
+        '';
+
+      // Определяем, является ли пересылаемое сообщение нашим собственным
+      const isMyMessage =
+        (nodeId && senderId === nodeId) ||
+        fMsg.type === 'sent' ||
+        fMsg.isMine === true;
+
+      if (isMyMessage && nodeId) {
+        senderId = nodeId;
+      } else if (!senderId && fMsg.type === 'received' && peerId) {
+        senderId = peerId;
+      }
+
+      // 2. Извлекаем имя отправителя из объекта пересылки
+      let senderName =
+        origForwarded?.senderName ||
+        fMsg.senderName ||
+        fMsg.whoSentName;
+
+      // 3. Если имя не передано, определяем его по контексту чата и контактам
+      if (!senderName || senderName === 'Неизвестный') {
+        if (isMyMessage) {
+          senderName = 'Я';
+        } else if (contact && (senderId === contact.id || senderId === peerId)) {
+          senderName = contact.nickname || displayName;
+        } else if (globalContactsDb && senderId) {
+          try {
+            const foundContact = await contactsService.getContactById(
+              globalContactsDb,
+              senderId
+            );
+            if (foundContact) {
+              senderName =
+                foundContact.nickname ||
+                (foundContact as any).displayName ||
+                (foundContact as any).name;
+            }
+          } catch (err) {
+            console.error('Ошибка определения имени контакта для пересылки:', err);
+          }
         }
-      : undefined;
+      }
+
+      // 4. Резервный вариант (показываем короткий ID, только если контакт нигде не найден)
+      if (!senderName || senderName === 'Неизвестный') {
+        senderName = senderId
+          ? `${senderId.slice(0, 6)}...${senderId.slice(-4)}`
+          : 'Неизвестный';
+      }
+
+      forwardedFromData = {
+        senderId,
+        senderName,
+      };
+    }
 
     try {
       const now = Date.now();
@@ -419,14 +479,14 @@ export const useChatLogic = () => {
       if (forwardMessage) {
         // 1. Отправляем пересылаемое сообщение в его оригинальном виде (текст и/или файл)
         await roomHandle.sendMessage(
-          forwardMessage.text || '', // Оригинальный текст
-          forwardMessage.attachment, // 🔥 Оригинальный файл (теперь он есть!)
+          forwardMessage.text || '',
+          forwardMessage.attachment,
           sendAsHidden,
           undefined, 
           forwardedFromData,
         );
 
-        // 2. Если ты еще и свой текст/файл добавил, отправляем его ВТОРЫМ сообщением следом
+        // 2. Если добавлен свой текст/файл, отправляем его вслед второй записью
         if (text || attachmentInfo) {
           await roomHandle.sendMessage(
             text,

@@ -103,6 +103,19 @@
         border-radius: $radius $radius 0 $radius;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 
+        // Если в сообщении есть пересылка, сдвигаем три точки ниже шапки
+        &:has(.forwarded-message-indicator) {
+          .message-menu-wrap {
+            top: 40px; /* Опускаем меню под строку "Переслано от:" */
+          }
+        }
+
+        &:has(.reply-message-indicator) {
+          .message-menu-wrap {
+            top: 40px;
+          }
+        }
+
         .text-content .chat-message-link {
           color: $secondary;
         }
@@ -130,6 +143,19 @@
 
         .text-content .chat-message-link {
           color: $secondary;
+        }
+
+        // Если в сообщении есть пересылка, сдвигаем три точки ниже шапки
+        &:has(.forwarded-message-indicator) {
+          .message-menu-wrap {
+            top: 40px; /* Опускаем меню под строку "Переслано от:" */
+          }
+        }
+
+        &:has(.reply-message-indicator) {
+          .message-menu-wrap {
+            top: 40px;
+          }
         }
 
         .message-menu-btn {
@@ -184,20 +210,16 @@
     flex-direction: column;
     gap: 6px;
 
-    &:has(.attachment-wrapper) {
-    .forwarded-message-indicator {
-      padding-top: 6px;
-      padding-left: 6px;
-      padding-right: 36px; // Защита от наезда на три точки меню
-    }
-  }
-
     &:has(.reply-preview),
     &:has(.forwarded-message-preview),
     &:has(.reply-message-preview),
     &.has-forwarded {
       padding-top: 36px;
     }
+    
+        &:has(.reply-message-indicator) {
+          padding-top: 12px;
+        }
 
     &.system {
       align-self: center;
@@ -236,7 +258,7 @@
 
     .message-menu-wrap {
       position: absolute;
-      top: 9px;
+      top: 6px;
       right: 6px;
       z-index: 2;
       display: flex;          /* Выстраиваем элементы в ряд */
@@ -266,6 +288,16 @@
     &:has(.attachment-video-wrapper),
     &:has(.attachment-file-card) {
       padding: 0.2rem;
+
+      .text-content {
+        padding: 0.4rem 0.55rem 0.3rem 0.55rem;
+      }
+
+      /* Компенсируем сжатый padding баббла */
+      .forwarded-message-indicator {
+        padding: 0.4rem 0.55rem 0.25rem 0.55rem;
+        margin-bottom: 0;
+      }
 
       .text-content {
         padding: 0.4rem 0.55rem 0.3rem 0.55rem;
@@ -479,9 +511,27 @@
   font-style: italic;
   padding-bottom: 4px;
   border-bottom: 1px solid rgba(0,0,0,0.05);
-  padding-right: 32px;
+  padding-right: 36px;
 
   .forwarded-icon {
     color: #3b82f6; // Синий акцент для иконки
+  }
+}
+
+.reply-message-indicator {
+  display: flex;
+  flex-direction: column;   // ← колонка
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 6px;
+  font-style: italic;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  padding-right: 36px;
+
+  > span {
+    font-weight: 500;
+    line-height: 1.2;
   }
 }

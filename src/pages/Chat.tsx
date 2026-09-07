@@ -114,6 +114,20 @@ const Chat = () => {
     new Set(),
   );
 
+  // Подшиваем имя отправителя к пересылаемому сообщению
+  const getForwardInfo = (messageToForward: any) => {
+    const senderName =
+      messageToForward.forwardedFrom?.senderName ||
+      (messageToForward.type === 'sent'
+        ? 'Я'
+        : contact?.nickname || displayName || 'Неизвестный');
+
+    return {
+      ...messageToForward,
+      senderName,
+    };
+  };
+
   const toggleHiddenExpand = (id: string) => {
     setExpandedHiddenIds((prev) => {
       const next = new Set(prev);
@@ -363,13 +377,16 @@ const Chat = () => {
                               <>
                                 {/* 1. БЛОК ОТВЕТА (Цитата) */}
                                   {message.replyTo && !isDeleted && (
-                                    <ReplyPreview
-                                      replyTo={message.replyTo}
-                                      variant="quote"
-                                      onClick={() =>
-                                        scrollToMessage(message.replyTo!.id)
-                                      }
-                                    />
+                                    <div className="reply-message-indicator">
+                                      <span>Ответ на:</span>
+                                      <ReplyPreview
+                                        replyTo={message.replyTo}
+                                        variant="quote"
+                                        onClick={() =>
+                                          scrollToMessage(message.replyTo!.id)
+                                        }
+                                      />
+                                    </div>
                                   )}
 
                                   {/* 2. ПЕРЕСЛАННОЕ СООБЩЕНИЕ */}
@@ -400,7 +417,7 @@ const Chat = () => {
                                     onForward={() => {
                                       navigate('/contacts', {
                                         state: {
-                                          forwardMessage: buildReplyInfo(message),
+                                          forwardMessage: getForwardInfo(message)
                                         },
                                       });
                                     }}
@@ -496,7 +513,7 @@ const Chat = () => {
                                               navigate('/contacts', {
                                                 state: {
                                                   forwardMessage:
-                                                    buildReplyInfo(message),
+                                                    getForwardInfo(message),
                                                 },
                                               });
                                             },
@@ -573,6 +590,7 @@ const Chat = () => {
             {replyingTo && (
               <ReplyPreview
                 replyTo={replyingTo}
+                title="Ответ на"
                 variant="composer"
                 onRemove={cancelReply}
               />

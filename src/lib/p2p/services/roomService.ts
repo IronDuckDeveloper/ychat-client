@@ -16,6 +16,9 @@ export interface ReplyInfo {
   attachmentName?: string;
   attachmentMime?: string;
   attachment?: FileAttachment;
+  whoSent?: string;
+  senderName?: string;
+  forwardedFrom?: ForwardedFrom;
 }
 
 export interface ForwardedFrom {
@@ -44,12 +47,22 @@ export const buildReplyInfo = (message: {
   id: string;
   text?: string;
   attachment?: FileAttachment;
+  whoSent?: string;
+  senderName?: string;
+  forwardedFrom?: ForwardedFrom;
 }): ReplyInfo => {
   const info: ReplyInfo = { id: message.id };
+  
   if (message.text) info.text = message.text;
   if (message.attachment?.name) info.attachmentName = message.attachment.name;
   if (message.attachment?.type) info.attachmentMime = message.attachment.type;
   if (message.attachment) info.attachment = message.attachment;
+  
+  // 🔥 Сохраняем данные об отправителе для пересылки
+  if (message.whoSent) info.whoSent = message.whoSent;
+  if ((message as any).senderName) info.senderName = (message as any).senderName;
+  if (message.forwardedFrom) info.forwardedFrom = message.forwardedFrom;
+
   return info;
 };
 
