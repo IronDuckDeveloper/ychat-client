@@ -15,6 +15,9 @@ import {
   Eye,
   EyeOff,
   ChevronUp,
+  Camera,
+  Video,
+  Mic,
 } from 'lucide-react';
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
@@ -28,7 +31,9 @@ import ReplyPreview from '../components/ReplyPreview.tsx'; // 🔥 Цитата 
 import ContextMenu from '../components/ContextMenu';
 import { ConfirmModal } from '../components/ConfirmModal.tsx';
 import { CONFIG } from '../lib/p2p/config.ts';
-import { buildReplyInfo } from '../lib/p2p/services/roomService.ts';
+import CameraCaptureModal from '../components/CameraCaptureModal.tsx';
+import VideoCaptureModal from '../components/VideoCaptureModal.tsx';
+import AudioRecordModal from '../components/AudioRecordModal.tsx';
 
 // Вспомогательная функция для форматирования даты (например: "28 мая 2026")
 const formatDateSeparator = (ts: number) => {
@@ -108,6 +113,21 @@ const Chat = () => {
     toggleHiddenMode,
     cancelForward,
     forwardMessage,
+    cameraInputRef,
+    triggerCameraCapture,
+    isCameraModalOpen,
+    closeCameraModal,
+    handleCameraCapture,
+    videoInputRef,
+    triggerVideoCapture,
+    isVideoModalOpen,
+    closeVideoModal,
+    handleVideoCapture,
+    audioInputRef,
+    triggerAudioCapture,
+    isAudioModalOpen,
+    closeAudioModal,
+    handleAudioCapture,
   } = useChatLogic();
 
   const [expandedHiddenIds, setExpandedHiddenIds] = useState<Set<string>>(
@@ -577,6 +597,39 @@ const Chat = () => {
               onChange={handleFileSelect}
             />
 
+            {/* 🔥 Скрытый инпут для съёмки фото с камеры устройства */}
+            <input
+              title="Сделать фото"
+              type="file"
+              ref={cameraInputRef}
+              style={{ display: 'none' }}
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileSelect}
+            />
+
+            {/* 🔥 Скрытый инпут для съёмки видео с камеры устройства */}
+            <input
+              title="Снять видео"
+              type="file"
+              ref={videoInputRef}
+              style={{ display: 'none' }}
+              accept="video/*"
+              capture="environment"
+              onChange={handleFileSelect}
+            />
+
+            {/* 🔥 Скрытый инпут для записи голосового с микрофона устройства */}
+            <input
+              title="Записать голосовое"
+              type="file"
+              ref={audioInputRef}
+              style={{ display: 'none' }}
+              accept="audio/*"
+              capture="user"
+              onChange={handleFileSelect}
+            />
+
             {/* 🔥 Превью выбранного, но ещё не отправленного файла */}
             {selectedFile && (
               <SelectedFilePreview
@@ -703,6 +756,53 @@ const Chat = () => {
                   }
                   disabled={!isRoomReady || isUploadingFile}
                 />
+
+                {/* 🔥 Камера и видео пропадают, пока в превью лежит файл, готовится ответ или пересылка */}
+                {!selectedFile && !replyingTo && !forwardMessage && (
+                  <>
+                    <button
+                      type="button"
+                      className="camera-button"
+                      aria-label="Снять видео"
+                      title="Снять видео"
+                      disabled={!isRoomReady || isUploadingFile}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerVideoCapture();
+                      }}
+                    >
+                      <Video size={20} className="camera-icon" />
+                    </button>
+
+                    <button
+                      type="button"
+                      className="camera-button"
+                      aria-label="Сделать фото"
+                      title="Сделать фото"
+                      disabled={!isRoomReady || isUploadingFile}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerCameraCapture();
+                      }}
+                    >
+                      <Camera size={20} className="camera-icon" />
+                    </button>
+
+                        <button
+                          type="button"
+                          className="camera-button"
+                          aria-label="Записать голосовое"
+                          title="Записать голосовое"
+                          disabled={!isRoomReady || isUploadingFile}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerAudioCapture();
+                          }}
+                        >
+                          <Mic size={20} className="camera-icon" />
+                        </button>
+                  </>
+                )}
               </div>
               <button
                 className="send-button"
@@ -728,6 +828,24 @@ const Chat = () => {
         isDanger={dialogConfig.isDanger}
         onConfirm={dialogConfig.onConfirm}
         onCancel={closeDialog}
+      />
+
+      <CameraCaptureModal
+        isOpen={isCameraModalOpen}
+        onClose={closeCameraModal}
+        onCapture={handleCameraCapture}
+      />
+
+      <VideoCaptureModal
+        isOpen={isVideoModalOpen}
+        onClose={closeVideoModal}
+        onCapture={handleVideoCapture}
+      />
+
+      <AudioRecordModal
+        isOpen={isAudioModalOpen}
+        onClose={closeAudioModal}
+        onCapture={handleAudioCapture}
       />
     </div>
   );

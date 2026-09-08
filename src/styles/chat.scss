@@ -367,6 +367,36 @@
       }
     }
 
+        .camera-button {
+      background: none;
+      border: none;
+      padding: 0;
+      margin-left: 6px;
+      margin-right: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: none !important;
+      filter: none !important;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        .camera-icon {
+          transform: scale(1.08);
+        }
+      }
+
+      .camera-icon {
+        color: $text;
+        cursor: pointer;
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+
     textarea {
       flex: 1;
       background-color: transparent;

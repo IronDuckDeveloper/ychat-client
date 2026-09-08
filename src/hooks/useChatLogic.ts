@@ -60,8 +60,26 @@ export const useChatLogic = () => {
 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
+  // 🔥 Модалка съёмки фото на десктопе (когда capture не открывает нативную камеру)
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+
+  const isMobileDevice = () => {
+    if ('userAgentData' in navigator && (navigator as any).userAgentData) {
+      return !!(navigator as any).userAgentData.mobile;
+    }
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  };
+
+  // 🔥 Запись голосового сообщения: тот же паттерн, что и с фото/видео
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
+  // 🔥 Съёмка видео: тот же паттерн, что и с фото
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   // 🔥 Логика чистой архитектуры для вложений файлов
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 🔥 Отдельный скрытый инпут для съёмки фото с камеры устройства
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
   // Файл, выбранный пользователем, но ещё не отправленный (превью над инпутом)
@@ -107,6 +125,67 @@ export const useChatLogic = () => {
     }, 10);
   };
 
+  // 🔥 Съёмка фото: открывает системную камеру устройства через отдельный
+  // input[type=file][capture]. Результат кладётся в тот же handleFileSelect,
+  // поэтому фото проходит по тому же пути превью/отправки, что и обычный файл.
+  const triggerCameraCapture = () => {
+    setIsAttachmentMenuOpen(false);
+
+    if (isMobileDevice()) {
+      setTimeout(() => {
+        cameraInputRef.current?.click();
+      }, 10);
+    } else {
+      setIsCameraModalOpen(true);
+    }
+  };
+
+const closeCameraModal = () => setIsCameraModalOpen(false);
+
+const triggerVideoCapture = () => {
+  setIsAttachmentMenuOpen(false);
+
+  if (isMobileDevice()) {
+    setTimeout(() => {
+      videoInputRef.current?.click();
+    }, 10);
+  } else {
+    setIsVideoModalOpen(true);
+  }
+};
+
+const closeVideoModal = () => setIsVideoModalOpen(false);
+
+const triggerAudioCapture = () => {
+  setIsAttachmentMenuOpen(false);
+
+  if (isMobileDevice()) {
+    setTimeout(() => {
+      audioInputRef.current?.click();
+    }, 10);
+  } else {
+    setIsAudioModalOpen(true);
+  }
+};
+
+const closeAudioModal = () => setIsAudioModalOpen(false);
+
+const handleAudioCapture = (file: File) => {
+  setSelectedFile(file);
+  setIsAudioModalOpen(false);
+};
+
+const handleVideoCapture = (file: File) => {
+  setSelectedFile(file);
+  setIsVideoModalOpen(false);
+};
+
+// Снимок из десктоп-модалки идёт по тому же пути, что и обычный файл
+const handleCameraCapture = (file: File) => {
+  setSelectedFile(file);
+  setIsCameraModalOpen(false);
+};
+
   // 🔥 Файл больше не грузится сразу: выбор кладёт File в selectedFile,
   // реальная загрузка в Helia происходит в handleSendMessage при отправке.
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
@@ -119,6 +198,15 @@ export const useChatLogic = () => {
     setSelectedFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = ''; // Сбрасываем инпут для возможности повторного выбора того же файла
+    }
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+    if (videoInputRef.current) {
+      videoInputRef.current.value = '';
+    }
+    if (audioInputRef.current) {
+      audioInputRef.current.value = '';
     }
   };
 
@@ -517,6 +605,15 @@ const handleSendMessage = async () => {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = '';
+      }
+      if (videoInputRef.current) {
+        videoInputRef.current.value = '';
+      }
+      if (audioInputRef.current) {
+        audioInputRef.current.value = '';
+      }
 
       if (globalHelia && peerId) {
         try {
@@ -666,6 +763,25 @@ const handleSendMessage = async () => {
     removeSelectedFile,
     forwardMessage,
     cancelForward,
+
+    // 🔥 Экспорты для съёмки фото с камеры
+    cameraInputRef,
+    triggerCameraCapture,
+    isCameraModalOpen,
+    closeCameraModal,
+    handleCameraCapture,
+    // 🔥 Экспорты для съёмки видео
+    videoInputRef,
+    triggerVideoCapture,
+    isVideoModalOpen,
+    closeVideoModal,
+    handleVideoCapture,
+    // 🔥 Экспорты для записи голосового
+    audioInputRef,
+    triggerAudioCapture,
+    isAudioModalOpen,
+    closeAudioModal,
+    handleAudioCapture,
 
     // 🔥 Экспорты для UI ответа на сообщение
     replyingTo,

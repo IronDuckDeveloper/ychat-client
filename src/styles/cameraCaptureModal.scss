@@ -1,0 +1,201 @@
+@import './variables.scss';
+
+.camera-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.camera-modal {
+  position: relative;
+  width: min(480px, 92vw);
+  background: $chat-bg-light;
+  border-radius: $radius;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.camera-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.65);
+  }
+}
+
+.camera-modal-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.camera-modal-video,
+.camera-modal-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); // зеркалим, как в обычных приложениях камеры
+}
+
+.camera-modal-error {
+  color: white;
+  padding: 1.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.camera-modal-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 1rem;
+}
+
+.camera-modal-shutter {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid $accent-prime;
+  background: white;
+  color: $accent-prime;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s;
+
+  &:hover {
+    transform: scale(1.06);
+  }
+}
+
+.camera-modal-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.6rem 1rem;
+  border-radius: 20px;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+
+  &:hover {
+    transform: scale(1.03);
+  }
+
+  &.primary {
+    background: $accent-prime;
+    color: $text_variant;
+  }
+
+  &.secondary {
+    background: rgba(0, 0, 0, 0.06);
+    color: $text;
+  }
+}
+
+.camera-modal-retry {
+  padding: 0.6rem 1.2rem;
+  border-radius: 20px;
+  border: none;
+  background: $accent-prime;
+  color: $text_variant;
+  cursor: pointer;
+}
+
+.camera-modal-rec-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  z-index: 2;
+}
+
+.camera-modal-rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: recPulse 1s ease-in-out infinite;
+}
+
+@keyframes recPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.camera-modal-shutter.recording {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.audio-viewport {
+  background: $chat-bg-light;
+}
+
+.audio-modal-visualizer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.audio-modal-mic-icon {
+  color: $accent-prime;
+}
+
+.audio-modal-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 32px;
+
+  span {
+    width: 4px;
+    border-radius: 2px;
+    background: $accent-prime;
+    transition: height 0.08s ease;
+  }
+}
+
+.audio-modal-preview {
+  width: 100%;
+  padding: 0 1.5rem;
+
+  audio {
+    width: 100%;
+  }
+}
