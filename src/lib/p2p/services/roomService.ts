@@ -124,10 +124,43 @@ export async function joinRoom(
     throw err;
   }
 
-  const dbAddress = db.address.toString();
+const dbAddress = db.address.toString();
 
   let oldestHash: string | null = null; 
   let hasMore = true; 
+
+  // msgId -> снепшот контента, чтобы не терять и не дублировать события 'update'
+  const seen = new Map<string, string>();
+
+  const emitIfChanged = (messageData: any, isBackgroundSync: boolean) => {
+    if (!messageData?._id && !messageData?.id) return;
+    if (!(messageData.text || messageData.attachment || messageData.replyTo)) return;
+
+    const msgId = messageData._id || messageData.id;
+    const hiddenLocally = isHiddenLocally(msgId);
+    const snapshot = JSON.stringify({
+      t: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : messageData.text,
+      a: !!messageData.attachment,
+      h: messageData.hidden === true,
+    });
+
+    if (seen.get(msgId) === snapshot) return;
+    seen.set(msgId, snapshot);
+
+    const isMine = messageData.whoSent === orbitdb.identity.id;
+
+    onMessage({
+      id: msgId,
+      whoSent: messageData.whoSent,
+      text: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : (messageData.text || ''),
+      attachment: hiddenLocally ? undefined : messageData.attachment,
+      ts: messageData.ts || Date.now(),
+      type: isMine ? 'sent' : 'received',
+      hidden: messageData.hidden === true,
+      replyTo: hiddenLocally ? undefined : messageData.replyTo,
+      forwardedFrom: hiddenLocally ? undefined : messageData.forwardedFrom,
+    }, isBackgroundSync);
+  };
 
   const loadHistoryChunk = async (limit: number, beforeHash: string | null = null) => {
     const chunk: any[] = [];
@@ -168,58 +201,31 @@ export async function joinRoom(
 
       for (const entry of chronologicalChunk) {
         const messageData = entry.payload?.value || entry.value;
-        
-        if (messageData && (messageData.text || messageData.attachment || messageData.replyTo)) {
-          const isMine = messageData.whoSent === orbitdb.identity.id;
-          const msgId = messageData._id || entry.hash;
-          const hiddenLocally = isHiddenLocally(msgId);
-
-          onMessage({
-            id: msgId, 
-            whoSent: messageData.whoSent,
-            text: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : (messageData.text || ''),
-            attachment: hiddenLocally ? undefined : messageData.attachment,
-            ts: messageData.ts || Date.now(),
-            type: isMine ? 'sent' : 'received',
-            hidden: messageData.hidden === true,
-            replyTo: hiddenLocally ? undefined : messageData.replyTo,
-            forwardedFrom: hiddenLocally ? undefined : messageData.forwardedFrom,
-          }, true);
-        }
+        emitIfChanged(messageData, true);
       }
     }
   };
 
-  const chunkSize = CONFIG.CHUNK_SIZE || 15;
-  await loadHistoryChunk(chunkSize);
+  const onDbUpdate = async () => {
+    try {
+      const allRecords = await db.all();
+      const sorted = allRecords
+        .map((r: any) => r.value || r)
+        .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0));
 
-  const onDbUpdate = (...args: any[]) => {
-    const entry = args.length === 1 ? args[0] : args.find(a => a && (a.payload || a.value));
-    if (!entry) return;
-
-    const messageData = entry.payload?.value || entry.value;
-
-    if (messageData && (messageData.text || messageData.attachment || messageData.replyTo)) {
-      const isMine = messageData.whoSent === orbitdb.identity.id;
-      const msgId = messageData._id || entry.hash || entry.key;
-      const hiddenLocally = isHiddenLocally(msgId);
-
-      onMessage({
-        id: msgId,
-        whoSent: messageData.whoSent,
-        text: hiddenLocally ? CONFIG.MSG.MESSAGE_DELETED : (messageData.text || ''),
-        attachment: hiddenLocally ? undefined : messageData.attachment,
-        ts: messageData.ts || Date.now(),
-        type: isMine ? 'sent' : 'received',
-        hidden: messageData.hidden === true,
-        replyTo: hiddenLocally ? undefined : messageData.replyTo,
-        forwardedFrom: hiddenLocally ? undefined : messageData.forwardedFrom,
-      }, false);
+      for (const messageData of sorted) {
+        emitIfChanged(messageData, false);
+      }
+    } catch (e) {
+      console.error('❌ Ошибка обработки update-события OrbitDB:', e);
     }
   };
 
   db.events.off('update', onDbUpdate);
   db.events.on('update', onDbUpdate);
+
+  const chunkSize = CONFIG.CHUNK_SIZE || 15;
+  await loadHistoryChunk(chunkSize);
 
   const onConnect = (evt: any) => {
     const peerId = evt.detail as unknown as PeerId;
