@@ -1,73 +1,70 @@
-# React + TypeScript + Vite
+# ychat
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A personal, peer-to-peer encrypted chat application. No central server stores your messages — chat rooms live on IPFS/libp2p and replicate directly between peers.
 
-Currently, two official plugins are available:
+ychat consists of two repositories:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **ychat-client** *(this repo)* — React + TypeScript + Vite frontend
+- **[ychat-relay](https://github.com/IronDuckDeveloper/ychat-relay)** — Node.js relay/archivist server (bootstrap peer, rate-limit backstop, ban sync, session tokens)
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **P2P messaging** over libp2p + OrbitDB (documents store for rooms, keyvalue store for private/profile data) — no central message storage
+- **Spam-resistant by design** — a custom `RateLimitedAccessController` (sliding window + character cap) is enforced locally by every replicating peer via `canAppend`, so spam entries never propagate in the first place
+- **Message ownership** — writes are validated against sender identity embedded in the message `_id`
+- **Rich media** — camera and video capture (mobile `capture` attribute + desktop `getUserMedia`/`MediaRecorder`), file uploads with retry/backoff, WebP storage at rest with alpha-aware conversion back to JPEG/PNG on download
+- **Reply & forward** — denormalized reply snapshots, IPLD-safe (no `undefined` fields)
+- **Multilingual UI** via `react-i18next` — Russian (default), English, Spanish
+- **Nginx security gateway** in front of Kubo
 
-## Expanding the ESLint configuration
+## Tech stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+React · TypeScript · Vite · SCSS · Lucide React · Helia (IPFS/Kubo) · libp2p · OrbitDB v2 · gossipsub
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+> Dependency versions are intentionally pinned after a lengthy libp2p/OrbitDB/Helia compatibility pass — avoid bumping them casually.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Getting started
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Prerequisites
+
+- Node.js
+- A running `ychat-relay` instance to bootstrap against
+
+### Install
+
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Run in dev mode
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+### Build for production
+
+```bash
+npm run build
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+## Project layout (key files)
+
+| File | Purpose |
+|---|---|
+| `useChatLogic.ts` | Core chat state/behavior hook |
+| `Chat.tsx` | Main chat UI |
+| `roomService.ts` | OrbitDB room lifecycle |
+| `fileService.ts` | Upload/download, WebP conversion |
+| `hiddenMessagesService.ts` | Cross-device local message deletion (private keyvalue store) |
+| `src/i18n/` | Locale JSON files (ru/en/es) |
+
+## License
+
+TBD
