@@ -10,6 +10,8 @@ import {
   Music,
   Video as VideoIcon,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { ReplyInfo } from '../lib/p2p/services/roomService.ts';
 import '../styles/ReplyPreview.scss';
 
@@ -60,10 +62,10 @@ const getReplyIconMeta = (replyTo: ReplyInfo): IconMeta => {
 
 // Текст важнее плейсхолдера вложения: если есть подпись/сообщение — показываем
 // её, даже если к сообщению приложен файл.
-const getReplySnippet = (replyTo: ReplyInfo): string => {
+const getReplySnippet = (replyTo: ReplyInfo, t: TFunction): string => {
   if (replyTo.text?.trim()) return replyTo.text.trim();
   if (replyTo.attachmentName) return `📎 ${replyTo.attachmentName}`;
-  return '📎 Вложение';
+  return t('replyPreview.attachmentFallback');
 };
 
 const ReplyPreview: React.FC<ReplyPreviewProps> = ({
@@ -73,8 +75,9 @@ const ReplyPreview: React.FC<ReplyPreviewProps> = ({
   onRemove,
   onClick,
 }) => {
+  const { t } = useTranslation();
   const { Icon, color } = useMemo(() => getReplyIconMeta(replyTo), [replyTo]);
-  const snippet = useMemo(() => getReplySnippet(replyTo), [replyTo]);
+  const snippet = useMemo(() => getReplySnippet(replyTo, t), [replyTo, t]);
   const isComposer = variant === 'composer';
 
   return (
@@ -100,8 +103,8 @@ const ReplyPreview: React.FC<ReplyPreviewProps> = ({
         <button
           type="button"
           className="reply-preview-remove"
-          title="Убрать"
-          aria-label="Убрать"
+          title={t('replyPreview.remove')}
+          aria-label={t('replyPreview.remove')}
           onClick={(e) => {
             e.stopPropagation();
             onRemove();

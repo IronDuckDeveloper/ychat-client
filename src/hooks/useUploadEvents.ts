@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Toast {
   id: string;
@@ -7,6 +8,7 @@ interface Toast {
 }
 
 export function useUploadEvents() {
+  const { t } = useTranslation();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
@@ -20,7 +22,7 @@ export function useUploadEvents() {
     const onUploadRetrying = (evt: Event) => {
       const { fileName, attempt, maxRetries } = (evt as CustomEvent).detail;
       const id = crypto.randomUUID();
-      setToasts(prev => [...prev, { id, message: `${fileName}: повтор ${attempt}/${maxRetries}...`, kind: 'info' }]);
+      setToasts(prev => [...prev, { id, message: t('uploadEvents.retrying', { fileName, attempt, maxRetries }), kind: 'info' }]);
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
     };
 
@@ -39,7 +41,7 @@ export function useUploadEvents() {
       window.removeEventListener('uploadRetrying', onUploadRetrying);
       window.removeEventListener('authError', onAuthError);
     };
-  }, []);
+  }, [t]);
 
   return toasts;
 }

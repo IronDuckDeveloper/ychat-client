@@ -3,6 +3,7 @@ import { CONFIG } from '../config.ts';
 import { getOrOpenDb, globalHelia, activeDbs } from './authService.ts';
 import { getDeterministicRoomName } from './roomService.ts';
 import { notifyArchivist } from '../networking/connectionManager.ts';
+import i18n from '../../../i18n/config.ts';
 
 export interface ContactItem {
   id: string;               // PeerID контакта
@@ -281,7 +282,7 @@ export const updateLastMessage = async (
     const updatedContact: ContactItem = {
       ...contact,
       // 👇 Если скрытое — жестко пишем текст, иначе берем оригинальный text
-      lastMessage: isHidden ? 'Скрытое сообщение' : (text || ''),
+      lastMessage: isHidden ? i18n.t('contactsService.hiddenMessage') : (text || ''),
       lastMessageTime: timestamp,
       updatedAt: Math.max(contact.updatedAt || 0, timestamp),
       unreadCount: incrementUnread ? (contact.unreadCount || 0) + 1 : contact.unreadCount
@@ -443,8 +444,8 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
               
               // 👇 Проверяем флаг внутри сообщения OrbitDB (замените .hidden на нужное свойство, если оно называется иначе)
               const textPreview = latestMsg.hidden 
-                ? 'Скрытое сообщение' 
-                : (latestMsg.text ? latestMsg.text : (latestMsg.attachment ? '📎 Вложение' : ''));
+                ? i18n.t('contactsService.hiddenMessage') 
+                : (latestMsg.text ? latestMsg.text : (latestMsg.attachment ? i18n.t('contactsService.attachmentFallback') : ''));
 
               await saveContact(contactsDb, {
                 ...freshContact,

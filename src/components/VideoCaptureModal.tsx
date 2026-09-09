@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Video, Square, RotateCcw, Check } from 'lucide-react';
-import '../styles/cameraCaptureModal.scss'; // 🔥 Общие стили с фото-модалкой
+import { useTranslation } from 'react-i18next';
+import '../styles/cameraCaptureModal.scss';
 
 interface VideoCaptureModalProps {
   isOpen: boolean;
@@ -14,7 +15,6 @@ const formatDuration = (seconds: number) => {
   return `${m}:${s}`;
 };
 
-// Подбираем поддерживаемый браузером mimeType для записи
 const pickSupportedMimeType = () => {
   const candidates = [
     'video/webm;codecs=vp9,opus',
@@ -25,9 +25,8 @@ const pickSupportedMimeType = () => {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
 };
 
-// 🔥 Десктоп-аналог съёмки видео: на мобильных input[capture] сам открывает
-// нативную камеру для видео, здесь же — запись через getUserMedia + MediaRecorder.
 const VideoCaptureModal = ({ isOpen, onClose, onCapture }: VideoCaptureModalProps) => {
+  const { t } = useTranslation();
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -56,7 +55,7 @@ const VideoCaptureModal = ({ isOpen, onClose, onCapture }: VideoCaptureModalProp
       }
     } catch (err) {
       console.error('❌ Нет доступа к камере/микрофону:', err);
-      setError('Не удалось получить доступ к камере или микрофону. Проверьте разрешения браузера.');
+      setError(t('videoModal.mediaError'));
     }
   };
 
@@ -116,7 +115,7 @@ const VideoCaptureModal = ({ isOpen, onClose, onCapture }: VideoCaptureModalProp
       });
       setRecordedBlob(blob);
       setRecordedUrl(URL.createObjectURL(blob));
-      stopCamera(); // превью держим на записанном ролике, живой поток больше не нужен
+      stopCamera();
     };
 
     recorderRef.current = recorder;
@@ -162,7 +161,7 @@ const VideoCaptureModal = ({ isOpen, onClose, onCapture }: VideoCaptureModalProp
   return (
     <div className="camera-modal-overlay" onClick={handleClose}>
       <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="camera-modal-close" onClick={handleClose} aria-label="Закрыть">
+        <button className="camera-modal-close" onClick={handleClose} aria-label={t('videoModal.close')}>
           <X size={20} />
         </button>
 
@@ -192,24 +191,24 @@ const VideoCaptureModal = ({ isOpen, onClose, onCapture }: VideoCaptureModalProp
         <div className="camera-modal-controls">
           {error ? (
             <button className="camera-modal-retry" onClick={startCamera}>
-              Повторить попытку
+              {t('videoModal.retry')}
             </button>
           ) : recordedUrl ? (
             <>
               <button className="camera-modal-btn secondary" onClick={handleRetake}>
                 <RotateCcw size={18} />
-                Переснять
+                {t('videoModal.retake')}
               </button>
               <button className="camera-modal-btn primary" onClick={handleConfirm}>
                 <Check size={18} />
-                Отправить в превью
+                {t('videoModal.confirm')}
               </button>
             </>
           ) : isRecording ? (
             <button
               className="camera-modal-shutter recording"
               onClick={handleStopRecording}
-              aria-label="Остановить запись"
+              aria-label={t('videoModal.stopRecording')}
             >
               <Square size={20} fill="currentColor" />
             </button>
@@ -217,7 +216,7 @@ const VideoCaptureModal = ({ isOpen, onClose, onCapture }: VideoCaptureModalProp
             <button
               className="camera-modal-shutter"
               onClick={handleStartRecording}
-              aria-label="Начать запись"
+              aria-label={t('videoModal.startRecording')}
             >
               <Video size={22} />
             </button>

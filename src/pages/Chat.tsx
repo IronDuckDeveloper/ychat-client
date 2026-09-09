@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   Send,
@@ -25,9 +26,9 @@ import { globalContactsDb } from '../lib/p2p/services/authService.ts';
 import { getPeerRestrictionStatus } from '../lib/p2p/services/contactsService';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
-import MessageAttachment from '../components/MessageAttachment.tsx'; // 🔥 Импорт нового компонента
-import SelectedFilePreview from '../components/SelectedFilePreview.tsx'; // 🔥 Превью файла перед отправкой
-import ReplyPreview from '../components/ReplyPreview.tsx'; // 🔥 Цитата сообщения-ответа
+import MessageAttachment from '../components/MessageAttachment.tsx';
+import SelectedFilePreview from '../components/SelectedFilePreview.tsx';
+import ReplyPreview from '../components/ReplyPreview.tsx';
 import ContextMenu from '../components/ContextMenu';
 import { ConfirmModal } from '../components/ConfirmModal.tsx';
 import { CONFIG } from '../lib/p2p/config.ts';
@@ -35,11 +36,18 @@ import CameraCaptureModal from '../components/CameraCaptureModal.tsx';
 import VideoCaptureModal from '../components/VideoCaptureModal.tsx';
 import AudioRecordModal from '../components/AudioRecordModal.tsx';
 
-// Вспомогательная функция для форматирования даты (например: "28 мая 2026")
-const formatDateSeparator = (ts: number) => {
+// Локаль для форматирования даты берётся из текущего языка i18n
+const localeMap: Record<string, string> = {
+  ru: 'ru-RU',
+  en: 'en-US',
+  es: 'es-ES',
+};
+
+const formatDateSeparator = (ts: number, lang: string) => {
   const date = new Date(ts);
+  const locale = localeMap[lang] || 'en-US';
   return date
-    .toLocaleDateString('ru-RU', {
+    .toLocaleDateString(locale, {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -56,6 +64,7 @@ const formatTime = (ts?: number) => {
 };
 
 const Chat = () => {
+  const { t, i18n } = useTranslation();
   const { id } = useParams();
 
   const [isBlocked, setIsBlocked] = useState(false);
@@ -63,7 +72,6 @@ const Chat = () => {
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
   const [openTextMenuId, setOpenTextMenuId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  // 🔥 Подсветка сообщения при переходе по цитате ответа
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -134,13 +142,12 @@ const Chat = () => {
     new Set(),
   );
 
-  // Подшиваем имя отправителя к пересылаемому сообщению
   const getForwardInfo = (messageToForward: any) => {
     const senderName =
       messageToForward.forwardedFrom?.senderName ||
       (messageToForward.type === 'sent'
-        ? 'Я'
-        : contact?.nickname || displayName || 'Неизвестный');
+        ? t('chat.you', { defaultValue: 'Я' })
+        : contact?.nickname || displayName || t('chat.unknownContact'));
 
     return {
       ...messageToForward,
@@ -157,8 +164,6 @@ const Chat = () => {
     });
   };
 
-  // 🔥 Переход к сообщению-оригиналу по клику на цитату ответа.
-  // Работает, только если оригинал уже подгружен в текущий чанк истории.
   const scrollToMessage = (messageId: string) => {
     const el = document.getElementById(`msg-${messageId}`);
     if (!el) return;
@@ -201,11 +206,9 @@ const Chat = () => {
     }
   };
 
-  // Вспомогательная функция для распознавания и рендеринга ссылок в тексте
   const renderMessageText = (text: string) => {
     if (!text) return null;
 
-    // Регулярное выражение для поиска веб-ссылок (http, https, www)
     const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
     const parts = text.split(urlRegex);
 
@@ -213,7 +216,6 @@ const Chat = () => {
       const isUrl = /^https?:\/\/|^www\./i.test(part);
 
       if (isUrl) {
-        // Отделяем знаки препинания в конце ссылки (например, "https://example.com.")
         const match = part.match(/^(.*?)([.?!,)]*)$/);
         const cleanUrl = match ? match[1] : part;
         const trailingPunctuation = match ? match[2] : '';
@@ -224,12 +226,12 @@ const Chat = () => {
 
         return (
           <React.Fragment key={index}>
-            <a
-              href={href}
+            
+              <a href={href}
               target="_blank"
               rel="noopener noreferrer"
               className="chat-message-link"
-              onClick={(e) => e.stopPropagation()} // Предотвращаем клик по контекстному меню сообщения
+              onClick={(e) => e.stopPropagation()}
             >
               {cleanUrl}
             </a>
@@ -247,7 +249,7 @@ const Chat = () => {
       <ContactProfileDrawer
         isOpen={isContactProfileOpen}
         onClose={() => setIsContactProfileOpen(false)}
-        nickname={contact?.nickname || displayName || 'Неизвестный'}
+        nickname={contact?.nickname || displayName || t('chat.unknownContact')}
         bio={contact?.bio || ''}
         avatarUrl={avatarUrl}
       />
@@ -255,14 +257,14 @@ const Chat = () => {
       <header className="chat-header">
         <div className="header-left">
           <button
-            title="Назад"
+            title={t('chat.back')}
             className="back-button"
             onClick={() => navigate('/contacts', { replace: true })}
           >
             <ArrowLeft className="back-icon" size={20} />
           </button>
           <span className="contact-name">
-            {contact?.nickname || displayName || 'Неизвестный'}
+            {contact?.nickname || displayName || t('chat.unknownContact')}
           </span>
         </div>
 
@@ -275,9 +277,9 @@ const Chat = () => {
 
       {isBlocked ? (
         <div className="blocked-dialog-overlay">
-          <p>Пользователь заблокирован</p>
+          <p>{t('chat.userBlocked')}</p>
           <button className="unblock-delete-btn" onClick={onBack}>
-            Назад
+            {t('chat.back')}
           </button>
         </div>
       ) : (
@@ -288,7 +290,7 @@ const Chat = () => {
             onScroll={(e) => !isLoadingRef.current && handleScroll(e)}
           >
             {isLoadingMore && (
-              <div className="message system">Загрузка старых сообщений...</div>
+              <div className="message system">{t('chat.loadingOlderMessages')}</div>
             )}
 
             {messages.map((message, index) => {
@@ -307,7 +309,6 @@ const Chat = () => {
 
               return (
                 <React.Fragment key={message.id}>
-                  {/* Общая обёртка сообщения и времени */}
                   <div
                     id={`msg-${message.id}`}
                     className={`message-wrapper ${
@@ -318,7 +319,6 @@ const Chat = () => {
                           : 'system'
                     } ${highlightedId === message.id ? 'highlighted' : ''}`}
                   >
-                    {/* 1. БАББЛ СООБЩЕНИЯ */}
                     <div className="message">
                       {(() => {
                         const isDeleted =
@@ -331,13 +331,12 @@ const Chat = () => {
                         return (
                           <>
                             {isHiddenCollapsed ? (
-                              /* --- СВЕРНУТОЕ СОСТОЯНИЕ --- */
                               <>
                                 <div
                                   className="hidden-message-collapsed"
                                   onClick={() => toggleHiddenExpand(message.id)}
                                 >
-                                  <span>{CONFIG.MSG.HIDDEN_MESSAGE_LABEL}</span>
+                                  <span>{t('chat.hiddenMessageLabel')}</span>
                                   <ChevronUp
                                     size={16}
                                     className="hidden-message-arrow"
@@ -351,7 +350,7 @@ const Chat = () => {
                                   <button
                                     type="button"
                                     className="message-menu-btn"
-                                    title="Опции"
+                                    title={t('chat.options')}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (openTextMenuId === message.id) {
@@ -372,7 +371,7 @@ const Chat = () => {
                                       anchorEl={menuAnchor}
                                       items={[
                                         {
-                                          label: 'Удалить',
+                                          label: t('chat.delete'),
                                           icon: <Trash2 size={16} />,
                                           danger: true,
                                           onClick: () => {
@@ -393,12 +392,10 @@ const Chat = () => {
                                 </div>
                               </>
                             ) : (
-                              /* --- РАЗВЕРНУТОЕ СОСТОЯНИЕ --- */
                               <>
-                                {/* 1. БЛОК ОТВЕТА (Цитата) */}
                                   {message.replyTo && !isDeleted && (
                                     <div className="reply-message-indicator">
-                                      <span>Ответ на:</span>
+                                      <span>{t('chat.replyingToLabel')}</span>
                                       <ReplyPreview
                                         replyTo={message.replyTo}
                                         variant="quote"
@@ -409,11 +406,14 @@ const Chat = () => {
                                     </div>
                                   )}
 
-                                  {/* 2. ПЕРЕСЛАННОЕ СООБЩЕНИЕ */}
                                   {message.forwardedFrom && !isDeleted && (
                                     <div className="forwarded-message-indicator">
                                       <Forward size={14} className="forwarded-icon" />
-                                      <span>Переслано от: {message.forwardedFrom.senderName}</span>
+                                      <span>
+                                        {t('chat.forwardedFromLabel', {
+                                          name: message.forwardedFrom.senderName,
+                                        })}
+                                      </span>
                                     </div>
                                   )}
 
@@ -444,14 +444,14 @@ const Chat = () => {
                                   />
                                 )}
 
-                                {/* Текст сообщения */}
                                 {message.text && (
                                   <div className="text-content">
-                                    {renderMessageText(message.text)}
+                                    {message.text === CONFIG.MSG.MESSAGE_DELETED
+                                      ? t('chat.messageDeletedLabel')
+                                      : renderMessageText(message.text)}
                                   </div>
                                 )}
 
-                                {/* Меню «Три точки» — вынесено из-под условия текста */}
                                 {!isDeleted && !message.attachment && (
                                   <div
                                     className="message-menu-wrap"
@@ -464,7 +464,7 @@ const Chat = () => {
                                         <button
                                           type="button"
                                           className="hidden-message-collapse-btn"
-                                          title="Свернуть"
+                                          title={t('chat.collapse')}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             toggleHiddenExpand(message.id);
@@ -480,7 +480,7 @@ const Chat = () => {
                                     <button
                                       type="button"
                                       className="message-menu-btn"
-                                      title="Опции"
+                                      title={t('chat.options')}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (openTextMenuId === message.id) {
@@ -501,7 +501,7 @@ const Chat = () => {
                                         anchorEl={menuAnchor}
                                         items={[
                                           {
-                                            label: 'Ответить',
+                                            label: t('chat.reply'),
                                             icon: <Reply size={16} />,
                                             onClick: () => {
                                               handleReplyToMessage(message);
@@ -512,7 +512,7 @@ const Chat = () => {
                                           ...(message.text
                                             ? [
                                                 {
-                                                  label: 'Скачать',
+                                                  label: t('chat.download'),
                                                   icon: <Download size={16} />,
                                                   onClick: () => {
                                                     handleDownloadMessageText(
@@ -524,7 +524,7 @@ const Chat = () => {
                                               ]
                                             : []),
                                           {
-                                            label: 'Переслать',
+                                            label: t('chat.forward'),
                                             icon: <Forward size={16} />,
                                             onClick: () => {
                                               setOpenTextMenuId(null);
@@ -539,7 +539,7 @@ const Chat = () => {
                                             },
                                           },
                                           {
-                                            label: 'Удалить',
+                                            label: t('chat.delete'),
                                             icon: <Trash2 size={16} />,
                                             danger: true,
                                             onClick: () => {
@@ -563,10 +563,9 @@ const Chat = () => {
                             )}
                           </>
                         );
-                      })()} {/* Вызов анонимной функции */}
+                      })()}
                     </div>
 
-                    {/* 2. ВРЕМЯ */}
                     {message.ts && message.text !== CONFIG.MSG.MESSAGE_DELETED && (
                       <span className="message-time">{formatTime(message.ts)}</span>
                     )}
@@ -574,7 +573,7 @@ const Chat = () => {
 
                   {showDateSeparator && (
                     <div className="date-separator">
-                      {formatDateSeparator(message.ts)}
+                      {formatDateSeparator(message.ts, i18n.language)}
                     </div>
                   )}
                 </React.Fragment>
@@ -582,14 +581,13 @@ const Chat = () => {
             })}
 
             {!messages.length && !isLoadingMore && (
-              <div className="message system">Загрузка старых сообщений..</div>
+              <div className="message system">{t('chat.loadingOlderMessages')}</div>
             )}
           </div>
 
           <div className="chat-input-area">
-            {/* 🔥 Скрытый системный инпут для работы с файловой системой браузера */}
             <input
-              title="Выбрать файл"
+              title={t('chat.selectFile')}
               type="file"
               ref={fileInputRef}
               style={{ display: 'none' }}
@@ -597,9 +595,8 @@ const Chat = () => {
               onChange={handleFileSelect}
             />
 
-            {/* 🔥 Скрытый инпут для съёмки фото с камеры устройства */}
             <input
-              title="Сделать фото"
+              title={t('chat.takePhoto')}
               type="file"
               ref={cameraInputRef}
               style={{ display: 'none' }}
@@ -608,9 +605,8 @@ const Chat = () => {
               onChange={handleFileSelect}
             />
 
-            {/* 🔥 Скрытый инпут для съёмки видео с камеры устройства */}
             <input
-              title="Снять видео"
+              title={t('chat.recordVideo')}
               type="file"
               ref={videoInputRef}
               style={{ display: 'none' }}
@@ -619,9 +615,8 @@ const Chat = () => {
               onChange={handleFileSelect}
             />
 
-            {/* 🔥 Скрытый инпут для записи голосового с микрофона устройства */}
             <input
-              title="Записать голосовое"
+              title={t('chat.recordVoice')}
               type="file"
               ref={audioInputRef}
               style={{ display: 'none' }}
@@ -630,7 +625,6 @@ const Chat = () => {
               onChange={handleFileSelect}
             />
 
-            {/* 🔥 Превью выбранного, но ещё не отправленного файла */}
             {selectedFile && (
               <SelectedFilePreview
                 file={selectedFile}
@@ -639,21 +633,19 @@ const Chat = () => {
               />
             )}
 
-            {/* 🔥 Превью сообщения, на которое отвечаем */}
             {replyingTo && (
               <ReplyPreview
                 replyTo={replyingTo}
-                title="Ответ на"
+                title={t('chat.replyToTitle')}
                 variant="composer"
                 onRemove={cancelReply}
               />
             )}
 
-            {/* 🔥 Плашка пересланного сообщения */}
             {forwardMessage && (
               <ReplyPreview
                 replyTo={forwardMessage}
-                title="Переслано"
+                title={t('chat.forwardedTitle')}
                 variant="composer"
                 onRemove={cancelForward}
               />
@@ -661,11 +653,10 @@ const Chat = () => {
 
             <div className="chat-input-row">
               <div className="input-container">
-                {/* Скрепка пропадает, пока в превью лежит файл или готовится ответ */}
                 {!selectedFile && !replyingTo && !forwardMessage && (
                   <button
                     className="attachment-button"
-                    aria-label="Attach file"
+                    aria-label={t('chat.attachFile')}
                     disabled={!isRoomReady || isUploadingFile}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -677,7 +668,6 @@ const Chat = () => {
                       toggleAttachmentMenu(e);
                     }}
                   >
-                    {/* Если идет процесс хэширования файла, заменяем скрепку на спиннер */}
                     {isUploadingFile ? (
                       <div
                         className="spinner-icon"
@@ -699,11 +689,11 @@ const Chat = () => {
                 <button
                   type="button"
                   className={`hidden-mode-button ${isHiddenMode ? 'active' : ''}`}
-                  aria-label="Скрытое сообщение"
+                  aria-label={t('chat.hiddenMessageLabel')}
                   title={
                     isHiddenMode
-                      ? 'Сообщение будет скрыто'
-                      : 'Отправить как скрытое'
+                      ? t('chat.hiddenActiveHint')
+                      : t('chat.hiddenInactiveHint')
                   }
                   disabled={!isRoomReady || isUploadingFile}
                   onClick={toggleHiddenMode}
@@ -718,7 +708,7 @@ const Chat = () => {
                     anchorEl={menuAnchor}
                     items={[
                       {
-                        label: 'Фото/Видео',
+                        label: t('chat.photoVideo'),
                         icon: <ImageIcon size={16} />,
                         onClick: () => {
                           triggerFileInput('image');
@@ -726,7 +716,7 @@ const Chat = () => {
                         },
                       },
                       {
-                        label: 'Файл',
+                        label: t('chat.file'),
                         icon: <File size={16} />,
                         onClick: () => {
                           triggerFileInput('file');
@@ -734,7 +724,7 @@ const Chat = () => {
                         },
                       },
                       {
-                        label: 'Аудио',
+                        label: t('chat.audio'),
                         icon: <Music size={16} />,
                         onClick: () => {
                           triggerFileInput('audio');
@@ -751,20 +741,19 @@ const Chat = () => {
                   onKeyDown={handleKeyDown}
                   placeholder={
                     isUploadingFile
-                      ? 'Подготовка файла к отправке P2P...'
+                      ? t('chat.preparingFile')
                       : getInputPlaceholder()
                   }
                   disabled={!isRoomReady || isUploadingFile}
                 />
 
-                {/* 🔥 Камера и видео пропадают, пока в превью лежит файл, готовится ответ или пересылка */}
                 {!selectedFile && !replyingTo && !forwardMessage && (
                   <>
                     <button
                       type="button"
                       className="camera-button"
-                      aria-label="Снять видео"
-                      title="Снять видео"
+                      aria-label={t('chat.recordVideo')}
+                      title={t('chat.recordVideo')}
                       disabled={!isRoomReady || isUploadingFile}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -777,8 +766,8 @@ const Chat = () => {
                     <button
                       type="button"
                       className="camera-button"
-                      aria-label="Сделать фото"
-                      title="Сделать фото"
+                      aria-label={t('chat.takePhoto')}
+                      title={t('chat.takePhoto')}
                       disabled={!isRoomReady || isUploadingFile}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -791,8 +780,8 @@ const Chat = () => {
                         <button
                           type="button"
                           className="camera-button"
-                          aria-label="Записать голосовое"
-                          title="Записать голосовое"
+                          aria-label={t('chat.recordVoice')}
+                          title={t('chat.recordVoice')}
                           disabled={!isRoomReady || isUploadingFile}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -806,7 +795,7 @@ const Chat = () => {
               </div>
               <button
                 className="send-button"
-                aria-label="Send message"
+                aria-label={t('chat.sendMessage')}
                 onClick={handleSendMessage}
                 disabled={
                   !isRoomReady ||

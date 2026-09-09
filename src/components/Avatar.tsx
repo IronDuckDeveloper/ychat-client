@@ -1,5 +1,5 @@
 import React from 'react';
-import { User } from 'lucide-react'; // Или та библиотека иконок, которую ты используешь
+import { User } from 'lucide-react';
 import '../styles/avatar.scss';
 
 interface AvatarProps {

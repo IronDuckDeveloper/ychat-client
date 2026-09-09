@@ -1,4 +1,5 @@
 import { User, ArrowRightFromLine } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import HeaderActionButton from './HeaderActionButton.tsx';
 
 interface ContactProfileDrawerProps {
@@ -10,6 +11,8 @@ interface ContactProfileDrawerProps {
 }
 
 const ContactProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl }: ContactProfileDrawerProps) => {
+  const { t } = useTranslation();
+
   return (
     <>
       <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={onClose} />
@@ -23,7 +26,7 @@ const ContactProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl }: Con
             <HeaderActionButton 
               onClick={onClose} 
               icon={<ArrowRightFromLine size={20} />} 
-              title="Закрыть" 
+              title={t('contactProfileDrawer.close')} 
             />
           </div>
         </div>
@@ -32,7 +35,7 @@ const ContactProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl }: Con
           <div className="avatar-container">
             <div className="drawer-avatar">
               {avatarUrl ? (
-                <img src={avatarUrl} alt="Avatar" className="user-avatar-image" />
+                <img src={avatarUrl} alt={t('contactProfileDrawer.avatarAlt')} className="user-avatar-image" />
               ) : (
                 <User size={64} className="user-icon" />
               )}
@@ -42,7 +45,7 @@ const ContactProfileDrawer = ({ isOpen, onClose, nickname, bio, avatarUrl }: Con
           <div className="profile-info-container">
             <div className="info-display">
               <h2 className="display-nickname">{nickname}</h2>
-              <p className="display-bio">{bio || 'Биография не заполнена'}</p>
+              <p className="display-bio">{bio || t('contactProfileDrawer.noBio')}</p>
             </div>
           </div>
         </div>

@@ -32,6 +32,8 @@
     "datastore-level": "10.0.0",
     "heic2any": "^0.0.4",
     "helia": "4.2.6",
+    "i18next": "^26.4.2",
+    "i18next-browser-languagedetector": "^8.2.1",
     "it-length-prefixed": "^11.0.1",
     "it-pipe": "^3.0.1",
     "jsqr": "^1.4.0",
@@ -41,6 +43,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-i18next": "^17.0.13",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.14.2",
     "sass": "^1.99.0"

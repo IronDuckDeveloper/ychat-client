@@ -11,6 +11,7 @@ import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
 import { getOrOpenDb, globalOrbitDB } from './authService.ts';
 import { saveContact, type ContactItem } from './contactsService.ts';
+import i18n from '../../../i18n/config.ts';
 
 export interface SyncResult {
   success: boolean;
@@ -43,8 +44,7 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
         AccessController: IPFSAccessController({ write: [orbitdb.identity.id] }) 
       });
 
-      console.log(`✅ [ProfileDB] База открыта. Адрес: ${profileDb.address}`);
-      console.log(`🔒 [ProfileDB] Право на запись только у: ${orbitdb.identity.id}`);
+      console.log(`✅ [ProfileDB] База открыта. Адрес: ${profileDb.address} 🔒 Право на запись только у: ${orbitdb.identity.id}`);
 
       const existingNickname = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
       const dateCreated = await profileDb.get(CONFIG.PROFILE.KEY_DATE_CREATED);
@@ -66,12 +66,12 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
       else if (!existingNickname && !dateCreated) {
         console.log(`🆕 [ProfileDB] Данные профиля пусты. Заполняем...`);
         
-        await profileDb.put(CONFIG.PROFILE.KEY_NICKNAME, 'Анонимный пользователь');
+        await profileDb.put(CONFIG.PROFILE.KEY_NICKNAME, i18n.t('profileService.anonymousUser'));
         await profileDb.put(CONFIG.PROFILE.KEY_DATE_CREATED, Date.now());
 
         console.log(`✅ [ProfileDB] Базовые данные успешно записаны.`);
       } else {
-        console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname || 'Анонимный пользователь'}`);
+        console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname || i18n.t('profileService.anonymousUser')}`);
       }
 
       return profileDb;
@@ -314,7 +314,7 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
   if (privacyMode === 'private') {
     console.log(`🔒 [ProfileService] Профиль в режиме private. Отправляем пустой слепок для ${requesterPeerId}`);
     return {
-      [CONFIG.PROFILE.KEY_NICKNAME]: 'Скрытый профиль',
+      [CONFIG.PROFILE.KEY_NICKNAME]: i18n.t('profileService.hiddenProfile'),
       [CONFIG.PROFILE.KEY_BIO]: '',
       [CONFIG.PROFILE.KEY_AVATAR_CID]: '',
       [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]: '',
@@ -331,7 +331,7 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
     if (!contact || contact.isDeleted) {
       console.log(`🔒 [ProfileService] Пира ${requesterPeerId} нет в контактах. Отправляем пустой слепок.`);
       return {
-        [CONFIG.PROFILE.KEY_NICKNAME]: 'Только для контактов',
+        [CONFIG.PROFILE.KEY_NICKNAME]: i18n.t('profileService.contactsOnlyProfile'),
         [CONFIG.PROFILE.KEY_BIO]: '',
         [CONFIG.PROFILE.KEY_AVATAR_CID]: '',
         [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]: '',

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { globalNetworkState, NET_STATE } from '../lib/p2p/networking/NetworkStateMachine';
 import '../styles/networkOverlay.scss';
 import { CONFIG } from '../lib/p2p/config.ts';
 
 export const NetworkOverlay: React.FC = () => {
-  // 1. Все хуки вызываем строго здесь, без условий
+  const { t } = useTranslation();
   const location = useLocation();
   const [status, setStatus] = useState(globalNetworkState?.state || NET_STATE.CONNECTING);
   const wasSleeping = useRef(false);
@@ -33,40 +34,35 @@ export const NetworkOverlay: React.FC = () => {
     };
   }, []);
 
-  // 2. Только ПОСЛЕ вызова всех хуков делаем проверки для рендера
-  
-  // Не показываем оверлей на странице входа
   if (location.pathname === '/') return null;
 
-  // Не показываем оверлей, если сеть подключена
   if (status === NET_STATE.CONNECTED) return null;
 
-  // Не показываем оверлей при запуске, если юзер уже был залогинен
   // if (status === NET_STATE.CONNECTING && isAuthed) return null;
 
-  let title = 'Ожидание сети...';
-  let subtitle = 'Пожалуйста, подождите';
+  let title = t('networkOverlay.waitingTitle');
+  let subtitle = t('networkOverlay.waitingSubtitle');
   let icon = '⏳';
 
   switch (status) {
     case NET_STATE.SLEEPING:
-      title = 'Спящий режим';
-      subtitle = 'Вкладка неактивна, P2P-соединения приостановлены...';
+      title = t('networkOverlay.sleepingTitle');
+      subtitle = t('networkOverlay.sleepingSubtitle');
       icon = '💤';
       break;
     case NET_STATE.RECOVERING:
-      title = 'Восстановление сети';
-      subtitle = 'Переподключение к релеям и базам данных...';
+      title = t('networkOverlay.recoveringTitle');
+      subtitle = t('networkOverlay.recoveringSubtitle');
       icon = '🔄';
       break;
     case NET_STATE.CONNECTING:
-      title = 'Запуск P2P сети';
-      subtitle = 'Инициализация криптографии и хранилищ...';
+      title = t('networkOverlay.connectingTitle');
+      subtitle = t('networkOverlay.connectingSubtitle');
       icon = '🚀';
       break;
     case NET_STATE.DISCONNECTED:
-      title = 'Связь с P2P сетью потеряна';
-      subtitle = 'Ищем резервные узлы...';
+      title = t('networkOverlay.disconnectedTitle');
+      subtitle = t('networkOverlay.disconnectedSubtitle');
       icon = '❌';
       break;
   }

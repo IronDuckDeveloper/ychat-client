@@ -1,5 +1,6 @@
 import { User, Search, Share2, Plus, Trash2, RefreshCcw, MoreVertical, Ban, X, Copy } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import ReplyPreview from '../components/ReplyPreview.tsx';
 import type { ReplyInfo } from '../lib/p2p/services/roomService.ts';
 import { QRCodeSVG } from 'qrcode.react';
@@ -15,13 +16,11 @@ import ContextMenu from '../components/ContextMenu';
 import { CONFIG } from '../lib/p2p/config.ts';
 
 const ContactList = () => {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const forwardMessage = location.state?.forwardMessage as ReplyInfo | undefined;
 
-  // 🔥 Закрыть плашку пересылки: чистим forwardMessage из location.state через
-  // replace-навигацию на ту же страницу. Простой setState тут не поможет —
-  // после reload страницы forwardMessage снова прочитается из истории браузера.
   const dismissForwardMessage = () => {
     const { forwardMessage: _drop, ...rest } = (location.state as any) || {};
     navigate(location.pathname, { replace: true, state: rest });
@@ -32,7 +31,6 @@ const ContactList = () => {
     myNickname, myBio, myAvatarUrl, myPrivacy, peerId, contacts, filteredContacts, dialogConfig, 
     toastMessage, showToast, isNetworkReady, handleCopyContactId,
     
-    // Стейты UI и поиска
     searchQuery, setSearchQuery,
     activeMenuId, setActiveMenuId,
     isHeaderMenuOpen, setIsHeaderMenuOpen,
@@ -40,23 +38,18 @@ const ContactList = () => {
     isAddModalOpen, setIsAddModalOpen,
     addPeerId, setAddPeerId,
     
-    // Рефы и методы
     addVideoRef, closeDialog, toggleContactMenu, toggleHeaderMenu, 
     handleCopyPeerId, onSubmitAddContact, handleRefreshContact, 
     handleDeleteContact, handleSaveProfile, handleLogout, 
     handleBlockContact, handleUnblockAndRefresh, syncContactInQueue
   } = useContactsLogic();
   
-  // --- ОЧЕРЕДЬ ДЛЯ ЗАГРУЗКИ КОНТАКТОВ ---
   const observer = useRef<IntersectionObserver | null>(null);
-  // Храним связь: DOM-элемент -> данные контакта
   const elementsMap = useRef(new Map<Element, any>());
-  // Хранит таймеры для каждого элемента на экране
   const scrollTimers = useRef(new Map<Element, NodeJS.Timeout>());
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   
-  // 1. Создаем обсервер ОДИН РАЗ при монтировании
   useEffect(() => {
     observer.current = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
@@ -64,27 +57,19 @@ const ContactList = () => {
         const contact = elementsMap.current.get(target);
 
         if (entry.isIntersecting) {
-          // 1. Контакт появился на экране. 
-          // Не бежим сразу в базу! Запускаем таймер на 2000 мс.
           if (contact && contact.id) {
             const timer = setTimeout(() => {
               console.log(`⏱️ [Smart Render] ${contact.nickname} задержался на экране. Добавляем в очередь.`);
               syncContactInQueue(contact);
-              // Очищаем отработавший таймер
               scrollTimers.current.delete(target); 
             }, 2000);
             
-            // Сохраняем таймер, привязанный к DOM-элементу
             scrollTimers.current.set(target, timer);
           }
         } else {
-          // 2. Контакт ушел с экрана.
-          // Если таймер еще тикает (прошло меньше 2000 мс), убиваем его!
           if (scrollTimers.current.has(target)) {
             clearTimeout(scrollTimers.current.get(target)!);
             scrollTimers.current.delete(target);
-            // Раскомментируй для дебага, чтобы увидеть, как отсекается мусор:
-            // console.log(`💨 [Smart Render] Фаст-скролл! Отменили синк для: ${contact?.nickname}`);
           }
         }
       });
@@ -93,14 +78,12 @@ const ContactList = () => {
     return () => {
       if (observer.current) observer.current.disconnect();
       
-      // Очищаем все таймеры при размонтировании компонента
       scrollTimers.current.forEach(timer => clearTimeout(timer));
       scrollTimers.current.clear();
       elementsMap.current.clear();
     };
   }, [syncContactInQueue]);
 
-// 2. Эта функция просто привязывает элемент к обсерверу
 const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactItem) => {
   if (node) {
     elementsMap.current.set(node, contact);
@@ -124,7 +107,6 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
       
       <div className="contacts-header">
         <div className="header-left">
-          {/*  Аватар собеседника */}
           <Avatar 
             url={myAvatarUrl} 
             size={24}
@@ -147,7 +129,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               }
             }}
             icon={<Share2 size={22} />} 
-            title="Обменяться контактом" 
+            title={t('contactsPage.shareContact')} 
             disabled={isLoading}
           />
 
@@ -157,7 +139,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               anchorEl={menuAnchor}
               items={[
                 {
-                  label: 'Добавить',
+                  label: t('contactsPage.add'),
                   icon: <Plus size={16} />,
                   onClick: () => {
                     setIsAddModalOpen(true);
@@ -166,7 +148,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                   },
                 },
                 {
-                  label: 'Расшарить',
+                  label: t('contactsPage.share'),
                   icon: <Share2 size={16} />,
                   onClick: () => {
                     setIsShareModalOpen(true);
@@ -186,7 +168,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
           <input 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Поиск чатов..." 
+            placeholder={t('contactsPage.searchPlaceholder')} 
             className="bg-transparent outline-none w-full text-sm" 
             disabled={isLoading} 
           />
@@ -201,21 +183,20 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
       ) : isLoading ? (
         <div className="empty-state">
           <div className="animate-spin" style={{ marginBottom: '8px' }}>⏳</div>
-          Синхронизация локальной базы...
+          {t('contactsPage.syncing')}
         </div>
       ) : contacts.length === 0 ? (
         <div className="empty-state">
-          Список контактов пуст.
+          {t('contactsPage.emptyContacts')}
         </div>
       ) : filteredContacts.length === 0 ? (
         <div className="empty-state">
-          Ничего не найдено
+          {t('contactsPage.emptySearch')}
         </div>
       ) : (
           filteredContacts.map((contact) => (
             <div
               key={contact.id}
-              // Привязываем реф к каждому элементу
               ref={(el) => contactRef(el, contact)}
               className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
               onClick={(e) => {
@@ -228,7 +209,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                   state: { 
                     contactName: contact.nickname || contact.id, 
                     contact: contact,
-                    forwardMessage: forwardMessage, // 🔥 Прокидываем сообщение в целевой чат
+                    forwardMessage: forwardMessage,
                   } 
                 });
               }}
@@ -244,7 +225,9 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               <div className="contact-info">
                 <div className="contact-name">{contact.nickname}</div>
                 <div className="contact-last-message">
-                  {contact.lastMessage || 'Нет сообщений'}
+                  {contact.lastMessage === CONFIG.MSG.MESSAGE_DELETED
+                    ? t('chat.messageDeletedLabel')
+                    : (contact.lastMessage || t('contactsPage.noMessages'))}
                 </div>
               </div>
               <div className="contact-time">
@@ -268,7 +251,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                       setMenuAnchor(e.currentTarget);
                     }
                   }}
-                  title="Опции"
+                  title={t('contactsPage.options')}
                 >
                   <MoreVertical size={20} />
                 </button>
@@ -281,7 +264,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                       ...(!contact.isBlocked
                         ? [
                             {
-                              label: 'Обновить профиль',
+                              label: t('contactsPage.refreshProfile'),
                               icon: <RefreshCcw size={16} />,
                               onClick: (e: React.MouseEvent) => {
                                 handleRefreshContact(e, contact.id);
@@ -290,7 +273,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                               },
                             },
                             {
-                              label: 'Заблокировать',
+                              label: t('contactsPage.block'),
                               icon: <Ban size={16} />,
                               onClick: (e: React.MouseEvent) => {
                                 handleBlockContact(e, contact.id);
@@ -301,7 +284,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                           ]
                         : [
                             {
-                              label: 'Разблокировать и обновить',
+                              label: t('contactsPage.unblockAndRefresh'),
                               icon: <RefreshCcw size={16} />,
                               onClick: (e: React.MouseEvent) => {
                                 handleUnblockAndRefresh(e, contact.id);
@@ -311,7 +294,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                             },
                           ]),
                       {
-                        label: 'Скопировать ID',
+                        label: t('contactsPage.copyId'),
                         icon: <Copy size={16} />,
                         onClick: (e) => {
                           handleCopyContactId(e, contact.id);
@@ -320,7 +303,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                         },
                       },
                       {
-                        label: 'Удалить',
+                        label: t('contactsPage.delete'),
                         icon: <Trash2 size={16} />,
                         danger: true,
                         onClick: (e) => {
@@ -339,12 +322,11 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
       }
       </div>
 
-      {/* 🔥 Плашка пересылки */}
       {forwardMessage && (
         <div className="forward-preview-container">
           <ReplyPreview
             replyTo={forwardMessage}
-            title="Переслано"
+            title={t('contactsPage.forwardedTitle')}
             variant="composer"
             onRemove={dismissForwardMessage}
           />
@@ -354,18 +336,18 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
       {isShareModalOpen && (
         <div className="modal-overlay" onClick={() => setIsShareModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button aria-label="Закрыть" title="Закрыть" className="close-button" onClick={() => setIsShareModalOpen(false)}>
+            <button aria-label={t('contactsPage.close')} title={t('contactsPage.close')} className="close-button" onClick={() => setIsShareModalOpen(false)}>
               <X size={20} />
             </button>
-            <h3 className="modal-title">Поделиться профилем</h3>
-            <div className="qr-wrapper" onClick={handleCopyPeerId} title="Нажми, чтобы скопировать">
-              <QRCodeSVG value={peerId || 'Unknown Peer'} size={180} />
+            <h3 className="modal-title">{t('contactsPage.shareProfileTitle')}</h3>
+            <div className="qr-wrapper" onClick={handleCopyPeerId} title={t('contactsPage.copyHint')}>
+              <QRCodeSVG value={peerId || t('contactsPage.unknownPeer')} size={180} />
             </div>
             <div className="peer-info">
-              <span className="peer-label">Ваш Peer ID:</span>
-              <code className="peer-value">{peerId || 'Загрузка...'}</code>
+              <span className="peer-label">{t('contactsPage.yourPeerId')}</span>
+              <code className="peer-value">{peerId || t('contactsPage.loading')}</code>
             </div>
-            <p className="modal-hint">Нажми на QR-код, чтобы скопировать ID</p>
+            <p className="modal-hint">{t('contactsPage.qrHint')}</p>
           </div>
         </div>
       )}
@@ -373,11 +355,11 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
       {isAddModalOpen && (
         <div className="modal-overlay" onClick={() => setIsAddModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button aria-label="Закрыть" title="Закрыть" className="close-button" onClick={() => setIsAddModalOpen(false)}>
+            <button aria-label={t('contactsPage.close')} title={t('contactsPage.close')} className="close-button" onClick={() => setIsAddModalOpen(false)}>
               <X size={20} />
             </button>
             
-            <h3 className="modal-title">Добавить по Peer ID</h3>
+            <h3 className="modal-title">{t('contactsPage.addByPeerIdTitle')}</h3>
             
             <div className="modal-camera-wrapper">
               <video ref={addVideoRef} autoPlay playsInline muted className="modal-camera-video" />
@@ -391,7 +373,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                   className="modal-peer-input"
                   value={addPeerId}
                   onChange={(e) => setAddPeerId(e.target.value)}
-                  placeholder="Введите Peer ID пользователя"
+                  placeholder={t('contactsPage.peerIdPlaceholder')}
                 />
               </div>
             </div>
@@ -401,7 +383,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               onClick={onSubmitAddContact}
               disabled={!addPeerId.trim()}
             >
-              Добавить
+              {t('contactsPage.add')}
             </button>
           </div>
         </div>

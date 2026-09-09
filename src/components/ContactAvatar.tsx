@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { globalHelia } from '../lib/p2p/services/authService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
@@ -16,6 +17,7 @@ function ContactAvatar({
   encryptionKey?: string,
   serverRelays?: string[]
 }) {
+  const { t } = useTranslation();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryCount, setRetryCount] = useState(0); 
@@ -62,7 +64,7 @@ function ContactAvatar({
     return (
       <img 
         src={avatarUrl} 
-        alt="avatar" 
+        alt={t('contactAvatar.alt')} 
         className="contact-avatar-img"
       />
     );
@@ -90,7 +92,7 @@ function ContactAvatar({
         e.stopPropagation();
         setRetryCount(prev => prev + 1); 
       }}
-      title="Повторить загрузку аватара"
+      title={t('contactAvatar.retryTitle')}
       className="contact-avatar-wrapper contact-avatar-clickable"
     >
       <RefreshCw size={22} />

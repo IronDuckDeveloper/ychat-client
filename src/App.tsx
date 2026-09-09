@@ -1,5 +1,6 @@
 // App.tsx
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Auth from './pages/Auth';
 import Chat from './pages/Chat';
 import Contacts from './pages/Contacts';
@@ -17,6 +18,7 @@ import { createPortal } from 'react-dom';;
 import './App.css';
 
 function App() {
+  const { t } = useTranslation();
   const toasts = useUploadEvents();
 
   useEffect(() => {
@@ -32,11 +34,9 @@ function App() {
               broadcastMyProfile: broadcastMyProfile
             });
 
-        // Запускаем контроль сети (стейт-машина переходит в CONNECTING -> CONNECTED)
         stateMachine.start();
         console.log('🛡️ [App] Network State Machine успешно запущена.');
 
-        // 🔥 Объединяем все стартовые функции в один Promise.all
         Promise.all([
           checkAndSyncRelays(globalHelia, true)
             .catch(err => console.error("❌ Ошибка checkAndSyncRelays:", err)),
@@ -47,8 +47,6 @@ function App() {
           startBackgroundProfileWatcher(globalContactsDb)
             .catch(err => console.error("❌ Ошибка вотчера профилей:", err))
         ]).then(() => {
-          // Этот блок кода выполнится ровно тогда, когда ВСЕ три функции выше отработают.
-          // Никаких таймаутов!
           console.log(`🚀 [Cold Start] Фоновые службы запущены. Запускаем синхронизацию историй... db: ${globalContactsDb?.address?.toString()}`);
           
           return syncTopContactsHistory(globalContactsDb, 10);
@@ -57,17 +55,16 @@ function App() {
           console.log("✅ [Cold Start] Синк историй успешно завершен на горячем канале!");
         })
         .catch(err => {
-          // Перехватит ошибку, если syncTopContactsHistory упадет
           console.error("❌ Ошибка синка историй:", err);
         });
           }
         })
         .catch(err => {
           console.error('Критическая ошибка при восстановлении P2P:', err);
-          window.dispatchEvent(new CustomEvent('authError', { detail: { message: err.message || 'Не удалось подключиться к P2P-сети.' } }));
+          window.dispatchEvent(new CustomEvent('authError', { detail: { message: err.message || t('app.connectionError') } }));
         });
     }
-  }, []);
+  }, [t]);
 
   return (
     <>

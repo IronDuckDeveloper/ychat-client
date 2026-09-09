@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { broadcastMyProfile, initializeApp } from '../lib/p2p/services/authService.ts';
 import { 
   saveSeedFromAuth, 
@@ -12,6 +13,7 @@ import {
 import { CONFIG } from '../lib/p2p/config.ts';
 
 export const useAuthLogic = () => {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(true);
   const [isRegister, setIsRegister] = useState(false);
   const [showPass, setShowPass] = useState(false);
@@ -19,10 +21,8 @@ export const useAuthLogic = () => {
   const [words, setWords] = useState<string[]>(Array(12).fill(''));
   const navigate = useNavigate();
 
-  // Добавляем стейт тоста
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Хелпер для показа тоста
   const showToast = (message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 3000);
@@ -39,7 +39,6 @@ export const useAuthLogic = () => {
       return;
     }
     
-    // Если не авторизован — снимаем загрузку и готовим форму
     setIsLoading(false);
     setWords(Array(12).fill(''));
     setNickname('');
@@ -50,11 +49,9 @@ export const useAuthLogic = () => {
     }
   }, [isRegister, navigate]);
 
-  // Ввод одного слова или авто-распределение при вставке нескольких слов через пробел
   const handleWordChange = (index: number, value: string) => {
     const trimmed = value.trim();
 
-    // Если вставлена строка из нескольких слов
     if (trimmed.includes(' ')) {
       const parsedWords = trimmed.split(/\s+/);
       const newWords = [...words];
@@ -74,41 +71,40 @@ export const useAuthLogic = () => {
     setWords(newWords);
   };
 
-  // Копирование всех 12 слов в одну строку через пробел
   const copyWords = async () => {
     const phrase = words.join(' ').trim();
     if (!phrase) {
-      showToast('⚠️ Нет слов для копирования');
+      showToast(t('authLogic.noWordsToCopy'));
       return;
     }
 
     try {
       await navigator.clipboard.writeText(phrase);
-      showToast('✅ 12 слов скопированы в буфер обмена');
+      showToast(t('authLogic.wordsCopied'));
     } catch (err) {
       console.error('Ошибка при копировании:', err);
-      showToast('❌ Не удалось скопировать в буфер обмена');
+      showToast(t('authLogic.copyFailed'));
     }
   };
 
   const handleLoginOrRegister = async () => {
     if (isRegister) {
       if (!nickname.trim()) {
-        showToast('⚠️ Пожалуйста, введите никнейм');
+        showToast(t('authLogic.enterNickname'));
         return;
       }
       if (words.some((w) => !w)) {
-        showToast('⚠️ Пожалуйста, сгенерируйте и сохраните слова');
+        showToast(t('authLogic.generateWordsFirst'));
         return;
       }
       console.log('Начинаем регистрацию...');
     } else {
       if (words.some((w) => !w)) {
-        showToast('⚠️ Пожалуйста, заполните все 12 слов');
+        showToast(t('authLogic.fillAllWords'));
         return;
       }
       if (!isValidMnemonic(words)) {
-        showToast('❌ Некорректная сид-фраза. Проверьте правильность слов и их порядок.');
+        showToast(t('authLogic.invalidMnemonic'));
         return;
       }
       
@@ -147,7 +143,7 @@ export const useAuthLogic = () => {
         generateWords(); 
       }
       
-      showToast(error.message ? `❌ ${error.message}` : '❌ Произошла ошибка. Регистрация прервана.');
+      showToast(error.message ? `❌ ${error.message}` : t('authLogic.genericError'));
     }
   };
 

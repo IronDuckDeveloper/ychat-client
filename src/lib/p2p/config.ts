@@ -54,8 +54,8 @@ export const CONFIG = {
     SUCCESS : 'SUCCESS',
     FORBIDDEN : 'FORBIDDEN',
     WAKEUP : 'WAKEUP_PING',
-    MESSAGE_DELETED : 'Сообщение удалено',
-    HIDDEN_MESSAGE_LABEL: 'Скрытое сообщение',
+    MESSAGE_DELETED : '__MESSAGE_DELETED__', // Языконезависимый маркер для БД. Текст переводится в момент рендера через t('chat.messageDeletedLabel')
+    HIDDEN_MESSAGE_LABEL: '__HIDDEN_MESSAGE__', // Аналогично — маркер, не текст
   },
 
   TOPICS: {

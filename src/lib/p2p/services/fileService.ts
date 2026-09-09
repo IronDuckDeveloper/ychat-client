@@ -8,7 +8,7 @@ import {LruObjectUrlCache} from '../utils/LruObjectUrlCache.ts';
 import { exportKeyToBase64, generateFileKey, importKeyFromBase64 } from '../crypto/crypto.ts';
 import { uploadQueue } from '../networking/uploadQueue.ts';
 import type { RelayConfig } from '../networking/RelayManager.ts';
-
+import i18n from '../../../i18n/config.ts';
 
 // Интерфейс для описания прикрепленного файла, 
 // именно этот объект мы будем отправлять в OrbitDB сообщении
@@ -66,16 +66,16 @@ function getUploadErrorMessage(error: Error): string {
   const match = error.message.match(/^UPLOAD_REJECTED_(\d+)$/);
   const status = match ? parseInt(match[1], 10) : 0;
   switch (status) {
-    case 401: return 'Не удалось подтвердить личность.';
-    case 403: return 'Загрузка запрещена.';
-    case 413: return 'Файл слишком большой. Максимальный размер — 20 МБ.';
+    case 401: return i18n.t('fileService.identityFailed');
+    case 403: return i18n.t('fileService.uploadForbidden');
+    case 413: return i18n.t('fileService.fileTooLarge');
   }
   switch (error.message) {
-    case 'MAX_RETRIES_EXCEEDED': return 'Не удалось загрузить файл после нескольких попыток.';
-    case 'ALL_RELAYS_REJECTED': return 'Ни один сервер не принял файл.';
-    case 'NO_RELAYS_AVAILABLE': return 'Нет доступных серверов для загрузки.';
-    case 'NO_SESSION_TOKEN': return 'Нет активной сессии. Перезайдите в приложение.';
-    default: return 'Не удалось загрузить файл. Попробуйте ещё раз.';
+    case 'MAX_RETRIES_EXCEEDED': return i18n.t('fileService.maxRetriesExceeded');
+    case 'ALL_RELAYS_REJECTED': return i18n.t('fileService.allRelaysRejected');
+    case 'NO_RELAYS_AVAILABLE': return i18n.t('fileService.noRelaysAvailable');
+    case 'NO_SESSION_TOKEN': return i18n.t('fileService.noSessionToken');
+    default: return i18n.t('fileService.genericUploadError');
   }
 }
 
@@ -101,7 +101,7 @@ export async function uploadFileToHelia(helia: any, originalFile: File, customNa
 
   const sessionToken = relayManager.getSessionToken();
   if (!sessionToken) {
-    const message = 'Нет активной сессии. Перезайдите в приложение.';
+    const message = i18n.t('fileService.noSessionToken');
     window.dispatchEvent(new CustomEvent('uploadError', { detail: { message, fileName: file.name } }));
     throw new Error('NO_SESSION_TOKEN');
   }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
 
@@ -14,6 +15,7 @@ import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts
 import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts'; 
 
 export const useContactsLogic = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   // --- БАЗОВЫЕ СТЕЙТЫ ПРОФИЛЯ И БАЗЫ ---
@@ -52,7 +54,7 @@ export const useContactsLogic = () => {
 
   // --- ДИАЛОГ ---
   const [dialogConfig, setDialogConfig] = useState({
-    isOpen: false, title: '', message: '', confirmText: 'Да', isDanger: false, onConfirm: () => {}
+    isOpen: false, title: '', message: '', confirmText: t('contactsLogic.confirmYes'), isDanger: false, onConfirm: () => {}
   });
   
   const showToast = (message: string) => {
@@ -236,7 +238,7 @@ export const useContactsLogic = () => {
         }
         
         if (isMounted) {
-          setMyNickname(name || 'Аноним');
+          setMyNickname(name || t('contactsLogic.defaultNickname'));
           setMyBio(bio || '');
         }
 
@@ -254,7 +256,7 @@ export const useContactsLogic = () => {
           if (isMounted) setContacts(rawContacts);
         }
       } catch (error) {
-        if (isMounted) setMyNickname('Ошибка');
+        if (isMounted) setMyNickname(t('contactsLogic.loadProfileError'));
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -358,9 +360,9 @@ export const useContactsLogic = () => {
     if (!peerId) return;
     try {
       await navigator.clipboard.writeText(peerId);
-      showToast('📋 Peer ID скопирован в буфер!'); 
+      showToast(t('contactsLogic.peerIdCopied')); 
     } catch (err) {
-      showToast('❌ Ошибка при копировании');
+      showToast(t('contactsLogic.copyError'));
     }
   };
 
@@ -376,11 +378,11 @@ export const useContactsLogic = () => {
       const targetContact = contacts.find(c => c.id === targetPeerId);
       
       if (targetContact) {
-        showToast('🔄 Запрос на обновление отправлен...');
+        showToast(t('contactsLogic.refreshRequested'));
         // Пробуем стянуть напрямую через OrbitDB (если сеть позволяет)
         forceSyncContactProfile(globalContactsDb, targetContact);
       } else {
-        showToast('❌ Ошибка: контакт не найден');
+        showToast(t('contactsLogic.contactNotFound'));
       }
     }
   };
@@ -390,9 +392,9 @@ export const useContactsLogic = () => {
     
     setDialogConfig({
       isOpen: true,
-      title: 'Удалить контакт?',
-      message: 'Этот контакт будет скрыт из вашего списка. История сообщений сохранится, но писать ему вы больше не сможете до повторного добавления.',
-      confirmText: 'Удалить',
+      title: t('contactsLogic.deleteContactTitle'),
+      message: t('contactsLogic.deleteContactMessage'),
+      confirmText: t('contactsLogic.delete'),
       isDanger: true,
       onConfirm: async () => {
         const success = await deleteContact(globalContactsDb, contactId);
@@ -478,19 +480,19 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
         });
       }
 
-      showToast('✨ Профиль успешно сохранен!');
+      showToast(t('contactsLogic.profileSaved'));
     } catch (error) {
       console.error('Не удалось сохранить профиль в P2P:', error);
-      showToast('❌ Ошибка при сохранении профиля');
+      showToast(t('contactsLogic.profileSaveError'));
     }
   };
 
   const handleLogout = () => {
     setDialogConfig({
       isOpen: true,
-      title: 'Выйти из аккаунта?',
-      message: 'Вы уверены, что хотите выйти? Убедитесь, что вы сохранили свою Seed-фразу, иначе вы потеряете доступ к своему профилю и чатам навсегда.',
-      confirmText: 'Выйти',
+      title: t('contactsLogic.logoutTitle'),
+      message: t('contactsLogic.logoutMessage'),
+      confirmText: t('contactsLogic.logout'),
       isDanger: true,
       onConfirm: () => {
         globalRelayManager?.clearSession(); // гасит таймер обновления токена от этого аккаунта
@@ -519,11 +521,11 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       }
 
       if (targetId.length > 100 || targetId.includes(' ') || targetId.includes('\n')) {
-        return showToast('⚠️ Неверный формат кода или Peer ID!');
+        return showToast(t('contactsLogic.invalidPeerIdFormat'));
       }
 
       if (globalHelia && targetId === globalHelia.libp2p.peerId.toString()) {
-        return showToast('👤 Нельзя добавить самого себя');
+        return showToast(t('contactsLogic.cannotAddSelf'));
       }
 
       const localBlacklistStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
@@ -543,7 +545,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
 
         await saveContact(globalContactsDb, existingContact);
         console.log(`♻️ [Contacts] Контакт ${existingContact.nickname} восстановлен!`);
-        showToast('♻️ Контакт восстановлен из удаленных');
+        showToast(t('contactsLogic.contactRestored'));
 
         if (existingContact.chatDbAddress) {
           console.log(`🔄 [Воскрешение] Запуск синхронизации истории для ${existingContact.nickname}`);
@@ -559,7 +561,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           id: targetId,
           profileDbAddress: profileAddress,
           chatDbAddress: '', 
-          nickname: `Пир: ${targetId.slice(-8)}...`, 
+          nickname: t('contactsLogic.peerFallbackNickname', { id: targetId.slice(-8) }), 
           avatarCid: '',
           bio: '',
           updatedAt: Date.now(),
@@ -567,7 +569,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           isDeleted: false 
         };
         await saveContact(globalContactsDb, newContact);
-        showToast('✅ Контакт успешно добавлен');
+        showToast(t('contactsLogic.contactAdded'));
       }
 
       setContacts(await getAllContacts(globalContactsDb));
@@ -582,7 +584,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
 
     } catch (error) {
       console.error('Ошибка добавления контакта:', error);
-      showToast('❌ Ошибка при добавлении контакта');
+      showToast(t('contactsLogic.addContactError'));
     }
   };
 
@@ -618,7 +620,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       
     } catch (error) {
       console.error("❌ Ошибка при блокировке контакта:", error);
-      showToast('❌ Ошибка при сохранении блокировки');
+      showToast(t('contactsLogic.blockError'));
     }
   };
 
@@ -661,11 +663,11 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           window.dispatchEvent(new Event('onContactsUpdated')); 
         }, 200);
       }
-      showToast('🔓 Контакт разблокирован');
+      showToast(t('contactsLogic.contactUnblocked'));
 
     } catch (error) {
       console.error("❌ Ошибка при разблокировке контакта:", error);
-      showToast('❌ Ошибка при разблокировке контакта');
+      showToast(t('contactsLogic.unblockError'));
     }
   };
 
@@ -673,9 +675,9 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     e.stopPropagation();
     try {
       await navigator.clipboard.writeText(contactId);
-      showToast('📋 Peer ID скопирован в буфер!');
+      showToast(t('contactsLogic.peerIdCopied'));
     } catch {
-      showToast('❌ Ошибка при копировании');
+      showToast(t('contactsLogic.copyError'));
     }
   };
 

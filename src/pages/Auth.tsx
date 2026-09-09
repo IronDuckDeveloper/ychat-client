@@ -1,8 +1,10 @@
 import { RefreshCw, Eye, EyeOff, User, HelpCircle, Copy } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAuthLogic } from '../hooks/useAuthLogic.ts';
 import '../styles/auth.scss';
 
 const AuthScreen = () => {
+  const { t } = useTranslation();
   const {
     isLoading,
     isRegister,
@@ -19,14 +21,12 @@ const AuthScreen = () => {
     toastMessage
   } = useAuthLogic();
 
-  // Пока идет проверка или редирект — не рендерим форму вообще
   if (isLoading) {
-    return null; // Или <div className="auth-loading">Загрузка...</div>
+    return null;
   }
 
   return (
     <div className="auth-screen">
-      {/* Заменили div.auth-container на form.auth-container — вложенность CSS сохранилась */}
       <form
         className="auth-container"
         onSubmit={(e) => {
@@ -35,15 +35,15 @@ const AuthScreen = () => {
         }}
       >
         <div className="auth-header">
-          <h1>{isRegister ? 'Создать аккаунт' : 'С возвращением'}</h1>
+          <h1>{isRegister ? t('authScreen.createAccountTitle') : t('authScreen.welcomeBackTitle')}</h1>
           <p className="auth-subtitle">
             {isRegister
-              ? 'Сохраните эти 12 слов в надежном месте'
-              : 'Введите вашу секретную фразу для входа'}
+              ? t('authScreen.createSubtitle')
+              : t('authScreen.loginSubtitle')}
 
             <span
               className="tooltip-trigger"
-              data-tooltip="Эти 12 слов — ваш единственный ключ к аккаунту. Они не хранятся на серверах. Если вы потеряете их, восстановить доступ к профилю и чатам будет невозможно. Никогда и никому не передавайте свою фразу!"
+              data-tooltip={t('authScreen.helpTooltip')}
             >
               <HelpCircle size={14} className="help-icon" />
             </span>
@@ -55,7 +55,7 @@ const AuthScreen = () => {
             <User className="input-icon" size={18} />
             <input
               type="text"
-              placeholder="Придумайте никнейм (например, KristinaP2P)"
+              placeholder={t('authScreen.nicknamePlaceholder')}
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
               className="nickname-input"
@@ -63,7 +63,6 @@ const AuthScreen = () => {
           </div>
         )}
 
-        {/* Сетка слов */}
         <div className="words-grid">
           {words.map((word, i) => (
             <input
@@ -84,10 +83,10 @@ const AuthScreen = () => {
             type="button"
             onClick={() => setShowPass(!showPass)}
             className="action-link"
-            aria-label={showPass ? 'Скрыть слова' : 'Показать слова'}
+            aria-label={showPass ? t('authScreen.hideWords') : t('authScreen.showWords')}
           >
             {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-            <span>{showPass ? 'Скрыть слова' : 'Показать слова'}</span>
+            <span>{showPass ? t('authScreen.hideWords') : t('authScreen.showWords')}</span>
           </button>
 
           <button
@@ -96,7 +95,7 @@ const AuthScreen = () => {
             className="action-link"
           >
             <Copy size={16} />
-            <span>Сохранить в буфер</span>
+            <span>{t('authScreen.copyToClipboard')}</span>
           </button>
 
           {isRegister && (
@@ -106,13 +105,13 @@ const AuthScreen = () => {
               className="action-link primary"
             >
               <RefreshCw size={14} />
-              <span>Обновить слова</span>
+              <span>{t('authScreen.refreshWords')}</span>
             </button>
           )}
         </div>
 
         <button type="submit" className="submit-btn">
-          {isRegister ? 'Зарегистрироваться' : 'Войти в аккаунт'}
+          {isRegister ? t('authScreen.registerSubmit') : t('authScreen.loginSubmit')}
         </button>
 
         <button
@@ -121,12 +120,11 @@ const AuthScreen = () => {
           className="switch-mode"
         >
           {isRegister
-            ? 'Уже есть аккаунт? Войти'
-            : 'Нет аккаунта? Создать профиль'}
+            ? t('authScreen.switchToLogin')
+            : t('authScreen.switchToRegister')}
         </button>
       </form>
 
-      {/* ТОСТ: отображаем поверх всего, если есть сообщение */}
       {toastMessage && <div className="toast-notification">{toastMessage}</div>}
     </div>
   );

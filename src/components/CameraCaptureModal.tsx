@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Camera, RotateCcw, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import '../styles/cameraCaptureModal.scss';
 
 interface CameraCaptureModalProps {
@@ -8,15 +9,13 @@ interface CameraCaptureModalProps {
   onCapture: (file: File) => void;
 }
 
-// 🔥 Модалка съёмки фото с веб-камеры для десктопа, где input[capture]
-// не открывает нативное приложение камеры (см. useChatLogic.triggerCameraCapture).
 const CameraCaptureModal = ({ isOpen, onClose, onCapture }: CameraCaptureModalProps) => {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [error, setError] = useState<string | null>(null);
-  // Превью уже снятого кадра перед подтверждением отправки
   const [capturedDataUrl, setCapturedDataUrl] = useState<string | null>(null);
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
 
@@ -34,7 +33,7 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }: CameraCaptureModalPr
       }
     } catch (err) {
       console.error('❌ Нет доступа к камере:', err);
-      setError('Не удалось получить доступ к камере. Проверьте разрешения браузера.');
+      setError(t('cameraModal.cameraError'));
     }
   };
 
@@ -74,7 +73,6 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }: CameraCaptureModalPr
         if (!blob) return;
         setCapturedBlob(blob);
         setCapturedDataUrl(canvas.toDataURL('image/jpeg', 0.92));
-        // Останавливаем поток сразу после кадра — превью держим на canvas-снимке
         stopCamera();
       },
       'image/jpeg',
@@ -106,7 +104,7 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }: CameraCaptureModalPr
   return (
     <div className="camera-modal-overlay" onClick={handleClose}>
       <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="camera-modal-close" onClick={handleClose} aria-label="Закрыть">
+        <button className="camera-modal-close" onClick={handleClose} aria-label={t('cameraModal.close')}>
           <X size={20} />
         </button>
 
@@ -114,7 +112,7 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }: CameraCaptureModalPr
           {error ? (
             <div className="camera-modal-error">{error}</div>
           ) : capturedDataUrl ? (
-            <img src={capturedDataUrl} alt="Снимок" className="camera-modal-preview" />
+            <img src={capturedDataUrl} alt={t('cameraModal.photoAlt')} className="camera-modal-preview" />
           ) : (
             <video ref={videoRef} className="camera-modal-video" playsInline muted />
           )}
@@ -123,21 +121,21 @@ const CameraCaptureModal = ({ isOpen, onClose, onCapture }: CameraCaptureModalPr
         <div className="camera-modal-controls">
           {error ? (
             <button className="camera-modal-retry" onClick={startCamera}>
-              Повторить попытку
+              {t('cameraModal.retry')}
             </button>
           ) : capturedDataUrl ? (
             <>
               <button className="camera-modal-btn secondary" onClick={handleRetake}>
                 <RotateCcw size={18} />
-                Переснять
+                {t('cameraModal.retake')}
               </button>
               <button className="camera-modal-btn primary" onClick={handleConfirm}>
                 <Check size={18} />
-                Отправить в превью
+                {t('cameraModal.confirm')}
               </button>
             </>
           ) : (
-            <button className="camera-modal-shutter" onClick={handleTakeShot} aria-label="Сделать фото">
+            <button className="camera-modal-shutter" onClick={handleTakeShot} aria-label={t('cameraModal.takeShot')}>
               <Camera size={22} />
             </button>
           )}

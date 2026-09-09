@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Mic, Square, RotateCcw, Check } from 'lucide-react';
 import '../styles/cameraCaptureModal.scss'; // 🔥 Общие стили с фото/видео-модалками
+import { useTranslation } from 'react-i18next';
 
 interface AudioRecordModalProps {
   isOpen: boolean;
@@ -22,6 +23,8 @@ const pickSupportedAudioMimeType = () => {
 // 🔥 Десктоп-аналог записи голосового: на мобильных input[capture] сам
 // открывает нативный диктофон, здесь — запись через getUserMedia + MediaRecorder.
 const AudioRecordModal = ({ isOpen, onClose, onCapture }: AudioRecordModalProps) => {
+  const { t } = useTranslation();
+  
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -81,7 +84,7 @@ const AudioRecordModal = ({ isOpen, onClose, onCapture }: AudioRecordModalProps)
       setupAnalyser(stream);
     } catch (err) {
       console.error('❌ Нет доступа к микрофону:', err);
-      setError('Не удалось получить доступ к микрофону. Проверьте разрешения браузера.');
+      setError(t('audioModal.micError'));
     }
   };
 
@@ -188,7 +191,7 @@ const AudioRecordModal = ({ isOpen, onClose, onCapture }: AudioRecordModalProps)
   return (
     <div className="camera-modal-overlay" onClick={handleClose}>
       <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="camera-modal-close" onClick={handleClose} aria-label="Закрыть">
+        <button className="camera-modal-close" onClick={handleClose} aria-label={t('audioModal.close')}>
           <X size={20} />
         </button>
 
@@ -221,24 +224,24 @@ const AudioRecordModal = ({ isOpen, onClose, onCapture }: AudioRecordModalProps)
         <div className="camera-modal-controls">
           {error ? (
             <button className="camera-modal-retry" onClick={startMic}>
-              Повторить попытку
+              {t('audioModal.retry')}
             </button>
           ) : recordedUrl ? (
             <>
               <button className="camera-modal-btn secondary" onClick={handleRetake}>
                 <RotateCcw size={18} />
-                Переписать
+                {t('audioModal.retake')}
               </button>
               <button className="camera-modal-btn primary" onClick={handleConfirm}>
                 <Check size={18} />
-                Отправить в превью
+                {t('audioModal.confirm')}
               </button>
             </>
           ) : isRecording ? (
             <button
               className="camera-modal-shutter recording"
               onClick={handleStopRecording}
-              aria-label="Остановить запись"
+              aria-label={t('audioModal.stopRecording')}
             >
               <Square size={20} fill="currentColor" />
             </button>
@@ -246,7 +249,7 @@ const AudioRecordModal = ({ isOpen, onClose, onCapture }: AudioRecordModalProps)
             <button
               className="camera-modal-shutter"
               onClick={handleStartRecording}
-              aria-label="Начать запись"
+              aria-label={t('audioModal.startRecording')}
             >
               <Mic size={22} />
             </button>

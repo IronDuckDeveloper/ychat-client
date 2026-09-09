@@ -1,4 +1,5 @@
 import { createBrowserHelia, relayManager } from '../networking/heliaClient.ts';
+import i18n from '../../../i18n/config.ts';
 import { getOrbitDB } from '../orbit/client.ts';
 import { getFilteredProfileData, initProfileDB, initGlobalRegistryDB } from './profileService.ts';
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
@@ -125,7 +126,7 @@ export async function broadcastMyProfile(customProfileData?: any) {
     const updateMsg = {
       type: CONFIG.PROFILE.MSG_PROFILE_UPDATED,
       senderId: myPeerId || '',
-      nickname: nickname || 'Аноним',
+      nickname: nickname || i18n.t('authService.anonymousFallback'),
       avatarCid: avatarCid || '',
       bio: bio || '',
       avatarServerCid: avatarServerCid || '',
@@ -150,16 +151,18 @@ export async function broadcastMyProfile(customProfileData?: any) {
 function getFriendlyAuthErrorMessage(status: string | undefined, rawMessage: string | null, actionType: 'REGISTER' | 'LOGIN'): string {
   if (status === CONFIG.MSG.FORBIDDEN) {
     if (rawMessage === 'Account has been banned') {
-      return 'Ваш аккаунт заблокирован.';
+      return i18n.t('authService.accountBanned');
     }
     return actionType === 'REGISTER'
-      ? 'Превышен лимит регистраций для этого устройства/IP. Попробуйте позже.'
-      : 'Вход отклонён сетью.';
+      ? i18n.t('authService.registrationLimitExceeded')
+      : i18n.t('authService.loginRejected');
   }
   if (status === 'NOT_FOUND') {
-    return 'Профиль не найден. Проверьте правильность seed-фразы.';
+    return i18n.t('authService.profileNotFound');
   }
-  return `Не удалось ${actionType === 'REGISTER' ? 'зарегистрироваться' : 'войти'}: все релеи сети недоступны.`;
+  return actionType === 'REGISTER'
+    ? i18n.t('authService.allRelaysUnavailableRegister')
+    : i18n.t('authService.allRelaysUnavailableLogin');
 }
 
 export async function initializeApp(nicknameForRegistration?: string) {

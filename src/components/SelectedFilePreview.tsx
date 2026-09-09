@@ -9,6 +9,8 @@ import {
   Music,
   Video as VideoIcon,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import '../styles/SelectedFilePreview.scss';
 
 interface SelectedFilePreviewProps {
@@ -19,8 +21,6 @@ interface SelectedFilePreviewProps {
 
 type IconMeta = { Icon: typeof FileIcon; color: string };
 
-// Иконка + цвет по расширению файла. Используется для всех типов, кроме
-// картинок (для них рендерим настоящую миниатюру) и видео/аудио (свои иконки).
 const getFileIconMeta = (name: string): IconMeta => {
   const ext = name.split('.').pop()?.toLowerCase() || '';
 
@@ -53,10 +53,10 @@ const getPreviewIconMeta = (file: File): IconMeta => {
   return getFileIconMeta(file.name);
 };
 
-const formatFileSize = (bytes: number): string => {
+const formatFileSize = (bytes: number, t: TFunction): string => {
   if (!bytes) return '';
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  if (bytes < 1024 * 1024) return t('selectedFilePreview.sizeKb', { size: (bytes / 1024).toFixed(1) });
+  return t('selectedFilePreview.sizeMb', { size: (bytes / 1024 / 1024).toFixed(1) });
 };
 
 /**
@@ -68,6 +68,7 @@ const SelectedFilePreview: React.FC<SelectedFilePreviewProps> = ({
   onRemove,
   disabled,
 }) => {
+  const { t } = useTranslation();
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const isImage = file.type.startsWith('image/');
 
@@ -110,15 +111,15 @@ const SelectedFilePreview: React.FC<SelectedFilePreviewProps> = ({
           {file.name}
         </span>
         <span className="selected-file-preview-size">
-          {formatFileSize(file.size)}
+          {formatFileSize(file.size, t)}
         </span>
       </div>
 
       <button
         type="button"
         className="selected-file-preview-remove"
-        title="Убрать файл"
-        aria-label="Убрать файл"
+        title={t('selectedFilePreview.removeFile')}
+        aria-label={t('selectedFilePreview.removeFile')}
         onClick={onRemove}
         disabled={disabled}
       >

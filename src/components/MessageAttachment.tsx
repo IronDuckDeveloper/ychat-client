@@ -17,6 +17,7 @@ import {
   Reply,
   ChevronUp,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { globalHelia } from '../lib/p2p/services/authService.ts';
 import {
   type FileAttachment,
@@ -44,6 +45,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
   hidden,
   onToggleCollapse,
 }) => {
+  const { t } = useTranslation();
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(false);
@@ -334,7 +336,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
         <button
           type="button"
           className="hidden-message-collapse-btn"
-          title="Свернуть"
+          title={t('messageAttachment.collapse')}
           onClick={(e) => {
             e.stopPropagation();
             onToggleCollapse();
@@ -347,7 +349,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
       <button
         type="button"
         className="attachment-menu-btn"
-        title="Опции"
+        title={t('messageAttachment.options')}
         onClick={(e) => {
           e.stopPropagation();
           if (isMenuOpen) {
@@ -370,7 +372,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             ...(onReply
               ? [
                   {
-                    label: 'Ответить',
+                    label: t('messageAttachment.reply'),
                     icon: <Reply size={16} />,
                     onClick: (e: React.MouseEvent) => {
                       e.stopPropagation();
@@ -382,7 +384,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 ]
               : []),
             {
-              label: 'Скачать',
+              label: t('messageAttachment.download'),
               icon: <Download size={16} />,
               onClick: (e) => {
                 handleDownloadFile(e);
@@ -393,7 +395,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
               ...(onForward
                 ? [
                   {
-                    label: 'Переслать',
+                    label: t('messageAttachment.forward'),
                     icon: <Forward size={16} />,
                     onClick: (e: React.MouseEvent) => {
                       e.stopPropagation();
@@ -405,7 +407,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 ]
               : []),
             {
-              label: 'Удалить',
+              label: t('messageAttachment.delete'),
               icon: <Trash2 size={16} />,
               danger: true,
               onClick: (e) => {
@@ -427,7 +429,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
           <div className="file-info">
             <Trash2 size={20} color="#ff4d4f" />
             <span style={{ marginLeft: '8px', color: '#ff4d4f' }}>
-              Файл удален
+              {t('messageAttachment.fileDeleted')}
             </span>
           </div>
         </div>
@@ -446,7 +448,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             {fileUrl ? (
               <img
                 src={fileUrl}
-                alt={attachment.name || 'image'}
+                alt={attachment.name || t('messageAttachment.imageAlt')}
                 className="attachment-img loaded"
                 onClick={() => setIsFullscreen(true)}
                 style={{ cursor: 'pointer' }}
@@ -456,7 +458,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 {attachment.preview ? (
                   <img
                     src={attachment.preview || undefined}
-                    alt="blur-preview"
+                    alt={t('messageAttachment.blurPreviewAlt')}
                     className="attachment-img blurred"
                   />
                 ) : (
@@ -468,10 +470,10 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                     <button
                       className="retry-file-btn"
                       onClick={handleDownloadFile}
-                      title="Ошибка загрузки. Повторить?"
+                      title={t('messageAttachment.retryTitle')}
                     >
                       <AlertTriangle size={18} className="error-icon" />
-                      <span>Повторить</span>
+                      <span>{t('messageAttachment.retry')}</span>
                     </button>
                   ) : (
                     <div className="spinner-box">
@@ -496,14 +498,14 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 e.stopPropagation();
                 setIsFullscreen(false);
               }}
-              title="Закрыть"
+              title={t('messageAttachment.close')}
             >
               ✕
             </button>
 
             <img
               src={fileUrl}
-              alt={attachment.name || 'image'}
+              alt={attachment.name || t('messageAttachment.imageAlt')}
               className="image-fullscreen-img"
               onClick={(e) => e.stopPropagation()}
             />
@@ -523,8 +525,8 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
               <Music size={20} />
             </div>
             <div className="file-metadata">
-              <span className="file-name" title={attachment.name || 'audio'}>
-                {attachment.name || 'Аудио'}
+              <span className="file-name" title={attachment.name || t('messageAttachment.audioFallback')}>
+                {attachment.name || t('messageAttachment.audioFallback')}
               </span>
               <span
                 className="file-size"
@@ -533,7 +535,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 {duration
                   ? formatDuration(duration)
                   : attachment.size
-                    ? `${(attachment.size / 1024).toFixed(1)} КБ`
+                    ? t('messageAttachment.sizeKb', { size: (attachment.size / 1024).toFixed(1) })
                     : ''}
               </span>
             </div>
@@ -551,16 +553,16 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 preload="metadata"
                 onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
               >
-                Ваш браузер не поддерживает воспроизведение аудио.
+                {t('messageAttachment.audioUnsupported')}
               </audio>
             ) : downloadError ? (
               <button
                 className="retry-file-btn audio-retry"
                 onClick={handleLoadAudio}
-                title="Ошибка загрузки. Повторить?"
+                title={t('messageAttachment.retryTitle')}
               >
                 <AlertTriangle size={16} className="error-icon" />
-                <span>Повторить</span>
+                <span>{t('messageAttachment.retry')}</span>
               </button>
             ) : (
               <button
@@ -573,7 +575,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                 ) : (
                   <Play size={16} />
                 )}
-                <span>{isDownloading ? 'Загрузка...' : 'Воспроизвести'}</span>
+                <span>{isDownloading ? t('messageAttachment.loading') : t('messageAttachment.play')}</span>
               </button>
             )}
           </div>
@@ -601,7 +603,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
               {attachment.preview ? (
                 <img
                   src={attachment.preview || undefined}
-                  alt="video-preview"
+                  alt={t('messageAttachment.videoPreviewAlt')}
                   className="attachment-img blurred"
                 />
               ) : (
@@ -615,17 +617,17 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
                   <button
                     className="retry-file-btn"
                     onClick={handleLoadVideo}
-                    title="Ошибка загрузки. Повторить?"
+                    title={t('messageAttachment.retryTitle')}
                   >
                     <AlertTriangle size={18} className="error-icon" />
-                    <span>Повторить</span>
+                    <span>{t('messageAttachment.retry')}</span>
                   </button>
                 ) : (
                   <button
                     className="video-play-btn"
                     onClick={handleLoadVideo}
                     disabled={isDownloading}
-                    title="Воспроизвести"
+                    title={t('messageAttachment.play')}
                   >
                     {isDownloading ? (
                       <Loader2 size={22} className="animate-spin" />
@@ -638,7 +640,7 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
 
               {attachment.size ? (
                 <span className="video-size-badge">
-                  {(attachment.size / 1024 / 1024).toFixed(1)} МБ
+                  {t('messageAttachment.sizeMb', { size: (attachment.size / 1024 / 1024).toFixed(1) })}
                 </span>
               ) : null}
             </div>
@@ -664,13 +666,13 @@ const MessageAttachment: React.FC<MessageAttachmentProps> = ({
             <FileTypeIcon size={20} />
           </div>
           <div className="file-metadata">
-            <span className="file-name" title={attachment.name || 'file'}>
-              {attachment.name || 'Без названия'}
+            <span className="file-name" title={attachment.name || t('messageAttachment.unnamedFile')}>
+              {attachment.name || t('messageAttachment.unnamedFile')}
             </span>
             <span className="file-size">
               {attachment.size
-                ? `${(attachment.size / 1024).toFixed(1)} КБ`
-                : 'Размер неизвестен'}
+                ? t('messageAttachment.sizeKb', { size: (attachment.size / 1024).toFixed(1) })
+                : t('messageAttachment.unknownSize')}
             </span>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useIPFS } from './useIPFS.ts';
 import {
   clearEntireChat,
@@ -31,13 +32,14 @@ interface RouterState {
 }
 
 export const useChatLogic = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { peerId } = useParams();
   const location = useLocation();
   const routerState = location.state as RouterState | null;
 
   const [displayName, setDisplayName] = useState(
-    routerState?.contactName || 'Загрузка...',
+    routerState?.contactName || t('chatLogic.loadingContact'),
   );
   const [contact, setContact] = useState<ContactItem | null>(
     routerState?.contact || null,
@@ -60,7 +62,6 @@ export const useChatLogic = () => {
 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
-  // 🔥 Модалка съёмки фото на десктопе (когда capture не открывает нативную камеру)
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
 
   const isMobileDevice = () => {
@@ -70,36 +71,27 @@ export const useChatLogic = () => {
     return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   };
 
-  // 🔥 Запись голосового сообщения: тот же паттерн, что и с фото/видео
   const audioInputRef = useRef<HTMLInputElement>(null);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
-  // 🔥 Съёмка видео: тот же паттерн, что и с фото
   const videoInputRef = useRef<HTMLInputElement>(null);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
-  // 🔥 Логика чистой архитектуры для вложений файлов
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // 🔥 Отдельный скрытый инпут для съёмки фото с камеры устройства
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [acceptedFileTypes, setAcceptedFileTypes] = useState('*/*');
-  // Файл, выбранный пользователем, но ещё не отправленный (превью над инпутом)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // Сообщение, на которое отвечаем (превью над инпутом); аттач и ответ взаимоисключающие
   const [replyingTo, setReplyingTo] = useState<ReplyInfo | null>(null);
-  // 🔥 Стейт для пересылаемого сообщения (берётся из роутера)
   const [forwardMessage, setForwardMessage] = useState<ReplyInfo | null>(
     routerState?.forwardMessage || null
   );
-  // 🔥 Логика скрытых сообщений
   const [isHiddenMode, setIsHiddenMode] = useState(false);
   const toggleHiddenMode = () => setIsHiddenMode((prev) => !prev);
 
-  // --- ДИАЛОГ ---
   const [dialogConfig, setDialogConfig] = useState({
     isOpen: false,
     title: '',
     message: '',
-    confirmText: 'Да',
+    confirmText: t('chatLogic.confirmYes'),
     isDanger: true,
     onConfirm: () => {},
   });
@@ -108,7 +100,7 @@ export const useChatLogic = () => {
     setDialogConfig((prev) => ({ ...prev, isOpen: false }));
 
   const toggleAttachmentMenu = (e?: React.MouseEvent) => {
-    e?.stopPropagation(); // Блокируем всплытие, чтобы слушатель document не закрыл меню сразу же
+    e?.stopPropagation();
     setIsAttachmentMenuOpen(!isAttachmentMenuOpen);
   };
 
@@ -119,15 +111,11 @@ export const useChatLogic = () => {
 
     setIsAttachmentMenuOpen(false);
 
-    // Небольшой таймаут, чтобы дать реакту обновить атрибут accept на инпуте
     setTimeout(() => {
       fileInputRef.current?.click();
     }, 10);
   };
 
-  // 🔥 Съёмка фото: открывает системную камеру устройства через отдельный
-  // input[type=file][capture]. Результат кладётся в тот же handleFileSelect,
-  // поэтому фото проходит по тому же пути превью/отправки, что и обычный файл.
   const triggerCameraCapture = () => {
     setIsAttachmentMenuOpen(false);
 
@@ -180,14 +168,11 @@ const handleVideoCapture = (file: File) => {
   setIsVideoModalOpen(false);
 };
 
-// Снимок из десктоп-модалки идёт по тому же пути, что и обычный файл
 const handleCameraCapture = (file: File) => {
   setSelectedFile(file);
   setIsCameraModalOpen(false);
 };
 
-  // 🔥 Файл больше не грузится сразу: выбор кладёт File в selectedFile,
-  // реальная загрузка в Helia происходит в handleSendMessage при отправке.
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -197,7 +182,7 @@ const handleCameraCapture = (file: File) => {
   const removeSelectedFile = () => {
     setSelectedFile(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''; // Сбрасываем инпут для возможности повторного выбора того же файла
+      fileInputRef.current.value = '';
     }
     if (cameraInputRef.current) {
       cameraInputRef.current.value = '';
@@ -210,8 +195,6 @@ const handleCameraCapture = (file: File) => {
     }
   };
 
-  // Ответ на сообщение: кладём денормализованный снимок в replyingTo.
-  // Аттач при ответе запрещён — сбрасываем уже выбранный файл, если был.
   const handleReplyToMessage = (message: ChatMessage) => {
     setReplyingTo(buildReplyInfo(message));
     removeSelectedFile();
@@ -219,11 +202,6 @@ const handleCameraCapture = (file: File) => {
 
   const cancelReply = () => setReplyingTo(null);
 
-  // 🔥 Пересылаемое сообщение приходит через location.state, который браузер
-  // сохраняет в истории. Если просто сбросить forwardMessage в React-стейте,
-  // после reload той же страницы initializer снова прочитает location.state
-  // и плашка "воскреснет". Поэтому при отмене/отправке дополнительно чистим
-  // сам location.state через navigate(..., { replace: true }).
   const clearForwardRouteState = () => {
     if (routerState && 'forwardMessage' in routerState) {
       const { forwardMessage: _drop, ...rest } = routerState;
@@ -236,7 +214,6 @@ const handleCameraCapture = (file: File) => {
     clearForwardRouteState();
   };
 
-  // Закрытие меню вложений при клике вне его области
   useEffect(() => {
     if (!isAttachmentMenuOpen) return;
 
@@ -244,7 +221,6 @@ const handleCameraCapture = (file: File) => {
       setIsAttachmentMenuOpen(false);
     };
 
-    // Важно: подписываемся после текущего клика, иначе меню сразу закроется
     const timeoutId = setTimeout(() => {
       document.addEventListener('click', handleClickOutside);
     }, 0);
@@ -255,7 +231,6 @@ const handleCameraCapture = (file: File) => {
     };
   }, [isAttachmentMenuOpen]);
 
-  // Очистка уведомлений
   useEffect(() => {
     if (globalContactsDb && peerId) {
       contactsService.clearUnread(globalContactsDb, peerId);
@@ -267,7 +242,6 @@ const handleCameraCapture = (file: File) => {
     };
   }, [peerId]);
 
-  // Функция получения и обновления данных контакта из локальной базы
   const refreshContactData = async () => {
     if (!peerId || !globalContactsDb) return;
     try {
@@ -278,16 +252,15 @@ const handleCameraCapture = (file: File) => {
       if (fetchedContact) {
         setContact(fetchedContact);
         setDisplayName(fetchedContact.nickname || fetchedContact.id);
-      } else if (displayName === 'Загрузка...') {
+      } else if (displayName === t('chatLogic.loadingContact')) {
         setDisplayName(`${peerId.slice(0, 6)}...${peerId.slice(-4)}`);
       }
     } catch (err) {
       console.error('❌ Ошибка при получении контакта в чате:', err);
-      if (displayName === 'Загрузка...') setDisplayName('Неизвестный');
+      if (displayName === t('chatLogic.loadingContact')) setDisplayName(t('chatLogic.unknownContact'));
     }
   };
 
-  // Подписываемся на событие обновления контактов
   useEffect(() => {
     window.addEventListener('onContactsUpdated', refreshContactData);
 
@@ -300,7 +273,6 @@ const handleCameraCapture = (file: File) => {
     };
   }, [peerId, isReady]);
 
-  // Логика получения аватара из Helia FS
   useEffect(() => {
     if (!isReady || !globalHelia || !contact?.avatarCid) {
       return;
@@ -343,7 +315,6 @@ const handleCameraCapture = (file: File) => {
     contact?.avatarEncryptionKey,
   ]);
 
-  // Подключение к комнате PubSub / OrbitDB
   useEffect(() => {
     if (!isReady || !joinRoom) return;
 
@@ -367,11 +338,9 @@ const handleCameraCapture = (file: File) => {
             if (message?.text?.startsWith('System:')) return;
 
             setMessages((prev) => {
-              // Ищем, есть ли уже это сообщение в стейте
               const existingIndex = prev.findIndex((m) => m.id === message.id);
 
               if (existingIndex !== -1) {
-                // Если есть — ПЕРЕЗАПИСЫВАЕМ его (это нужно для синхронизации "Сообщение удалено")
                 const updated = [...prev];
                 updated[existingIndex] = message;
                 return updated.sort(
@@ -379,7 +348,6 @@ const handleCameraCapture = (file: File) => {
                 );
               }
 
-              // Если нет — добавляем новое
               const updated = [message, ...prev];
               return updated.sort(
                 (a, b) => (b.ts || Date.now()) - (a.ts || Date.now()),
@@ -395,9 +363,9 @@ const handleCameraCapture = (file: File) => {
                 message.type !== 'sent';
 
               const displayNotificationText =
-                message.text ||
-                (message.attachment ? '📎 Вложение' : '') ||
-                (message.replyTo ? `↪️ ${message.replyTo.text || 'Пересланное сообщение'}` : '');
+                (message.text === CONFIG.MSG.MESSAGE_DELETED ? t('chat.messageDeletedLabel') : message.text) ||
+                (message.attachment ? t('chatLogic.attachmentFallback') : '') ||
+                (message.replyTo ? t('chatLogic.forwardedFallback', { text: message.replyTo.text || t('chatLogic.forwardedMessageDefault') }) : '');
 
               contactsService.updateLastMessage(
                 globalContactsDb,
@@ -485,20 +453,17 @@ const handleSendMessage = async () => {
 
     const replyToSend = replyingTo ? buildReplyInfo(replyingTo) : undefined;
     
-    // Безопасно собираем данные о пересылке
     let forwardedFromData = undefined;
     if (forwardMessage) {
       const fMsg = forwardMessage as any;
       const origForwarded = fMsg.forwardedFrom;
 
-      // 1. Извлекаем ID отправителя оригинального сообщения
       let senderId =
         origForwarded?.senderId ||
         fMsg.senderId ||
         fMsg.whoSent ||
         '';
 
-      // Определяем, является ли пересылаемое сообщение нашим собственным
       const isMyMessage =
         (nodeId && senderId === nodeId) ||
         fMsg.type === 'sent' ||
@@ -510,16 +475,14 @@ const handleSendMessage = async () => {
         senderId = peerId;
       }
 
-      // 2. Извлекаем имя отправителя из объекта пересылки
       let senderName =
         origForwarded?.senderName ||
         fMsg.senderName ||
         fMsg.whoSentName;
 
-      // 3. Если имя не передано, определяем его по контексту чата и контактам
-      if (!senderName || senderName === 'Неизвестный') {
+      if (!senderName || senderName === t('chatLogic.unknownContact')) {
         if (isMyMessage) {
-          senderName = 'Я';
+          senderName = t('chatLogic.you');
         } else if (contact && (senderId === contact.id || senderId === peerId)) {
           senderName = contact.nickname || displayName;
         } else if (globalContactsDb && senderId) {
@@ -540,11 +503,10 @@ const handleSendMessage = async () => {
         }
       }
 
-      // 4. Резервный вариант (показываем короткий ID, только если контакт нигде не найден)
-      if (!senderName || senderName === 'Неизвестный') {
+      if (!senderName || senderName === t('chatLogic.unknownContact')) {
         senderName = senderId
           ? `${senderId.slice(0, 6)}...${senderId.slice(-4)}`
-          : 'Неизвестный';
+          : t('chatLogic.unknownContact');
       }
 
       forwardedFromData = {
@@ -563,9 +525,7 @@ const handleSendMessage = async () => {
         attachmentInfo = await uploadFileToHelia(globalHelia, fileToSend);
       }
 
-      // --- ЛОГИКА ОТПРАВКИ ---
       if (forwardMessage) {
-        // 1. Отправляем пересылаемое сообщение в его оригинальном виде (текст и/или файл)
         await roomHandle.sendMessage(
           forwardMessage.text || '',
           forwardMessage.attachment,
@@ -574,7 +534,6 @@ const handleSendMessage = async () => {
           forwardedFromData,
         );
 
-        // 2. Если добавлен свой текст/файл, отправляем его вслед второй записью
         if (text || attachmentInfo) {
           await roomHandle.sendMessage(
             text,
@@ -585,7 +544,6 @@ const handleSendMessage = async () => {
           );
         }
       } else {
-        // Обычная отправка или ответ
         await roomHandle.sendMessage(
           text,
           attachmentInfo,
@@ -620,11 +578,11 @@ const handleSendMessage = async () => {
           const myPeerId = (globalHelia as any).libp2p.peerId.toString();
           const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
 
-          let notificationText = 'Новое сообщение';
+          let notificationText = t('chatLogic.newMessage');
           if (text) notificationText = text;
-          else if (attachmentInfo) notificationText = `📎 Файл: ${attachmentInfo.name}`;
-          else if (forwardMessage) notificationText = `↪️ Пересланное сообщение: ${forwardMessage.text || 'Вложение'}`;
-          else if (replyToSend) notificationText = `↩️ Ответ: ${replyToSend.text || 'Вложение'}`;
+          else if (attachmentInfo) notificationText = t('chatLogic.fileNotification', { name: attachmentInfo.name });
+          else if (forwardMessage) notificationText = t('chatLogic.forwardedNotification', { text: forwardMessage.text || t('chatLogic.attachmentFallback') });
+          else if (replyToSend) notificationText = t('chatLogic.replyNotification', { text: replyToSend.text || t('chatLogic.attachmentFallback') });
 
           const notificationData = { from: myPeerId, text: notificationText, ts: now };
           const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
@@ -640,7 +598,6 @@ const handleSendMessage = async () => {
     }
   };
 
-    // 🔥 Скачивание текста сообщения как .txt
   const handleDownloadMessageText = (text: string) => {
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -654,10 +611,10 @@ const handleSendMessage = async () => {
   };
 
   const getInputPlaceholder = () => {
-    if (!isReady) return 'Ожидание запуска узла...';
-    if (!roomHandle) return 'Открытие базы данных комнаты...';
-    if (!isRoomConnected) return 'Поиск пиров и склейка сети...';
-    return 'Напишите сообщение...';
+    if (!isReady) return t('chatLogic.waitingNode');
+    if (!roomHandle) return t('chatLogic.openingRoomDb');
+    if (!isRoomConnected) return t('chatLogic.findingPeers');
+    return t('chatLogic.typeMessage');
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -675,7 +632,6 @@ const handleSendMessage = async () => {
     setDraft(textarea.value);
   };
 
-  // ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ
   const handleDeleteMessage = async (
     messageId: string,
     cid?: string,
@@ -686,15 +642,14 @@ const handleSendMessage = async () => {
     setDialogConfig({
       isOpen: true,
       title: isOwnMessage
-        ? 'Удалить сообщение из сети?'
-        : 'Удалить сообщение с устройства?',
+        ? t('chatLogic.deleteFromNetworkTitle')
+        : t('chatLogic.deleteFromDeviceTitle'),
       message: isOwnMessage
-        ? 'Сообщение будет навсегда удалено из сети.'
-        : 'Сообщение будет навсегда удалено с вашего устройства.',
-      confirmText: 'Да',
+        ? t('chatLogic.deleteFromNetworkMessage')
+        : t('chatLogic.deleteFromDeviceMessage'),
+      confirmText: t('chatLogic.confirmYes'),
       isDanger: true,
       onConfirm: async () => {
-        // 1. Локально сносим файл всегда; на сервере — только если сообщение моё
         if (cid && globalHelia) {
           await deleteFileFromHelia(
             globalHelia,
@@ -705,7 +660,6 @@ const handleSendMessage = async () => {
           );
         }
 
-        // 2. Меняем сообщение в локальном UI мгновенно
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id === messageId) {
@@ -715,7 +669,6 @@ const handleSendMessage = async () => {
           }),
         );
 
-        // 3. Отправляем изменения в OrbitDB, чтобы у собеседника тоже обновилось
         if (isOwnMessage) {
           if (roomHandle && typeof (roomHandle as any).tombstoneMessage === 'function') {
             await (roomHandle as any).tombstoneMessage(messageId);
@@ -753,7 +706,6 @@ const handleSendMessage = async () => {
     closeDialog,
     handleDownloadMessageText,
 
-    // 🔥 Экспорты для UI вложений
     fileInputRef,
     isUploadingFile,
     acceptedFileTypes,
@@ -764,26 +716,22 @@ const handleSendMessage = async () => {
     forwardMessage,
     cancelForward,
 
-    // 🔥 Экспорты для съёмки фото с камеры
     cameraInputRef,
     triggerCameraCapture,
     isCameraModalOpen,
     closeCameraModal,
     handleCameraCapture,
-    // 🔥 Экспорты для съёмки видео
     videoInputRef,
     triggerVideoCapture,
     isVideoModalOpen,
     closeVideoModal,
     handleVideoCapture,
-    // 🔥 Экспорты для записи голосового
     audioInputRef,
     triggerAudioCapture,
     isAudioModalOpen,
     closeAudioModal,
     handleAudioCapture,
 
-    // 🔥 Экспорты для UI ответа на сообщение
     replyingTo,
     handleReplyToMessage,
     cancelReply,
