@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import '../styles/SelectedFilePreview.scss';
+import '../styles/selectedFilePreview.scss';
 
 interface SelectedFilePreviewProps {
   file: File;

@@ -24,7 +24,7 @@ import {
   fetchFileFromHelia,
   convertBlobForDownload,
 } from '../lib/p2p/services/fileService.ts';
-import '../styles/MessageAttachment.scss';
+import '../styles/messageAttachment.scss';
 import { createPortal } from 'react-dom';
 import ContextMenu from './ContextMenu';
 

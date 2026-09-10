@@ -13,7 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { ReplyInfo } from '../lib/p2p/services/roomService.ts';
-import '../styles/ReplyPreview.scss';
+import '../styles/replyPreview.scss';
 
 interface ReplyPreviewProps {
   replyTo: ReplyInfo;
