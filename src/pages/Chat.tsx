@@ -68,7 +68,7 @@ const Chat = () => {
   const { id } = useParams();
 
   const [isBlocked, setIsBlocked] = useState(false);
-  const [isDeleted, setIsDeleted] = useState(false);
+  const [, setIsDeleted] = useState(false);
   const [isContactProfileOpen, setIsContactProfileOpen] = useState(false);
   const [openTextMenuId, setOpenTextMenuId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);

@@ -26,7 +26,7 @@ export const useContactsLogic = () => {
   const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
-  const [contactsDbInstance, setContactsDbInstance] = useState<any>(globalContactsDb);
+  const [, setContactsDbInstance] = useState<any>(globalContactsDb);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [contacts, setContacts] = useState<ContactItem[]>([]);
 

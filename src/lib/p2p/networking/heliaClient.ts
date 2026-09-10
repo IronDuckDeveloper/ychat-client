@@ -173,7 +173,7 @@ export function createBrowserHelia(): Promise<any> {
     }
 
     // Запускаем мониторинг именно здесь, один раз
-    relayManager.startMonitoring(heliaNode.libp2p, async (newRelay) => {
+    relayManager.startMonitoring(heliaNode.libp2p, async () => {
       
       // Отправляем Архивариусу адрес НАШЕЙ базы профиля, чтобы он её закэшировал
       if (globalProfileDb) {

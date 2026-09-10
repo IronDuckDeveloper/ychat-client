@@ -4,7 +4,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useIPFS } from './useIPFS.ts';
 import {
-  clearEntireChat,
+  // clearEntireChat,
   getDeterministicRoomName,
   buildReplyInfo,
   type ChatMessage,
