@@ -26,6 +26,6 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts", "vite.config.ts", "index.d.ts", "declarations.d.ts", "src/**/*.d.ts", "src/**/*.tsx"]
+  "include": ["vite.config.ts"]
   
 }
