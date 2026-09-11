@@ -130,7 +130,7 @@ export const useAuthLogic = () => {
       }
 
       localStorage.setItem(CONFIG.IS_LOADING, 'true');
-      window.location.href = '/contacts';
+      window.location.href = import.meta.env.BASE_URL + 'contacts';
 
     } catch (error: any) {
       console.error('Ошибка авторизации:', error);
