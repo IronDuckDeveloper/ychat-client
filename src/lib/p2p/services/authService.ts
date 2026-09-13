@@ -1,4 +1,4 @@
-import { createBrowserHelia, relayManager } from '../networking/heliaClient.ts';
+import { createBrowserHelia, relayManager, resetHeliaInitialization } from '../networking/heliaClient.ts';
 import i18n from '../../../i18n/config.ts';
 import { getOrbitDB } from '../orbit/client.ts';
 import { getFilteredProfileData, initProfileDB, initGlobalRegistryDB } from './profileService.ts';
@@ -463,6 +463,8 @@ export async function initializeApp(nicknameForRegistration?: string) {
     } catch (cleanupError) {
       console.error('⚠️ [Init] Ошибка при очистке мусора:', cleanupError);
     }
+
+    resetHeliaInitialization();
 
     globalHelia = null;
     globalOrbitDB = null;

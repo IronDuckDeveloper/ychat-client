@@ -31,6 +31,10 @@ export const relayManager = new RelayManager(
   CONFIG.RELAY_POOL_SIZE
 );
 
+export function resetHeliaInitialization() {
+  initializationPromise = null;
+}
+
 export function createBrowserHelia(): Promise<any> {
   if (initializationPromise) return initializationPromise;
 

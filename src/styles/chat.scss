@@ -342,7 +342,10 @@
     align-items: center;
     background-color: white;
     border-radius: 20px;
-    padding: 0.6rem 1rem;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    padding-left: 3px;
+    padding-right: 3px;
     min-height: 48px;
     box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
     border: 1px solid rgba(153, 120, 171, 0.1);
@@ -352,6 +355,7 @@
       background: none;
       border: none;
       padding: 0;
+      margin-left: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -370,7 +374,7 @@
       }
     }
 
-        .camera-button {
+    .camera-button {
       background: none;
       border: none;
       padding: 0;
@@ -406,7 +410,7 @@
       margin: 0 0.5rem;
       background-color: transparent;
       outline: none;
-      font-size: 0.70rem;
+      font-size: 16px;
       border: none;
       resize: none;
       line-height: 20px;
@@ -492,8 +496,7 @@
   align-items: center;
   justify-content: center;
   color: $hint;
-  margin-left: 6px;
-  padding: 6px;
+  margin-left: 3px;
   border-radius: 50%;
   transition: color 0.15s ease, background 0.15s ease;
 
