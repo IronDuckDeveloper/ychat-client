@@ -579,10 +579,6 @@ const Chat = () => {
                 </React.Fragment>
               );
             })}
-
-            {!messages.length && !isLoadingMore && (
-              <div className="message system">{t('chat.loadingOlderMessages')}</div>
-            )}
           </div>
 
           <div className="chat-input-area">

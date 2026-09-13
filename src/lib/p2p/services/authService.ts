@@ -87,64 +87,65 @@ export async function getOrOpenDb(addressOrName: string | undefined | null) {
 }
 
 /**
- * Рассылает текущий профиль пользователя (ник и аватар) в общую сеть PubSub.
- * Используется при обновлении своего профиля или ответе на WAKEUP.
+ * Отправляет данные профиля конкретному пиру в его личный mailbox-топик.
  */
-export async function broadcastMyProfile(customProfileData?: any) {
+export async function sendProfileToContactMailbox(targetPeerId: string, profileData: any) {
   if (!globalHelia || !globalProfileDb) {
-    console.warn('⚠️ broadcastMyProfile: Нода или база профиля не инициализированы.');
+    console.warn('⚠️ sendProfileToContactMailbox: узел/база профиля не инициализированы.');
     return;
   }
 
   try {
     const myPeerId = globalHelia.libp2p.peerId.toString();
-    
-    const nickname = customProfileData && customProfileData[CONFIG.PROFILE.KEY_NICKNAME] !== undefined
-      ? customProfileData[CONFIG.PROFILE.KEY_NICKNAME] 
-      : await globalProfileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-      
-    const avatarCid = customProfileData && customProfileData[CONFIG.PROFILE.KEY_AVATAR_CID] !== undefined
-      ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_CID] 
-      : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
-
-    const bio = customProfileData && customProfileData[CONFIG.PROFILE.KEY_BIO] !== undefined
-      ? customProfileData[CONFIG.PROFILE.KEY_BIO]
-      : await globalProfileDb.get(CONFIG.PROFILE.KEY_BIO);
-
-    const avatarServerCid = customProfileData && customProfileData[CONFIG.PROFILE.KEY_AVATAR_SERVER_CID] !== undefined
-      ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_SERVER_CID]
-      : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID);
-
-    const avatarEncryptionKey = customProfileData && customProfileData[CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY] !== undefined
-      ? customProfileData[CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]
-      : await globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
-
-    const serverRelays = customProfileData && customProfileData[CONFIG.PROFILE.KEY_SERVER_RELAYS] !== undefined
-      ? customProfileData[CONFIG.PROFILE.KEY_SERVER_RELAYS]
-      : await globalProfileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
 
     const updateMsg = {
       type: CONFIG.PROFILE.MSG_PROFILE_UPDATED,
-      senderId: myPeerId || '',
-      nickname: nickname || i18n.t('authService.anonymousFallback'),
-      avatarCid: avatarCid || '',
-      bio: bio || '',
-      avatarServerCid: avatarServerCid || '',
-      avatarEncryptionKey: avatarEncryptionKey || '',
-      serverRelays: serverRelays || [],
-      profileDbAddress: globalProfileDb.address.toString() || '',
+      senderId: myPeerId,
+      nickname: profileData[CONFIG.PROFILE.KEY_NICKNAME] ?? i18n.t('authService.anonymousFallback'),
+      avatarCid: profileData[CONFIG.PROFILE.KEY_AVATAR_CID] ?? '',
+      bio: profileData[CONFIG.PROFILE.KEY_BIO] ?? '',
+      avatarServerCid: profileData[CONFIG.PROFILE.KEY_AVATAR_SERVER_CID] ?? '',
+      avatarEncryptionKey: profileData[CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY] ?? '',
+      serverRelays: profileData[CONFIG.PROFILE.KEY_SERVER_RELAYS] ?? [],
+      profileDbAddress: globalProfileDb.address.toString(),
     };
 
     const encoded = new TextEncoder().encode(JSON.stringify(updateMsg));
-    
-    await globalHelia.libp2p.services.pubsub.publish(
-      CONFIG.TOPICS.PROFILE_UPDATES_TOPIC, 
-      encoded
-    );
-    
-    console.log('🚀 [PubSub] Профиль успешно опубликован в сеть.');
+    const targetMailbox = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${targetPeerId}`;
+
+    await globalHelia.libp2p.services.pubsub.publish(targetMailbox, encoded);
+    console.log(`📤 [Mailbox] Профиль отправлен в mailbox ${targetPeerId.slice(-6)}`);
   } catch (error) {
-    console.error('❌ Ошибка при публикации профиля:', error);
+    console.error('❌ Ошибка при отправке профиля в mailbox:', error);
+  }
+}
+
+/**
+ * Рассылает свежий профиль всем контактам по их персональным mailbox-топикам.
+ * Вызывать при изменении ника/аватара/био/приватности.
+ */
+export async function pushProfileUpdateToContacts() {
+  if (!globalHelia || !globalProfileDb || !globalContactsDb) {
+    console.warn('⚠️ pushProfileUpdateToContacts: узел/базы не инициализированы.');
+    return;
+  }
+
+  try {
+    const { getAllContacts, isPeerIgnored } = await import('./contactsService.ts');
+    const contacts = await getAllContacts(globalContactsDb);
+
+    for (const contact of contacts) {
+      if (await isPeerIgnored(globalContactsDb, contact.id)) continue;
+
+      const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, contact.id);
+      if (filteredProfile) {
+        await sendProfileToContactMailbox(contact.id, filteredProfile);
+      }
+    }
+
+    console.log(`🚀 [Mailbox] Профиль разослан ${contacts.length} контактам.`);
+  } catch (error) {
+    console.error('❌ Ошибка при рассылке профиля контактам:', error);
   }
 }
 
@@ -196,134 +197,138 @@ export async function initializeApp(nicknameForRegistration?: string) {
     globalHiddenMessagesDb = await initHiddenMessagesDB(globalOrbitDB);
     await initGlobalRegistryDB(globalOrbitDB);
 
-    const pubsub = libp2p.services.pubsub;
-    if (!pubsub) {
-      throw new Error('PubSub service is not available on libp2p node');
+  const pubsub = libp2p.services.pubsub;
+  if (!pubsub) {
+    throw new Error('PubSub service is not available on libp2p node');
+  }
+
+  const myPeerId = globalHelia.libp2p.peerId.toString();
+  const myMailboxTopic = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${myPeerId}`;
+
+  await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC); // Пинги пробуждения — общий топик
+  await pubsub.subscribe(myMailboxTopic);                  // Личный почтовый ящик для профильных обновлений
+
+  // ==========================================
+  // ЛОГИКА ОБРАБОТКИ СООБЩЕНИЙ (ОБНОВЛЕНИЯ ПРОФИЛЯ И ПРОБУЖДЕНИЯ)
+  // ==========================================
+  pubsub.addEventListener('message', async (evt: any) => {
+    const msgId = `${evt.detail.from.toString()}_${evt.detail.sequenceNumber}`;
+    if (processedPubSubMsgs.has(msgId)) return;
+
+    processedPubSubMsgs.add(msgId);
+    setTimeout(() => processedPubSubMsgs.delete(msgId), 5000);
+
+    const currentTopic = evt.detail.topic;
+
+    // 1. Пропускаем топики, которые не умеем обрабатывать
+    if (
+      currentTopic !== CONFIG.TOPICS.WAKEUP_SYNC_TOPIC &&
+      currentTopic !== myMailboxTopic
+    ) return;
+
+    let msg;
+    try {
+      msg = JSON.parse(new TextDecoder().decode(evt.detail.data));
+    } catch (e) {
+      console.warn('⚠️ Ошибка парсинга сообщения PubSub:', e);
+      return;
     }
 
-    await pubsub.subscribe(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC);   // Подписываемся на обновления профилей
-    await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC);       // Подписываемся на пинги пробуждения
+    const senderId = msg.senderId || evt.detail.from.toString();
 
-    // ==========================================
-    // ЛОГИКА ОБРАБОТКИ СООБЩЕНИЙ (ОБНОВЛЕНИЯ ПРОФИЛЯ И ПРОБУЖДЕНИЯ)
-    // ==========================================
-    pubsub.addEventListener('message', async (evt: any) => {
-      const msgId = `${evt.detail.from.toString()}_${evt.detail.sequenceNumber}`;
-      if (processedPubSubMsgs.has(msgId)) return;
-      
-      processedPubSubMsgs.add(msgId);
-      setTimeout(() => processedPubSubMsgs.delete(msgId), 5000);
-      
-      const currentTopic = evt.detail.topic;
+    // Игнорируем эхо от собственных сообщений
+    if (senderId === myPeerId) return;
 
-      // 1. Пропускаем только те топики, которые умеем обрабатывать
-      if (
-        currentTopic !== CONFIG.TOPICS.PROFILE_UPDATES_TOPIC && 
-        currentTopic !== CONFIG.TOPICS.WAKEUP_SYNC_TOPIC
-      ) return;
-      
-      let msg;
+    // 👇 БЛОК ФАЕРВОЛА
+    const { isPeerIgnored } = await import('./contactsService.ts');
+    const isBlocked = await isPeerIgnored(globalContactsDb, senderId);
+
+    if (isBlocked) {
+      console.log(`🚫 [Фаервол] Отклонено PubSub-сообщение (${currentTopic}) от заблокированного: ${senderId.slice(0, 8)}`);
+      return;
+    }
+
+    // 2. Обработка WAKEUP_PING (глобальный топик, "кто-то проснулся")
+    if (currentTopic === CONFIG.TOPICS.WAKEUP_SYNC_TOPIC) {
       try {
-        msg = JSON.parse(new TextDecoder().decode(evt.detail.data));
+        if (msg.type !== CONFIG.MSG.WAKEUP) return;
+
+        // 🔒 ФИКС: отвечаем только тем, кто уже есть у нас в контактах.
+        // Посторонним профиль в mailbox не уходит — ghost-контактов больше не будет.
+        const amIAlreadyContact = !!(await getContact(globalContactsDb, senderId));
+        if (!amIAlreadyContact) return;
+
+        console.log(`🔔 [PubSub] Контакт ${senderId.slice(-6)} проснулся. Отправляем профиль в его mailbox.`);
+
+        const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, senderId);
+        if (filteredProfile) {
+          await sendProfileToContactMailbox(senderId, filteredProfile);
+        }
       } catch (e) {
-        console.warn('⚠️ Ошибка парсинга сообщения PubSub:', e);
-        return; 
+        console.error('❌ Ошибка при обработке WAKEUP_PING:', e);
       }
+      return;
+    }
 
-      const myPeerId = globalHelia.libp2p.peerId.toString();
-      const senderId = msg.senderId || evt.detail.from.toString();
-      
-      // Игнорируем эхо от собственных сообщений
-      if (senderId === myPeerId) return;
+    // 3. Обработка входящих обновлений профиля в СВОЁМ mailbox-топике
+    //    (на этом месте currentTopic гарантированно === myMailboxTopic)
+    if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {
+      console.log(`📩 [Mailbox] Получены данные профиля от ${senderId.slice(0, 8)}:`, msg);
 
-      // 👇 БЛОК ФАЕРВОЛА: Проверяем, не в черном ли списке отправитель
-      const { isPeerIgnored } = await import('./contactsService.ts');
-      const isBlocked = await isPeerIgnored(globalContactsDb, senderId);
-      
-      if (isBlocked) {
-        console.log(`🚫 [Фаервол] Отклонено PubSub-сообщение (${currentTopic}) от заблокированного: ${senderId.slice(0, 8)}`);
-        return;
-      }
+      await updateContactProfileAddress(globalContactsDb, senderId, msg.profileDbAddress);
 
-      // 2. Обработка WAKEUP_PING (Кто-то проснулся)
-      if (currentTopic === CONFIG.TOPICS.WAKEUP_SYNC_TOPIC) {
-        try {
-          if (msg.type === CONFIG.MSG.WAKEUP) {
-            console.log(`🔔 [PubSub] Пир ${senderId.slice(-6)} проснулся! Отправляем ему наш профиль для синхронизации.`);
-            
-            const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, senderId);
+      let contact = await getContact(globalContactsDb, senderId);
 
-            if (filteredProfile) {
-              await broadcastMyProfile(filteredProfile); 
-            }
-          }
-        } catch (e) {
-          console.error('❌ Ошибка при обработке WAKEUP_PING:', e);
-        }
-        return;
-      }
+      if (!contact) {
+        // Безопасно: сюда попадает только тот, кто явно знал наш peerId и написал именно нам.
+        const newContact: ContactItem = {
+          id: senderId,
+          chatDbAddress: '',
+          nickname: msg.nickname || senderId.slice(0, 8),
+          avatarCid: msg.avatarCid || '',
+          avatarServerCid: msg.avatarServerCid || '',
+          avatarEncryptionKey: msg.avatarEncryptionKey || '',
+          serverRelays: msg.serverRelays || [],
+          bio: msg.bio || '',
+          profileDbAddress: msg.profileDbAddress || '',
+          updatedAt: Date.now(),
+          isBlocked: false,
+          isDeleted: false
+        };
+        await saveContact(globalContactsDb, newContact);
+        console.log(`➕ [Mailbox] Автоматически создан новый контакт: ${newContact.nickname}`);
+        window.dispatchEvent(new Event('onContactsUpdated'));
+      } else {
+        const isChanged =
+          contact.avatarCid !== msg.avatarCid ||
+          contact.nickname !== msg.nickname ||
+          contact.bio !== msg.bio ||
+          contact.avatarServerCid !== msg.avatarServerCid ||
+          contact.avatarEncryptionKey !== msg.avatarEncryptionKey ||
+          (!contact.profileDbAddress && !!msg.profileDbAddress) ||
+          contact.profileDbAddress !== msg.profileDbAddress;
 
-      // 3. Обработка входящих обновлений профиля (MSG_PROFILE_UPDATED)
-      if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {
-        console.log(`📩 [PubSub Сеть] Получены данные профиля от ${senderId.slice(0,8)}:`, msg);
+        if (isChanged) {
+          console.log(`🔄 [Mailbox] Обновляем профиль для контакта: ${msg.nickname || senderId.slice(0, 8)}`);
 
-        await updateContactProfileAddress(globalContactsDb, msg.senderId, msg.profileDbAddress);
-        
-        let contact = await getContact(globalContactsDb, senderId);
-        
-        if (!contact) {
-          // Если контакта еще не было в базе — создаем его автоматически
-          const newContact: ContactItem = {
-            id: senderId,
-            chatDbAddress: '', 
-            nickname: msg.nickname || senderId.slice(0, 8),
-            avatarCid: msg.avatarCid || '',
-            avatarServerCid: msg.avatarServerCid || '',
-            avatarEncryptionKey: msg.avatarEncryptionKey || '',
-            serverRelays: msg.serverRelays || [],
-            bio: msg.bio || '',
-            profileDbAddress: msg.profileDbAddress || '',
-            updatedAt: Date.now(),
-            isBlocked: false,
-            isDeleted: false
+          const updatedContact: ContactItem = {
+            ...contact,
+            avatarCid: msg.avatarCid ?? contact.avatarCid,
+            avatarServerCid: msg.avatarServerCid ?? contact.avatarServerCid,
+            avatarEncryptionKey: msg.avatarEncryptionKey ?? contact.avatarEncryptionKey,
+            serverRelays: msg.serverRelays ?? contact.serverRelays,
+            nickname: msg.nickname ?? contact.nickname,
+            bio: msg.bio ?? contact.bio,
+            profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
+            updatedAt: Date.now()
           };
-          await saveContact(globalContactsDb, newContact);
-          console.log(`➕ [PubSub] Автоматически создан новый контакт: ${newContact.nickname}`);
+
+          await saveContact(globalContactsDb, updatedContact);
           window.dispatchEvent(new Event('onContactsUpdated'));
-        } else {
-          // Если контакт есть — проверяем, изменились ли данные
-          const isChanged = 
-            contact.avatarCid !== msg.avatarCid || 
-            contact.nickname !== msg.nickname ||
-            contact.bio !== msg.bio ||
-            contact.avatarServerCid !== msg.avatarServerCid ||
-            contact.avatarEncryptionKey !== msg.avatarEncryptionKey ||
-            (!contact.profileDbAddress && !!msg.profileDbAddress) ||
-            contact.profileDbAddress !== msg.profileDbAddress;
-            // serverRelays намеренно не в сравнении — !== на массивах ломается через reference-inequality,
-            // а поле практически всегда меняется вместе с avatarCid/avatarServerCid, так что подхватится попутно
-
-          if (isChanged) {
-            console.log(`🔄 [PubSub] Обновляем профиль для контакта: ${msg.nickname || senderId.slice(0, 8)}`);
-            
-            const updatedContact: ContactItem = {
-              ...contact,
-              avatarCid: msg.avatarCid ?? contact.avatarCid,
-              avatarServerCid: msg.avatarServerCid ?? contact.avatarServerCid,
-              avatarEncryptionKey: msg.avatarEncryptionKey ?? contact.avatarEncryptionKey,
-              serverRelays: msg.serverRelays ?? contact.serverRelays,
-              nickname: msg.nickname ?? contact.nickname,
-              bio: msg.bio ?? contact.bio,
-              profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
-              updatedAt: Date.now()
-            };
-
-            await saveContact(globalContactsDb, updatedContact);
-            window.dispatchEvent(new Event('onContactsUpdated'));
-          }
         }
       }
-    });
+    }
+  });
 
     // ==========================================
     // ЛОГИКА ОБРАБОТКИ ПУЛЬСА СЕТИ (PubSub)

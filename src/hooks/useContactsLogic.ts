@@ -5,7 +5,7 @@ import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
 
 
-import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, broadcastMyProfile, globalRelayManager } from '../lib/p2p/services/authService.ts'; 
+import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileUpdateToContacts, globalRelayManager } from '../lib/p2p/services/authService.ts';
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
@@ -469,15 +469,9 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       await dbInstance.put(CONFIG.PROFILE.KEY_PRIVACY, newPrivacy);
       setMyPrivacy(newPrivacy);
       
-      // 🚀 ФИКС САФАРИ: Передаем 100% свежие данные напрямую в функцию
+      // Передаем 100% свежие данные напрямую в функцию
       if (globalHelia) {
-        await broadcastMyProfile({
-          [CONFIG.PROFILE.KEY_NICKNAME]: newNickname,
-          [CONFIG.PROFILE.KEY_BIO]: newBio,
-          [CONFIG.PROFILE.KEY_AVATAR_CID]: currentAvatarCid,
-          [CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid']: currentAvatarServerCid,
-          [CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY]: currentAvatarEncryptionKey
-        });
+        await pushProfileUpdateToContacts();
       }
 
       showToast(t('contactsLogic.profileSaved'));

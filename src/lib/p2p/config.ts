@@ -62,9 +62,9 @@ export const CONFIG = {
     ANNOUNCE: '/p2p-relay/v1/announce', // Топик для анонсирования адреса базы данных на сервер-Архивариус
     PEER_SYNC_REQUEST: 'peers:sync:request', // Топик для запроса синхронизации с релеями
     PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:', // Базовый топик для ответа синхронизации, к которому будет добавляться ID запрашивающего пира
-    PROFILE_UPDATES_TOPIC: 'ychat/profiles/updates', // Топик для обновления профилей
     RPC_PROTOCOL: '/ychat/anti-flood/1.0.0', // Протокол для RPC-метода проверки регистрации (антифрод)
     WAKEUP_SYNC_TOPIC: 'peers:wakeup:ping', // Для пробуждения соседей и синхронизации OrbitDB
     ANNOUNCE_NEW_MESSAGE: `ychat-notifications-`, // Топик для анонсирования нового сообщения
+    PROFILE_MAILBOX_PREFIX: 'ychat/profiles/mailbox/', // Для обновления контакта + peerId получателя
   }
 };

@@ -7,7 +7,7 @@ import Contacts from './pages/Contacts';
 import { ProtectedRoute } from './components/ProtectedRoute.js';
 import { useEffect } from 'react';
 import { isAuthenticated } from './lib/p2p/crypto/crypto.ts';
-import { initializeApp, globalHelia, globalRelayManager, broadcastMyProfile, globalContactsDb } from './lib/p2p/services/authService.ts';
+import { initializeApp, globalHelia, globalRelayManager, pushProfileUpdateToContacts, globalContactsDb } from './lib/p2p/services/authService.ts';
 import { NetworkOverlay } from './components/NetworkOverlay.tsx';
 import { initNetworkStateMachine } from '../src/lib/p2p/networking/NetworkStateMachine.ts';
 import { syncTopContactsHistory } from './lib/p2p/services/contactsService.ts';
@@ -31,7 +31,7 @@ function App() {
             const stateMachine = initNetworkStateMachine({
               libp2p: globalHelia.libp2p,
               relayManager: globalRelayManager,
-              broadcastMyProfile: broadcastMyProfile
+              pushProfileUpdateToContacts: pushProfileUpdateToContacts
             });
 
         stateMachine.start();

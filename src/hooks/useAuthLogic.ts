@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { broadcastMyProfile, initializeApp } from '../lib/p2p/services/authService.ts';
+import { initializeApp } from '../lib/p2p/services/authService.ts';
 import { 
   saveSeedFromAuth, 
   generateNewMnemonic, 
@@ -118,16 +118,6 @@ export const useAuthLogic = () => {
 
       await saveSeedFromAuth(seed32);
       await initializeApp(isRegister ? nickname : undefined);
-
-      if (isRegister) {
-        console.log('📢 [Register] Отправляем профиль в сеть перед перезагрузкой...');
-        try {
-          await broadcastMyProfile();
-          await new Promise(r => setTimeout(r, 500));
-        } catch (e) {
-          console.warn('⚠️ Не удалось забросить профиль перед редиректом:', e);
-        }
-      }
 
       localStorage.setItem(CONFIG.IS_LOADING, 'true');
       window.location.href = import.meta.env.BASE_URL + 'contacts';

@@ -19,7 +19,7 @@ export class NetworkStateMachine {
   public libp2p: any;
   public relayManager: any;
   public pubsubTopic: string;
-  public broadcastMyProfile: () => Promise<void>;
+  public pushProfileUpdateToContacts: () => Promise<void>;
   
   public state: NetState;
   private watchdogTimer: any;
@@ -29,12 +29,12 @@ export class NetworkStateMachine {
     libp2p: any;
     relayManager: any;
     pubsubTopic?: string;
-    broadcastMyProfile: () => Promise<void>;
+    pushProfileUpdateToContacts: () => Promise<void>;
   }) {
     this.libp2p = config.libp2p;
     this.relayManager = config.relayManager;
     this.pubsubTopic = config.pubsubTopic || CONFIG.TOPICS.WAKEUP_SYNC_TOPIC || 'ychat-global';
-    this.broadcastMyProfile = config.broadcastMyProfile;
+      this.pushProfileUpdateToContacts = config.pushProfileUpdateToContacts;
 
     this.state = NET_STATE.DISCONNECTED;
     this.watchdogTimer = null;
@@ -178,12 +178,14 @@ private startWatchdog() {
 
       // 4. Подписываемся на топики
       try {
+        const myPeerId = this.libp2p.peerId.toString();
+        const myMailboxTopic = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${myPeerId}`;
         this.libp2p.services.pubsub.subscribe(this.pubsubTopic);
-        this.libp2p.services.pubsub.subscribe(CONFIG.TOPICS.PROFILE_UPDATES_TOPIC);
+        this.libp2p.services.pubsub.subscribe(myMailboxTopic);
       } catch (e) {/* Игнорируем */ }
 
       // 5. Отправляем профиль
-      if (this.broadcastMyProfile) this.broadcastMyProfile().catch(() => {});
+      if (this.pushProfileUpdateToContacts) this.pushProfileUpdateToContacts().catch(() => {});
 
       // 6. Пытаемся кинуть WAKEUP
       try {

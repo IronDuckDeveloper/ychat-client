@@ -120,7 +120,7 @@
         border: 2px solid rgba($accent-prime, 0.2);
         border-radius: 0.75rem;
         outline: none;
-        font-size: 0.95rem;
+        font-size: 16px;
         transition: border-color 0.2s;
 
         &:focus {
@@ -142,7 +142,7 @@
         border-radius: 0.75rem;
         outline: none;
         background: white;
-        font-size: 0.9rem;
+        font-size: 16px;
         transition: border-color 0.2s, box-shadow 0.2s;
 
         &:focus {
