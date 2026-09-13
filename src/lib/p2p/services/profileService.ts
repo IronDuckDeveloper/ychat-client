@@ -39,10 +39,25 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
     try {
       console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
 
-      const profileDb = await orbitdb.open(CONFIG.PROFILE.DB_PROFILE, {
+      // 🔑 Ключ привязан к identity, чтобы разные аккаунты на одном устройстве не путались
+      const storageKey = `${CONFIG.KEY_PROFILE_DB_ADDRESS_PREFIX}${orbitdb.identity.id}`;
+      const storedAddress = localStorage.getItem(storageKey);
+
+      // Если раньше уже создавали профиль — открываем СТРОГО по сохранённому адресу.
+      // Если это первый запуск для этой identity — открываем по имени (создаст новую базу).
+      const openTarget = storedAddress || CONFIG.PROFILE.DB_PROFILE;
+
+      const profileDb = await orbitdb.open(openTarget, {
         type: 'keyvalue',
-        AccessController: IPFSAccessController({ write: [orbitdb.identity.id] }) 
+        AccessController: IPFSAccessController({ write: [orbitdb.identity.id] })
       });
+
+            // Фиксируем фактический адрес на будущее — теперь он не потеряется между сессиями
+      const actualAddress = profileDb.address.toString();
+      if (storedAddress !== actualAddress) {
+        localStorage.setItem(storageKey, actualAddress);
+        console.log(`📌 [ProfileDB] Адрес профиля зафиксирован: ${actualAddress}`);
+      }
 
       console.log(`✅ [ProfileDB] База открыта. Адрес: ${profileDb.address} 🔒 Право на запись только у: ${orbitdb.identity.id}`);
 

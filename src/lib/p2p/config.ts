@@ -27,6 +27,7 @@ export const CONFIG = {
   },
 
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
+  KEY_PROFILE_DB_ADDRESS_PREFIX: 'ychat_profile_addr_', // + identity.id, чтобы не путать аккаунты на одном устройстве
 
   IS_LOADING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
   KEY_GLOBAL_REGISTRY_ADDRESS: 'YCHAT_GLOBAL_REGISTRY_ADDRESS', // Ключ для хранения состояния авторизации
