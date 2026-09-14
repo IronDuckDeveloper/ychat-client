@@ -576,7 +576,7 @@ const handleSendMessage = async () => {
       if (globalHelia && peerId) {
         try {
           const myPeerId = (globalHelia as any).libp2p.peerId.toString();
-          const targetTopic = `${CONFIG.TOPICS.ANNOUNCE_NEW_MESSAGE}${peerId}`;
+          const targetMailbox = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${peerId}`; // 🔥 тот же тёплый топик
 
           let notificationText = t('chatLogic.newMessage');
           if (text) notificationText = text;
@@ -584,9 +584,16 @@ const handleSendMessage = async () => {
           else if (forwardMessage) notificationText = t('chatLogic.forwardedNotification', { text: forwardMessage.text || t('chatLogic.attachmentFallback') });
           else if (replyToSend) notificationText = t('chatLogic.replyNotification', { text: replyToSend.text || t('chatLogic.attachmentFallback') });
 
-          const notificationData = { from: myPeerId, text: notificationText, ts: now };
+          const notificationData = {
+            type: 'NEW_MESSAGE', // отличаем от PROFILE_UPDATED в общем обработчике
+            senderId: myPeerId,
+            from: myPeerId,
+            text: notificationText,
+            ts: now,
+            hidden: sendAsHidden,
+          };
           const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
-          await (globalHelia as any).libp2p.services.pubsub.publish(targetTopic, encoded);
+          await (globalHelia as any).libp2p.services.pubsub.publish(targetMailbox, encoded);
         } catch (err) {
           console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
         }

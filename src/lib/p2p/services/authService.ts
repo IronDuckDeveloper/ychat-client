@@ -328,6 +328,24 @@ export async function initializeApp(nicknameForRegistration?: string) {
         }
       }
     }
+
+    if (msg.type === 'NEW_MESSAGE') {
+      const { updateLastMessage, isPeerIgnored } = await import('./contactsService.ts');
+
+      if (await isPeerIgnored(globalContactsDb, senderId)) return;
+
+      const isCurrentlyInThisChat = window.location.pathname.includes(senderId);
+      await updateLastMessage(
+        globalContactsDb,
+        senderId,
+        msg.text,
+        msg.ts || Date.now(),
+        !isCurrentlyInThisChat,
+        msg.hidden || false
+      );
+      window.dispatchEvent(new Event('onContactsUpdated'));
+      return;
+    }
   });
 
     // ==========================================

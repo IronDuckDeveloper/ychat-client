@@ -65,7 +65,6 @@ export const CONFIG = {
     PEER_SYNC_RESPONSE_BASE: 'peers:sync:response:', // Базовый топик для ответа синхронизации, к которому будет добавляться ID запрашивающего пира
     RPC_PROTOCOL: '/ychat/anti-flood/1.0.0', // Протокол для RPC-метода проверки регистрации (антифрод)
     WAKEUP_SYNC_TOPIC: 'peers:wakeup:ping', // Для пробуждения соседей и синхронизации OrbitDB
-    ANNOUNCE_NEW_MESSAGE: `ychat-notifications-`, // Топик для анонсирования нового сообщения
-    PROFILE_MAILBOX_PREFIX: 'ychat/profiles/mailbox/', // Для обновления контакта + peerId получателя
+    PROFILE_MAILBOX_PREFIX: 'ychat/profiles/mailbox/', // Для обновления контакта + peerId получателя и анонсирования нового сообщения
   }
 };

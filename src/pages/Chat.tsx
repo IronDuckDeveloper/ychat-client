@@ -65,7 +65,7 @@ const formatTime = (ts?: number) => {
 
 const Chat = () => {
   const { t, i18n } = useTranslation();
-  const { id } = useParams();
+  const { peerId: id } = useParams();
 
   const [isBlocked, setIsBlocked] = useState(false);
   const [, setIsDeleted] = useState(false);

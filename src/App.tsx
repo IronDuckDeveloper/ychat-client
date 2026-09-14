@@ -11,7 +11,7 @@ import { initializeApp, globalHelia, globalRelayManager, pushProfileUpdateToCont
 import { NetworkOverlay } from './components/NetworkOverlay.tsx';
 import { initNetworkStateMachine } from '../src/lib/p2p/networking/NetworkStateMachine.ts';
 import { syncTopContactsHistory } from './lib/p2p/services/contactsService.ts';
-import { startGlobalNotificationListener, startBackgroundProfileWatcher } from './lib/p2p/services/backgroundServices.ts';
+import { startBackgroundProfileWatcher } from './lib/p2p/services/backgroundServices.ts';
 import { checkAndSyncRelays } from './lib/p2p/networking/connectionManager.ts';
 import { useUploadEvents } from './hooks/useUploadEvents'
 import { createPortal } from 'react-dom';;
@@ -40,9 +40,6 @@ function App() {
         Promise.all([
           checkAndSyncRelays(globalHelia, true)
             .catch(err => console.error("❌ Ошибка checkAndSyncRelays:", err)),
-
-          startGlobalNotificationListener(globalHelia, globalContactsDb)
-            .catch(err => console.error("❌ Ошибка пуш-нотификатора:", err)),
 
           startBackgroundProfileWatcher(globalContactsDb)
             .catch(err => console.error("❌ Ошибка вотчера профилей:", err))
