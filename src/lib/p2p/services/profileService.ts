@@ -39,8 +39,8 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
     try {
       console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
 
-      // 🔑 Ключ привязан к identity, чтобы разные аккаунты на одном устройстве не путались
-      const storageKey = `${CONFIG.KEY_PROFILE_DB_ADDRESS_PREFIX}${orbitdb.identity.id}`;
+      const myPeerId = orbitdb.ipfs.libp2p.peerId.toString(); 
+      const storageKey = `${CONFIG.KEY_PROFILE_DB_ADDRESS_PREFIX}${myPeerId}`;
       const storedAddress = localStorage.getItem(storageKey);
 
       // Если раньше уже создавали профиль — открываем СТРОГО по сохранённому адресу.
