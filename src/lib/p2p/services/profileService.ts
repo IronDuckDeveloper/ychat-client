@@ -39,7 +39,7 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
     try {
       console.log(`👤 [ProfileDB] Инициализация базы профиля...`);
 
-      const myPeerId = orbitdb.ipfs.libp2p.peerId.toString(); 
+      const myPeerId = orbitdb.ipfs.libp2p.peerId.toString();
       const storageKey = `${CONFIG.KEY_PROFILE_DB_ADDRESS_PREFIX}${myPeerId}`;
       const storedAddress = localStorage.getItem(storageKey);
 

@@ -1,4 +1,5 @@
-import { createOrbitDB, Identities, useAccessController } from '@orbitdb/core';
+import { createOrbitDB, Identities, useAccessController, useIdentityProvider } from '@orbitdb/core';
+import { getPrivateKey } from '../crypto/crypto.ts';
 import { HeliaIdentityProvider } from './identity.ts';
 import { CONFIG } from '../config.ts';
 import { RateLimitedAccessController } from './rateLimitedAccessController.ts';
@@ -8,6 +9,7 @@ import { RateLimitedAccessController } from './rateLimitedAccessController.ts';
 // существующему адресу orbitdb.js не сможет резолвить тип из манифеста
 // (getAccessController(acType) бросит "not supported").
 useAccessController(RateLimitedAccessController as any);
+useIdentityProvider(HeliaIdentityProvider as any);
 
 // Храним синглтон инстанса OrbitDB, чтобы не создавать его заново при смене комнат
 let orbitdbInstance: any = null;
@@ -19,20 +21,13 @@ export async function getOrbitDB(helia: any) {
     const peerIdString = helia.libp2p.peerId.toString();
 
     // Регистрируем провайдер напрямую в менеджере Identities
-    const identities = await Identities({ 
-      ipfs: helia,
-      identities: {
-        helia: HeliaIdentityProvider
-      }
-    });
-    
+    const privateKey = await getPrivateKey(); // тот же ключ, что и в heliaClient.ts при создании ноды
+    const identities = await Identities({ ipfs: helia });
+
     console.log(`🔑 [OrbitDB] Создаем Identity через Helia ключи для: ${peerIdString}`);
 
-    const identity = await identities.createIdentity({
-      id: peerIdString,
-      type: 'helia',
-      helia: helia
-    });
+    const provider = HeliaIdentityProvider({ helia, privateKey });
+    const identity = await identities.createIdentity({ provider });
 
     orbitdbInstance = await createOrbitDB({ 
       ipfs: helia,
