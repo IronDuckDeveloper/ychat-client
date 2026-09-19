@@ -179,7 +179,7 @@ class UploadQueue {
     const safeBuffer = new Uint8Array(item.payloadToUpload);
     formData.append('file', new Blob([safeBuffer], { type: 'application/octet-stream' }), item.file.name);
 
-    const kuboApiUrl = `http://${relayIp}:5001/api/v0/add?pin=true&cid-version=1&raw-leaves=false`;
+    const kuboApiUrl = `${CONFIG.URL.PREFIX_HTTP}${relayIp}:5001/api/v0/add?pin=true&cid-version=1&raw-leaves=false`;
     const response = await fetch(kuboApiUrl, {
       method: 'POST',
       headers: { 'x-session-token': item.sessionToken },

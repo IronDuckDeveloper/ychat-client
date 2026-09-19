@@ -51,6 +51,10 @@ export const CONFIG = {
 
   CHUNK_SIZE: 15, // Сколько сообщений грузить за раз
 
+  URL: {
+    PREFIX_HTTP: 'https://', // Префикс для URL-адреса
+  },
+
   MSG: {
     SUCCESS : 'SUCCESS',
     FORBIDDEN : 'FORBIDDEN',

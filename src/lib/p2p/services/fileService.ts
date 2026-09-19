@@ -155,7 +155,7 @@ async function registerServerFile(cid: string, sessionToken: string): Promise<vo
   const relayIp = relayManager.getActiveRelayIp();
   if (!relayIp) return;
   try {
-    await fetch(`http://${relayIp}:5001/api/register-file`, {
+    await fetch(`${CONFIG.URL.PREFIX_HTTP}${relayIp}:5001/api/register-file`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-session-token': sessionToken },
       body: JSON.stringify({ cid }),
@@ -308,7 +308,7 @@ export async function fetchFileFromHelia(
     for (const relayIp of candidateRelays) {
       await serverFetchSemaphore.acquire();
       try {
-        const url = `http://${relayIp}:8081/ipfs/${targetCidForGateway}`;
+        const url = `${CONFIG.URL.PREFIX_HTTP}${relayIp}:8081/ipfs/${targetCidForGateway}`;
         const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
 
         if (response.ok) {
@@ -551,7 +551,7 @@ export async function deleteFileFromHelia(
       } else {
         await Promise.allSettled(relayIps.map(async (relayIp) => {
           try {
-            const response = await fetch(`http://${relayIp}:5001/api/delete-file`, {
+            const response = await fetch(`${CONFIG.URL.PREFIX_HTTP}${relayIp}:5001/api/delete-file`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-session-token': sessionToken },
               body: JSON.stringify({ cid: targetCid }),
