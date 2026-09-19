@@ -19,22 +19,26 @@ export async function uploadAvatarToHelia(
   oldServerCid?: string,
   serverRelays?: string[],
 ): Promise<FileAttachment> {
-  // 1. Удаляем старый аватар (если был), чтобы не мусорить в Kubo и кэше
+  // 1. Оборачиваем Blob в File
+  const avatarFile = fileOrBlob instanceof File
+    ? fileOrBlob
+    : new File([fileOrBlob], 'avatar.webp', { type: 'image/webp' });
+
+  // 2. 🔥 Передаем фиксированное имя 'avatar.webp' в fileService
+  const attachment = await uploadFileToHelia(helia, avatarFile, 'avatar.webp');
+
+  // 3. Старый удаляем только ПОСЛЕ успешной загрузки нового: если загрузка упадёт,
+  //    профиль всё ещё ссылается на старый файл, он должен остаться доступным.
+  //    isOwnFile = true — это наш аватар (владельца всё равно проверит сервер).
   if (oldCid) {
     try {
-      await deleteFileFromHelia(helia, oldCid, oldServerCid, serverRelays);
+      await deleteFileFromHelia(helia, oldCid, oldServerCid, serverRelays, true);
     } catch (err) {
       console.warn(`⚠️ [AvatarService] Не удалось удалить старый аватар:`, err);
     }
   }
 
-  // 2. Оборачиваем Blob в File
-  const avatarFile = fileOrBlob instanceof File
-    ? fileOrBlob
-    : new File([fileOrBlob], 'avatar.webp', { type: 'image/webp' });
-
-  // 3. 🔥 Передаем фиксированное имя 'avatar.webp' в fileService
-  return uploadFileToHelia(helia, avatarFile, 'avatar.webp');
+  return attachment;
 }
 
 /**
@@ -51,6 +55,12 @@ export async function fetchAvatarFromHelia(
   serverRelays?: string[]
 ): Promise<string | null> {
   if (!cidString) return null;
+
+  // Аватар всегда шифруется. Без ключа decryptAndSave кэширует шифротекст как «успешный» blob.
+  if (!encryptionKey) {
+    console.warn(`⏳ [AvatarService] Нет ключа для ${cidString.slice(-8)}, скачивание отложено`);
+    return null;
+  }
 
   // Если требуется принудительное обновление, удаляем старый кэш перед запросом
   if (forceRefresh) {

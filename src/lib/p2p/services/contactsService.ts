@@ -32,6 +32,19 @@ export interface PeerRestrictionStatus {
 
 export type PrivacyType = 'public' | 'contacts_only' | 'private';
 
+type AvatarBundle = { avatarCid?: string; avatarServerCid?: string; avatarEncryptionKey?: string };
+
+/**
+ * true, если `next` — недописанная связка аватара: cid уже новый, а key/serverCid ещё пустые или старые.
+ * Каждая загрузка даёт новый key и serverCid. Применять такое нельзя: fetch скачает не тот файл
+ * или не расшифрует его, и результат закэшируется под новым cid.
+ */
+export function isAvatarBundleStale(prev: AvatarBundle, next: AvatarBundle): boolean {
+  if (!next.avatarCid || next.avatarCid === prev.avatarCid) return false; // не менялся / удалён
+  if (!next.avatarEncryptionKey || !next.avatarServerCid) return true;
+  return next.avatarEncryptionKey === prev.avatarEncryptionKey || next.avatarServerCid === prev.avatarServerCid;
+}
+
 // Глобальный кэш для защиты от двойной синхронизации 
 const syncCooldowns = new Map<string, number>();
 

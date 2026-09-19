@@ -31,6 +31,7 @@ function ContactAvatar({
       setIsRetrying(true);
       try {        
         const isManualRefresh = retryCount > 0;
+        console.log(`🖼️ [Avatar UI] fetch ${cid.slice(-6)}: key=${!!encryptionKey}, serverCid=${!!serverCid}, force=${isManualRefresh}`);
         const url = await fetchAvatarFromHelia(
           globalHelia, 
           cid, 
@@ -66,6 +67,11 @@ function ContactAvatar({
         src={avatarUrl} 
         alt={t('contactAvatar.alt')} 
         className="contact-avatar-img"
+        onError={() => {
+          // битый blob (например, закэширован без расшифровки): один раз сбрасываем кэш и качаем заново
+          setAvatarUrl(null);
+          setRetryCount(prev => (prev === 0 ? 1 : prev));
+        }}
       />
     );
   }

@@ -5,7 +5,7 @@ import { getFilteredProfileData, initProfileDB, initGlobalRegistryDB } from './p
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
-import { initContactsDB, getContact, saveContact, type ContactItem, updateContactProfileAddress } from './contactsService.ts';
+import { initContactsDB, getContact, saveContact, isAvatarBundleStale, type ContactItem, updateContactProfileAddress } from './contactsService.ts';
 import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
 import { initHiddenMessagesDB } from './hiddenMessagesService.ts';
 
@@ -274,6 +274,16 @@ export async function initializeApp(nicknameForRegistration?: string) {
     //    (на этом месте currentTopic гарантированно === myMailboxTopic)
     if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {
       console.log(`📩 [Mailbox] Получены данные профиля от ${senderId.slice(0, 8)}:`, msg);
+
+    // Недописанный аватар (cid без key/serverCid) не применяем, оставляем прежние поля.
+    // Полные данные приедут через profileDb → forceSyncContactProfile.
+    const prevForAvatar = await getContact(globalContactsDb, senderId);
+    if (isAvatarBundleStale(prevForAvatar ?? {}, msg)) {
+      msg.avatarCid = prevForAvatar?.avatarCid ?? '';
+      msg.avatarServerCid = prevForAvatar?.avatarServerCid ?? '';
+      msg.avatarEncryptionKey = prevForAvatar?.avatarEncryptionKey ?? '';
+      msg.serverRelays = prevForAvatar?.serverRelays ?? [];
+    }
 
       await updateContactProfileAddress(globalContactsDb, senderId, msg.profileDbAddress);
 

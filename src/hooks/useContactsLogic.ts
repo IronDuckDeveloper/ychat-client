@@ -440,9 +440,6 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
           }
         } catch {}
 
-        // 3. Сохраняем в OrbitDB новый CID и новый Server CID
-        await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, newCid);
-
         if (newServerCid) {
           await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid', newServerCid);
         }
@@ -454,6 +451,9 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
         if (newServerRelays) {
           await dbInstance.put(CONFIG.PROFILE.KEY_SERVER_RELAYS, newServerRelays);
         }
+
+        // cid — ПОСЛЕДНИМ: реплика увидит новый cid только когда serverCid/key/relays уже на месте
+        await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, newCid);
 
         currentAvatarCid = newCid; // Обновляем для отправки в broadcast
         currentAvatarServerCid = newServerCid; // ОБЯЗАТЕЛЬНО обновляем serverCid для бродкаста!

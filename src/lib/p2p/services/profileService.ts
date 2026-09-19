@@ -10,7 +10,7 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
 import { getOrOpenDb, globalOrbitDB } from './authService.ts';
-import { saveContact, type ContactItem } from './contactsService.ts';
+import { saveContact, isAvatarBundleStale, type ContactItem } from './contactsService.ts';
 import i18n from '../../../i18n/config.ts';
 
 export interface SyncResult {
@@ -254,7 +254,11 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
         });
       }
 
-      if (!freshName) {
+      if (isAvatarBundleStale(contact, {
+        avatarCid: freshAvatar,
+        avatarServerCid: freshServerCid,
+        avatarEncryptionKey: freshEncryptionKey,
+      })) {
         console.log('⏳ [ProfileSync] Данные профиля еще не среплицировались, ждем сеть...');
         return false;
       }
