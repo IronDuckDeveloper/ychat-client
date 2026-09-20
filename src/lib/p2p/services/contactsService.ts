@@ -22,6 +22,7 @@ export interface ContactItem {
   unreadCount?: number; // Количество непрочитанных сообщений
   isBlocked?: boolean; // Флаг блокировки
   isDeleted?: boolean; // Флаг удаления
+  isPending?: boolean; // Входящая заявка: нас добавили, решение ещё не принято
 }
 
 export interface PeerRestrictionStatus {
@@ -171,7 +172,8 @@ export const saveContact = async (contactsDb: any, contact: ContactItem) => {
       existingContact.lastMessageTime === sanitizedContact.lastMessageTime &&
       existingContact.unreadCount === sanitizedContact.unreadCount &&
       existingContact.isBlocked === sanitizedContact.isBlocked &&
-      existingContact.isDeleted === sanitizedContact.isDeleted;
+      existingContact.isDeleted === sanitizedContact.isDeleted &&
+    !!existingContact.isPending === !!sanitizedContact.isPending;
 
     if (isIdentical) {
       return; 
@@ -252,6 +254,7 @@ export const deleteContact = async (contactsDb: any, contactId: string): Promise
       const updatedContact: ContactItem = {
         ...contact,
         isDeleted: true,
+        isPending: false,
         updatedAt: Date.now()
       };
       await saveContact(contactsDb, updatedContact);
@@ -352,6 +355,8 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
 }
 
 export async function syncContactHistory(contact: ContactItem, contactsDb: any) {
+  // Заявка не принята — чат-БД не открываем и архивариуса не анонсируем
+  if (contact.isPending) return;
   // 🛡️ Выходим, если контакт заблокирован, удален или находится в блэклисте
   if (await isPeerIgnored(contactsDb, contact.id)) {
     console.log(`🔇 [Sync] Пропуск синхронизации для ${contact.nickname}: контакт заблокирован или удален.`);

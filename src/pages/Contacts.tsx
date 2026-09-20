@@ -41,7 +41,7 @@ const ContactList = () => {
     addVideoRef, closeDialog, toggleContactMenu, toggleHeaderMenu, 
     handleCopyPeerId, onSubmitAddContact, handleRefreshContact, 
     handleDeleteContact, handleSaveProfile, handleLogout, 
-    handleBlockContact, handleUnblockAndRefresh, syncContactInQueue
+    handleBlockContact, handleUnblockAndRefresh, handleAcceptContact, syncContactInQueue
   } = useContactsLogic();
   
   const observer = useRef<IntersectionObserver | null>(null);
@@ -200,7 +200,7 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
               ref={(el) => contactRef(el, contact)}
               className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
               onClick={(e) => {
-                if (contact.isBlocked) {
+                if (contact.isBlocked || contact.isPending) {
                   e.preventDefault(); 
                   e.stopPropagation();
                   return;
@@ -229,6 +229,14 @@ const contactRef = useCallback((node: HTMLDivElement | null, contact: ContactIte
                     ? t('chat.messageDeletedLabel')
                     : (contact.lastMessage || t('contactsPage.noMessages'))}
                 </div>
+                {contact.isPending && (
+                  <div className="contact-pending-actions" onClick={(e) => e.stopPropagation()}>
+                    <span className="contact-pending-hint">{t('contactsPage.addedYouHint')}</span>
+                    <button className="pending-btn accept" onClick={(e) => handleAcceptContact(e, contact.id)}>{t('contactsPage.add')}</button>
+                    <button className="pending-btn" onClick={(e) => handleBlockContact(e, contact.id)}>{t('contactsPage.block')}</button>
+                    <button className="pending-btn danger" onClick={(e) => handleDeleteContact(e, contact.id)}>{t('contactsPage.delete')}</button>
+                  </div>
+                )}
               </div>
               <div className="contact-time">
                 {contact.lastMessageTime && contact.lastMessage && contact.lastMessage !== CONFIG.MSG.MESSAGE_DELETED && (

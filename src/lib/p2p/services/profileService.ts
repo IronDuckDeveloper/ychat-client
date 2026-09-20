@@ -10,7 +10,7 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
 import { getOrOpenDb, globalOrbitDB } from './authService.ts';
-import { saveContact, isAvatarBundleStale, type ContactItem } from './contactsService.ts';
+import { saveContact, getContact, isAvatarBundleStale, type ContactItem } from './contactsService.ts';
 import i18n from '../../../i18n/config.ts';
 
 export interface SyncResult {
@@ -291,11 +291,13 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
           updatedAt: Date.now()
         });
 
+        // Свежая запись из БД: `contact` из замыкания устаревает и затирал бы isPending/isBlocked/lastMessage
+        const base = (await getContact(contactsDb, contact.id)) || contact;
         const updatedContact: ContactItem = {
-          ...contact,
+          ...base,
           ...cleanProfile
         };
-
+        
         await saveContact(contactsDb, updatedContact);
         window.dispatchEvent(new Event('onContactsUpdated'));
         console.log(`✅ [ProfileSync] Профиль ${contact.id.slice(-6)} успешно обновлен${isFromEvent ? ' (из сети)' : ''}: ${updatedName}`);
@@ -347,7 +349,7 @@ export const getFilteredProfileData = async (profileDb: any, contactsDb: any, re
     const { getContactById } = await import('./contactsService.ts');
     const contact = await getContactById(contactsDb, requesterPeerId);
     
-    if (!contact || contact.isDeleted) {
+    if (!contact || contact.isDeleted || contact.isPending) {
       console.log(`🔒 [ProfileService] Пира ${requesterPeerId} нет в контактах. Отправляем пустой слепок.`);
       return {
         [CONFIG.PROFILE.KEY_NICKNAME]: i18n.t('profileService.contactsOnlyProfile'),

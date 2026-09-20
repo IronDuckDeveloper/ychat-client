@@ -27,6 +27,7 @@ export class RelayManager {
   
   // Хранилище релеев в карантине (PeerID -> Timestamp ошибки)
   private failedRelays: Map<string, number> = new Map();
+  private disconnectHandler: ((evt: any) => void) | null = null;
   private readonly COOLDOWN_MS = 5 * 60 * 1000; // Карантин на 5 минут
 
   constructor(allRelaysFromSchema: RelayConfig[], poolSize = 5) {
@@ -211,9 +212,10 @@ public getRelayIp(relay: RelayConfig): string | null {
 
   // Привязываем инстанс libp2p после его старта
   public startMonitoring(libp2p: Libp2p, onRelayChanged?: (newRelay: RelayConfig) => void) {
+    this.detachMonitor();
     this.libp2p = libp2p;
 
-    this.libp2p.addEventListener('peer:disconnect', async (evt) => {
+    this.disconnectHandler = async (evt: any) => {
       const disconnectedPeerId = evt.detail.toString();
 
       // 🛡️ СПАСИТЕЛЬНАЯ ПРОВЕРКА: Если мы спим, это браузер убил сокеты. Карантин не даем.
@@ -242,7 +244,23 @@ public getRelayIp(relay: RelayConfig): string | null {
         // 4. ПЕРЕКЛЮЧАЕМСЯ НА ЗАПАСНЫЙ РЕЛЕЙ
         await this.switchToNextRelay(onRelayChanged);
       }
-    });
+    };
+    this.libp2p.addEventListener('peer:disconnect', this.disconnectHandler);
+  }
+
+  private detachMonitor() {
+    if (this.libp2p && this.disconnectHandler) {
+      this.libp2p.removeEventListener('peer:disconnect', this.disconnectHandler);
+    }
+    this.disconnectHandler = null;
+  }
+
+  // Намеренная остановка узла (логаут / откат) — это не падение релея
+  public stopMonitoring() {
+    this.detachMonitor();
+    this.libp2p = null;
+    this.isSwitching = false;
+    this.clearQuarantine();
   }
 
   /**
@@ -284,6 +302,82 @@ public getRelayIp(relay: RelayConfig): string | null {
       console.log(`💓 [Heartbeat] Анонсирована комната ${roomAddress.slice(-12)} на релей ${currentRelay.name}`);
     } catch (err: any) {
       console.error(`❌ [RelayManager] Ошибка отправки анонса на ${currentRelay.name}:`, err.message);
+    }
+  }
+
+    /**
+   * Кладёт запрос в контакты на релей — для получателя, который сейчас офлайн.
+   * Релеи пробуем по кругу с активного; остальные получат запись через live-sync.
+   */
+  public async depositContactRequest(targetPeerId: string, payload: unknown): Promise<boolean> {
+    if (!this.libp2p) return false;
+
+    const ordered = [
+      ...this.relayPool.slice(this.currentIdx),
+      ...this.relayPool.slice(0, this.currentIdx),
+    ];
+
+    for (const relay of ordered) {
+      if (this.isRelayFailed(relay.peerId)) continue;
+
+      try {
+        const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+        const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.CONTACT_REQUEST_DEPOSIT);
+
+        await (pipe as any)(
+          [new TextEncoder().encode(JSON.stringify({ targetId: targetPeerId, payload }))],
+          lp.encode,
+          stream.sink
+        );
+
+        let accepted = false;
+        await (pipe as any)(stream.source, lp.decode, async (source: any) => {
+          for await (const chunk of source) {
+            accepted = JSON.parse(new TextDecoder().decode(chunk.subarray())).status === CONFIG.MSG.SUCCESS;
+            break;
+          }
+        });
+
+        await stream.close();
+        console.log(`📮 [ContactRequest] Релей ${relay.name} ${accepted ? 'принял' : 'отклонил'} запрос`);
+        return accepted;
+      } catch (err: any) {
+        console.warn(`⚠️ [ContactRequest] Релей ${relay.name} недоступен: ${err.message}`);
+      }
+    }
+    return false;
+  }
+
+  /** Забирает с активного релея запросы в контакты, адресованные нам. */
+  public async fetchContactRequests(): Promise<any[]> {
+    const relay = this.getActiveRelay();
+    if (!this.libp2p || !relay || this.isRelayFailed(relay.peerId)) return [];
+
+    try {
+      const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+      const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.CONTACT_REQUEST_FETCH);
+
+      await (pipe as any)([new TextEncoder().encode('{}')], lp.encode, stream.sink);
+
+      let raw: string[] = [];
+      await (pipe as any)(stream.source, lp.decode, async (source: any) => {
+        for await (const chunk of source) {
+          const response = JSON.parse(new TextDecoder().decode(chunk.subarray()));
+          if (response.status === CONFIG.MSG.SUCCESS && Array.isArray(response.requests)) {
+            raw = response.requests;
+          }
+          break;
+        }
+      });
+
+      await stream.close();
+
+      return raw.flatMap((item) => {
+        try { return [JSON.parse(item)]; } catch { return []; }
+      });
+    } catch (err: any) {
+      console.warn(`⚠️ [ContactRequest] Не удалось забрать запросы у ${relay.name}: ${err.message}`);
+      return [];
     }
   }
 
@@ -330,6 +424,7 @@ public getRelayIp(relay: RelayConfig): string | null {
           onRelayChanged(nextRelay);
         }
       } catch (err: any) {
+        if (!this.libp2p) break; // монитор остановлен, релей ни при чём
         console.error(`❌ [RelayManager] Не удалось подключиться к резерву ${nextRelay.name}:`, err.message);
         // Резервный тоже упал - в карантин его
         this.markRelayFailed(nextRelay.peerId);

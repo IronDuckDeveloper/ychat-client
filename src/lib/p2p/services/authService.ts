@@ -89,7 +89,7 @@ export async function getOrOpenDb(addressOrName: string | undefined | null) {
 /**
  * Отправляет данные профиля конкретному пиру в его личный mailbox-топик.
  */
-export async function sendProfileToContactMailbox(targetPeerId: string, profileData: any) {
+export async function sendProfileToContactMailbox(targetPeerId: string, profileData: any, deposit = false) {
   if (!globalHelia || !globalProfileDb) {
     console.warn('⚠️ sendProfileToContactMailbox: узел/база профиля не инициализированы.');
     return;
@@ -113,6 +113,9 @@ export async function sendProfileToContactMailbox(targetPeerId: string, profileD
     const encoded = new TextEncoder().encode(JSON.stringify(updateMsg));
     const targetMailbox = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${targetPeerId}`;
 
+    // Получатель может быть офлайн — дублируем запрос на релей, он выдаст его при входе
+    if (deposit) globalRelayManager?.depositContactRequest(targetPeerId, updateMsg).catch(() => {});
+
     await globalHelia.libp2p.services.pubsub.publish(targetMailbox, encoded);
     console.log(`📤 [Mailbox] Профиль отправлен в mailbox ${targetPeerId.slice(-6)}`);
   } catch (error) {
@@ -135,6 +138,7 @@ export async function pushProfileUpdateToContacts() {
     const contacts = await getAllContacts(globalContactsDb);
 
     for (const contact of contacts) {
+      if (contact.isPending) continue; // заявка не принята — профиль не раскрываем
       if (await isPeerIgnored(globalContactsDb, contact.id)) continue;
 
       const filteredProfile = await getFilteredProfileData(globalProfileDb, globalContactsDb, contact.id);
@@ -146,6 +150,107 @@ export async function pushProfileUpdateToContacts() {
     console.log(`🚀 [Mailbox] Профиль разослан ${contacts.length} контактам.`);
   } catch (error) {
     console.error('❌ Ошибка при рассылке профиля контактам:', error);
+  }
+}
+
+/** Отправляет мой профиль (с учётом приватности) одному контакту в его mailbox. */
+export async function sendMyProfileTo(targetPeerId: string, deposit = false) {
+  if (!globalHelia || !globalProfileDb || !globalContactsDb) return;
+  const filtered = await getFilteredProfileData(globalProfileDb, globalContactsDb, targetPeerId);
+  if (filtered) await sendProfileToContactMailbox(targetPeerId, filtered, deposit);
+}
+
+let lastContactRequestsSync = 0;
+
+/** Забирает с релея запросы в контакты, пришедшие, пока мы были офлайн. */
+export async function syncContactRequests() {
+  if (!globalRelayManager || !globalHelia || !globalContactsDb) return;
+  if (Date.now() - lastContactRequestsSync < 10000) return;
+  lastContactRequestsSync = Date.now();
+
+  try {
+    const requests = await globalRelayManager.fetchContactRequests();
+    if (requests.length === 0) return;
+
+    const myPeerId = globalHelia.libp2p.peerId.toString();
+    const { isPeerIgnored } = await import('./contactsService.ts');
+
+    for (const msg of requests) {
+      const senderId = msg?.senderId; // релей подставил его из подтверждённого соединения
+      if (msg?.type !== CONFIG.PROFILE.MSG_PROFILE_UPDATED || !senderId || senderId === myPeerId) continue;
+      if (await isPeerIgnored(globalContactsDb, senderId)) continue;
+
+      await applyIncomingProfile(msg, senderId);
+    }
+    console.log(`📬 [ContactRequests] Получено с релея: ${requests.length}`);
+  } catch (err) {
+    console.error('❌ [ContactRequests] Ошибка получения запросов с релея:', err);
+  }
+}
+
+/** Применяет входящий профиль. Неизвестный отправитель становится входящей заявкой (isPending). */
+async function applyIncomingProfile(msg: any, senderId: string) {
+  // Недописанный аватар (cid без key/serverCid) не применяем, оставляем прежние поля.
+  // Полные данные приедут через profileDb → forceSyncContactProfile.
+  const prevForAvatar = await getContact(globalContactsDb, senderId);
+  if (isAvatarBundleStale(prevForAvatar ?? {}, msg)) {
+    msg.avatarCid = prevForAvatar?.avatarCid ?? '';
+    msg.avatarServerCid = prevForAvatar?.avatarServerCid ?? '';
+    msg.avatarEncryptionKey = prevForAvatar?.avatarEncryptionKey ?? '';
+    msg.serverRelays = prevForAvatar?.serverRelays ?? [];
+  }
+
+  await updateContactProfileAddress(globalContactsDb, senderId, msg.profileDbAddress);
+
+  const contact = await getContact(globalContactsDb, senderId);
+
+  if (!contact) {
+    const newContact: ContactItem = {
+      id: senderId,
+      chatDbAddress: '',
+      nickname: msg.nickname || senderId.slice(0, 8),
+      avatarCid: msg.avatarCid || '',
+      avatarServerCid: msg.avatarServerCid || '',
+      avatarEncryptionKey: msg.avatarEncryptionKey || '',
+      serverRelays: msg.serverRelays || [],
+      bio: msg.bio || '',
+      profileDbAddress: msg.profileDbAddress || '',
+      updatedAt: Date.now(),
+      isBlocked: false,
+      isDeleted: false,
+      isPending: true // нас добавили: ждём решения пользователя
+    };
+    await saveContact(globalContactsDb, newContact);
+    console.log(`➕ [Mailbox] Входящая заявка в контакты: ${newContact.nickname}`);
+    window.dispatchEvent(new Event('onContactsUpdated'));
+  } else {
+    const isChanged =
+      contact.avatarCid !== msg.avatarCid ||
+      contact.nickname !== msg.nickname ||
+      contact.bio !== msg.bio ||
+      contact.avatarServerCid !== msg.avatarServerCid ||
+      contact.avatarEncryptionKey !== msg.avatarEncryptionKey ||
+      (!contact.profileDbAddress && !!msg.profileDbAddress) ||
+      contact.profileDbAddress !== msg.profileDbAddress;
+
+    if (isChanged) {
+      console.log(`🔄 [Mailbox] Обновляем профиль для контакта: ${msg.nickname || senderId.slice(0, 8)}`);
+
+      const updatedContact: ContactItem = {
+        ...contact,
+        avatarCid: msg.avatarCid ?? contact.avatarCid,
+        avatarServerCid: msg.avatarServerCid ?? contact.avatarServerCid,
+        avatarEncryptionKey: msg.avatarEncryptionKey ?? contact.avatarEncryptionKey,
+        serverRelays: msg.serverRelays ?? contact.serverRelays,
+        nickname: msg.nickname ?? contact.nickname,
+        bio: msg.bio ?? contact.bio,
+        profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
+        updatedAt: Date.now()
+      };
+
+      await saveContact(globalContactsDb, updatedContact);
+      window.dispatchEvent(new Event('onContactsUpdated'));
+    }
   }
 }
 
@@ -255,8 +360,8 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
         // 🔒 ФИКС: отвечаем только тем, кто уже есть у нас в контактах.
         // Посторонним профиль в mailbox не уходит — ghost-контактов больше не будет.
-        const amIAlreadyContact = !!(await getContact(globalContactsDb, senderId));
-        if (!amIAlreadyContact) return;
+        const knownContact = await getContact(globalContactsDb, senderId);
+        if (!knownContact || knownContact.isPending) return;
 
         console.log(`🔔 [PubSub] Контакт ${senderId.slice(-6)} проснулся. Отправляем профиль в его mailbox.`);
 
@@ -274,69 +379,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
     //    (на этом месте currentTopic гарантированно === myMailboxTopic)
     if (msg.type === CONFIG.PROFILE.MSG_PROFILE_UPDATED) {
       console.log(`📩 [Mailbox] Получены данные профиля от ${senderId.slice(0, 8)}:`, msg);
-
-    // Недописанный аватар (cid без key/serverCid) не применяем, оставляем прежние поля.
-    // Полные данные приедут через profileDb → forceSyncContactProfile.
-    const prevForAvatar = await getContact(globalContactsDb, senderId);
-    if (isAvatarBundleStale(prevForAvatar ?? {}, msg)) {
-      msg.avatarCid = prevForAvatar?.avatarCid ?? '';
-      msg.avatarServerCid = prevForAvatar?.avatarServerCid ?? '';
-      msg.avatarEncryptionKey = prevForAvatar?.avatarEncryptionKey ?? '';
-      msg.serverRelays = prevForAvatar?.serverRelays ?? [];
-    }
-
-      await updateContactProfileAddress(globalContactsDb, senderId, msg.profileDbAddress);
-
-      let contact = await getContact(globalContactsDb, senderId);
-
-      if (!contact) {
-        // Безопасно: сюда попадает только тот, кто явно знал наш peerId и написал именно нам.
-        const newContact: ContactItem = {
-          id: senderId,
-          chatDbAddress: '',
-          nickname: msg.nickname || senderId.slice(0, 8),
-          avatarCid: msg.avatarCid || '',
-          avatarServerCid: msg.avatarServerCid || '',
-          avatarEncryptionKey: msg.avatarEncryptionKey || '',
-          serverRelays: msg.serverRelays || [],
-          bio: msg.bio || '',
-          profileDbAddress: msg.profileDbAddress || '',
-          updatedAt: Date.now(),
-          isBlocked: false,
-          isDeleted: false
-        };
-        await saveContact(globalContactsDb, newContact);
-        console.log(`➕ [Mailbox] Автоматически создан новый контакт: ${newContact.nickname}`);
-        window.dispatchEvent(new Event('onContactsUpdated'));
-      } else {
-        const isChanged =
-          contact.avatarCid !== msg.avatarCid ||
-          contact.nickname !== msg.nickname ||
-          contact.bio !== msg.bio ||
-          contact.avatarServerCid !== msg.avatarServerCid ||
-          contact.avatarEncryptionKey !== msg.avatarEncryptionKey ||
-          (!contact.profileDbAddress && !!msg.profileDbAddress) ||
-          contact.profileDbAddress !== msg.profileDbAddress;
-
-        if (isChanged) {
-          console.log(`🔄 [Mailbox] Обновляем профиль для контакта: ${msg.nickname || senderId.slice(0, 8)}`);
-
-          const updatedContact: ContactItem = {
-            ...contact,
-            avatarCid: msg.avatarCid ?? contact.avatarCid,
-            avatarServerCid: msg.avatarServerCid ?? contact.avatarServerCid,
-            avatarEncryptionKey: msg.avatarEncryptionKey ?? contact.avatarEncryptionKey,
-            serverRelays: msg.serverRelays ?? contact.serverRelays,
-            nickname: msg.nickname ?? contact.nickname,
-            bio: msg.bio ?? contact.bio,
-            profileDbAddress: msg.profileDbAddress || contact.profileDbAddress,
-            updatedAt: Date.now()
-          };
-
-          await saveContact(globalContactsDb, updatedContact);
-          window.dispatchEvent(new Event('onContactsUpdated'));
-        }
-      }
+      await applyIncomingProfile(msg, senderId);
     }
 
     if (msg.type === 'NEW_MESSAGE') {
@@ -428,6 +471,9 @@ export async function initializeApp(nicknameForRegistration?: string) {
   }
 
     console.log('✅ [Init] Инициализация успешно завершена!');
+
+    // Запросы в контакты, пришедшие пока мы были офлайн
+    syncContactRequests().catch(() => {});
     
     // 🔥 СМАРТ-ФИКС: Циклический запуск WAKEUP с контролем пиров и версионированием
     let wakeupAttempts = 0;
@@ -484,6 +530,7 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
     try {
       console.log('🧹 [Init] Откат изменений: останавливаем базы и узел...');
+      resetHeliaInitialization();
       if (globalContactsDb) await globalContactsDb.close();
       if (globalProfileDb) await globalProfileDb.close();
       if (globalOrbitDB) await globalOrbitDB.stop();
@@ -491,8 +538,6 @@ export async function initializeApp(nicknameForRegistration?: string) {
     } catch (cleanupError) {
       console.error('⚠️ [Init] Ошибка при очистке мусора:', cleanupError);
     }
-
-    resetHeliaInitialization();
 
     globalHelia = null;
     globalOrbitDB = null;

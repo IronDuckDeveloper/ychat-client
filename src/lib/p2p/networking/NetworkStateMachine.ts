@@ -20,6 +20,7 @@ export class NetworkStateMachine {
   public relayManager: any;
   public pubsubTopic: string;
   public pushProfileUpdateToContacts: () => Promise<void>;
+  public syncContactRequests?: () => Promise<void>;
   
   public state: NetState;
   private watchdogTimer: any;
@@ -30,11 +31,13 @@ export class NetworkStateMachine {
     relayManager: any;
     pubsubTopic?: string;
     pushProfileUpdateToContacts: () => Promise<void>;
+    syncContactRequests?: () => Promise<void>;
   }) {
     this.libp2p = config.libp2p;
     this.relayManager = config.relayManager;
     this.pubsubTopic = config.pubsubTopic || CONFIG.TOPICS.WAKEUP_SYNC_TOPIC || 'ychat-global';
-      this.pushProfileUpdateToContacts = config.pushProfileUpdateToContacts;
+    this.pushProfileUpdateToContacts = config.pushProfileUpdateToContacts;
+    this.syncContactRequests = config.syncContactRequests;
 
     this.state = NET_STATE.DISCONNECTED;
     this.watchdogTimer = null;
@@ -186,6 +189,7 @@ private startWatchdog() {
 
       // 5. Отправляем профиль
       if (this.pushProfileUpdateToContacts) this.pushProfileUpdateToContacts().catch(() => {});
+      this.syncContactRequests?.().catch(() => {});
 
       // 6. Пытаемся кинуть WAKEUP
       try {

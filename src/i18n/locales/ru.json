@@ -177,7 +177,8 @@
     "qrHint": "Нажми на QR-код, чтобы скопировать ID",
     "addByPeerIdTitle": "Добавить по Peer ID",
     "peerIdPlaceholder": "Введите Peer ID пользователя",
-    "unknownPeer": "Unknown Peer"
+    "unknownPeer": "Unknown Peer",
+    "addedYouHint": "Вас добавили в контакты"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ Нет слов для копирования",

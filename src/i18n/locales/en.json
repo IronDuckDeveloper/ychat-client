@@ -177,7 +177,8 @@
     "qrHint": "Tap the QR code to copy the ID",
     "addByPeerIdTitle": "Add by Peer ID",
     "peerIdPlaceholder": "Enter the user's Peer ID",
-    "unknownPeer": "Unknown Peer"
+    "unknownPeer": "Unknown Peer",
+    "addedYouHint": "Added you to contacts"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ No words to copy",

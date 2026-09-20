@@ -32,6 +32,7 @@ export const relayManager = new RelayManager(
 );
 
 export function resetHeliaInitialization() {
+  relayManager.stopMonitoring();
   initializationPromise = null;
 }
 

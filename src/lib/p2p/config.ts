@@ -70,5 +70,7 @@ export const CONFIG = {
     RPC_PROTOCOL: '/ychat/anti-flood/1.0.0', // Протокол для RPC-метода проверки регистрации (антифрод)
     WAKEUP_SYNC_TOPIC: 'peers:wakeup:ping', // Для пробуждения соседей и синхронизации OrbitDB
     PROFILE_MAILBOX_PREFIX: 'ychat/profiles/mailbox/', // Для обновления контакта + peerId получателя и анонсирования нового сообщения
+    CONTACT_REQUEST_DEPOSIT: '/ychat/contact-request/1.0.0', // Положить запрос в контакты на релей
+    CONTACT_REQUEST_FETCH: '/ychat/contact-requests-fetch/1.0.0', // Забрать свои запросы с релея
   }
 };

@@ -3,9 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
-
-
-import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileUpdateToContacts, globalRelayManager } from '../lib/p2p/services/authService.ts';
+import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileUpdateToContacts, globalRelayManager, sendMyProfileTo } from '../lib/p2p/services/authService.ts';
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
@@ -491,8 +489,9 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       onConfirm: () => {
         globalRelayManager?.clearSession(); // гасит таймер обновления токена от этого аккаунта
         localStorage.clear();
-        navigate('/', { replace: true });
         closeDialog();
+        // Жёсткая перезагрузка сбрасывает узел, OrbitDB и все синглтоны старого аккаунта
+        window.location.replace(import.meta.env.BASE_URL);
       }
     });
   };
@@ -530,6 +529,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
 
       if (existingContact) {
         existingContact.isDeleted = false; 
+        existingContact.isPending = false; // ручное добавление = принятие заявки
         existingContact.isBlocked = isActuallyBlocked; 
         existingContact.updatedAt = Date.now();
         
@@ -569,6 +569,8 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       setContacts(await getAllContacts(globalContactsDb));
 
       if (globalHelia) {
+        // Уведомляем второго пира: "тебя добавили"
+        if (!isActuallyBlocked) sendMyProfileTo(targetId, true).catch(() => {});
         const freshContact = await getContactById(globalContactsDb, targetId);    
         // Запускаем OrbitDB синхронизацию
         if (freshContact) {
@@ -582,6 +584,27 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     }
   };
 
+    const handleAcceptContact = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+
+    const target = contacts.find(c => c.id === id);
+    if (!target || !target.isPending) return;
+
+    const accepted: ContactItem = { ...target, isPending: false, updatedAt: Date.now() };
+
+    try {
+      await saveContact(globalContactsDb, accepted);
+      window.dispatchEvent(new Event('onContactsUpdated'));
+      showToast(t('contactsLogic.contactAdded'));
+
+      await sendMyProfileTo(id); // теперь он для нас контакт — отдаём ему свой профиль
+      if (globalHelia) await forceSyncContactProfile(globalContactsDb, accepted);
+    } catch (error) {
+      console.error('❌ Ошибка принятия контакта:', error);
+      showToast(t('contactsLogic.addContactError'));
+    }
+  };
+
   const handleBlockContact = async (e: any, id: string) => {
     if (e) {
       e.preventDefault();
@@ -591,7 +614,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     const targetContact = contacts.find(c => c.id === id);
     if (!targetContact) return;
 
-    const updatedContact = { ...targetContact, isBlocked: true };
+    const updatedContact = { ...targetContact, isBlocked: true, isPending: false };
 
     try {
       await saveContact(globalContactsDb, updatedContact); 
@@ -694,6 +717,6 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     syncContactInQueue,
     closeDialog, showToast, toggleContactMenu, toggleHeaderMenu, handleCopyPeerId, onSubmitAddContact,
     handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleAdd,
-    handleBlockContact, handleUnblockAndRefresh
+    handleBlockContact, handleUnblockAndRefresh, handleAcceptContact
   };
 };
