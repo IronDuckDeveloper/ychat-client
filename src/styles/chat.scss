@@ -407,7 +407,7 @@
     textarea {
       flex: 1;
       min-width: 0;
-      margin: 0 0.5rem;
+      margin: 0 2px;
       background-color: transparent;
       outline: none;
       font-size: 16px;
@@ -424,6 +424,10 @@
 
       &::placeholder {
         color: $hint;
+        font-size: 11px;         /* 1. Уменьшаем размер текста плейсхолдера */
+        white-space: nowrap;      /* 2. Запрещаем перенос текста на новую строку */
+        overflow: hidden;         /* 2. Скрываем текст, который не помещается */
+        text-overflow: ellipsis;  /* 2. Добавляем три точки в конце */
       }
     }
   }

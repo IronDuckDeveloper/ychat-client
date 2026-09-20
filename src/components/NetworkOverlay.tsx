@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { globalNetworkState, NET_STATE } from '../lib/p2p/networking/NetworkStateMachine';
 import '../styles/networkOverlay.scss';
-import { CONFIG } from '../lib/p2p/config.ts';
+// import { wasPickerRecentlyUsed } from '../lib/filePickerGuard';
+// import { CONFIG } from '../lib/p2p/config.ts';
 
 export const NetworkOverlay: React.FC = () => {
   const { t } = useTranslation();
@@ -20,7 +21,9 @@ export const NetworkOverlay: React.FC = () => {
           setStatus(newState);
           if (newState === NET_STATE.SLEEPING) wasSleeping.current = true;
           if (newState === NET_STATE.CONNECTED && wasSleeping.current) {
-            window.location.reload();
+            wasSleeping.current = false;
+            // Убрал так как не нужно полностью обновлять UI
+            // if (!wasPickerRecentlyUsed()) window.location.reload(); 
           }
         });
         setStatus(globalNetworkState.state);
