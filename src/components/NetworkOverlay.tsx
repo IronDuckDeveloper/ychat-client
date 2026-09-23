@@ -11,7 +11,6 @@ export const NetworkOverlay: React.FC = () => {
   const location = useLocation();
   const [status, setStatus] = useState(globalNetworkState?.state || NET_STATE.CONNECTING);
   const wasSleeping = useRef(false);
-  // const isAuthed = localStorage.getItem(CONFIG.IS_LOADING) === 'true';
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;

@@ -180,6 +180,10 @@ export async function syncContactRequests() {
       if (msg?.type !== CONFIG.PROFILE.MSG_PROFILE_UPDATED || !senderId || senderId === myPeerId) continue;
       if (await isPeerIgnored(globalContactsDb, senderId)) continue;
 
+      // Запрос нужен только для НОВЫХ контактов. Слепок в нём устарел (лежит на релее с момента
+      // добавления) и затёр бы аватар/ник у уже известного контакта.
+      if (await getContact(globalContactsDb, senderId)) continue;
+
       await applyIncomingProfile(msg, senderId);
     }
     console.log(`📬 [ContactRequests] Получено с релея: ${requests.length}`);

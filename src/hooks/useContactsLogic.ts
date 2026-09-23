@@ -496,6 +496,20 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     });
   };
 
+  // Повтор синка профиля нового контакта: сеть или реестр могли быть ещё не готовы
+  const retryProfileSync = (contactId: string, delays: number[] = [15000, 45000]) => {
+    const [delay, ...rest] = delays;
+    if (delay === undefined) return;
+
+    setTimeout(async () => {
+      const contact = await getContactById(globalContactsDb, contactId);
+      if (!contact || contact.isDeleted || contact.isBlocked) return;
+
+      const result = await forceSyncContactProfile(globalContactsDb, contact);
+      if (result.status === 'TRANSIENT_FAILURE') retryProfileSync(contactId, rest);
+    }, delay);
+  };
+
   const handleAdd = async (inputData: string) => {
     if (!inputData) return;
 
@@ -574,7 +588,8 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
         const freshContact = await getContactById(globalContactsDb, targetId);    
         // Запускаем OrbitDB синхронизацию
         if (freshContact) {
-          await forceSyncContactProfile(globalContactsDb, freshContact);
+          const result = await forceSyncContactProfile(globalContactsDb, freshContact);
+          if (result.status === 'TRANSIENT_FAILURE') retryProfileSync(targetId);
         }
       }
 

@@ -9,7 +9,8 @@
 
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
-import { getOrOpenDb, globalOrbitDB } from './authService.ts';
+import { getOrOpenDb, globalOrbitDB, globalHelia } from './authService.ts';
+import { checkAndSyncRelays } from '../networking/connectionManager.ts';
 import { saveContact, getContact, isAvatarBundleStale, type ContactItem } from './contactsService.ts';
 import i18n from '../../../i18n/config.ts';
 
@@ -140,12 +141,17 @@ export async function initGlobalRegistryDB(orbitdb: any) {
 /**
  * Возвращает уже открытый инстанс глобального реестра
  */
+let registryOpenPromise: Promise<any> | null = null;
+
 export async function getGlobalRegistryDb() {
   if (globalRegistryDbInstance) return globalRegistryDbInstance;
   if (!globalOrbitDB) return null;
   
-  // Если по какой-то причине реестр не был открыт при старте — открываем
-  return await initGlobalRegistryDB(globalOrbitDB);
+  // Дедуп: PEER-SYNC и forceSyncContactProfile могут запросить открытие одновременно
+  if (!registryOpenPromise) {
+    registryOpenPromise = initGlobalRegistryDB(globalOrbitDB).finally(() => { registryOpenPromise = null; });
+  }
+  return await registryOpenPromise;
 }
 
 /**
@@ -175,7 +181,15 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
     let targetDbAddress = contact.profileDbAddress;
 
     // 1. Проверяем Глобальный Реестр
-    const registryDb = await getGlobalRegistryDb();
+    let registryDb = await getGlobalRegistryDb();
+
+    // Ни реестра, ни адреса профиля (PEER-SYNC при старте не отработал) — повторяем его и пробуем ещё раз.
+    // Троттлинга нет: пока адрес реестра пуст, checkAndSyncRelays синхронизируется всегда.
+    if (!registryDb && !targetDbAddress && globalHelia) {
+      await checkAndSyncRelays(globalHelia);
+      registryDb = await getGlobalRegistryDb();
+    }
+    
     if (registryDb) {
       const rawValue = await registryDb.get(contact.id);
       let latestRegistryAddress = '';
@@ -219,6 +233,8 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
 
     // 2. Функция для чтения и применения изменений профиля
     const applyProfileData = async (isFromEvent = false) => {
+      // `contact` из замыкания устаревает (слушатель живёт долго) — работаем со свежей записью из БД
+      const current = (await getContact(contactsDb, contact.id)) || contact;
       let freshName = await remoteDb.get(CONFIG.PROFILE.KEY_NICKNAME);
       let freshAvatar = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
       let freshBio = await remoteDb.get(CONFIG.PROFILE.KEY_BIO);
@@ -254,7 +270,7 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
         });
       }
 
-      if (isAvatarBundleStale(contact, {
+      if (isAvatarBundleStale(current, {
         avatarCid: freshAvatar,
         avatarServerCid: freshServerCid,
         avatarEncryptionKey: freshEncryptionKey,
@@ -263,21 +279,21 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
         return false;
       }
 
-      const updatedName = freshName || contact.nickname;
-      const updatedAvatar = freshAvatar !== undefined ? freshAvatar : contact.avatarCid;
-      const updatedBio = freshBio !== undefined ? freshBio : contact.bio;
-      const updatedServerCid = freshServerCid !== undefined ? freshServerCid : contact.avatarServerCid;
-      const updatedEncryptionKey = freshEncryptionKey !== undefined ? freshEncryptionKey : (contact.avatarEncryptionKey || null);
-      const updatedServerRelays = freshServerRelays !== undefined ? freshServerRelays : contact.serverRelays;
+      const updatedName = freshName || current.nickname;
+      const updatedAvatar = freshAvatar !== undefined ? freshAvatar : current.avatarCid;
+      const updatedBio = freshBio !== undefined ? freshBio : current.bio;
+      const updatedServerCid = freshServerCid !== undefined ? freshServerCid : current.avatarServerCid;
+      const updatedEncryptionKey = freshEncryptionKey !== undefined ? freshEncryptionKey : current.avatarEncryptionKey;
+      const updatedServerRelays = freshServerRelays !== undefined ? freshServerRelays : current.serverRelays;
 
-      const hasChanges = 
-        updatedName !== contact.nickname || 
-        updatedAvatar !== contact.avatarCid || 
-        updatedBio !== contact.bio ||
-        updatedServerCid !== contact.avatarServerCid ||
-        updatedEncryptionKey !== contact.avatarEncryptionKey ||
-        !arraysEqual(updatedServerRelays, contact.serverRelays) ||
-        targetDbAddress !== contact.profileDbAddress;
+      const hasChanges =
+        updatedName !== current.nickname ||
+        updatedAvatar !== current.avatarCid ||
+        updatedBio !== current.bio ||
+        updatedServerCid !== current.avatarServerCid ||
+        updatedEncryptionKey !== current.avatarEncryptionKey ||
+        !arraysEqual(updatedServerRelays, current.serverRelays) ||
+        targetDbAddress !== current.profileDbAddress;
 
       if (hasChanges) {
         const cleanProfile = sanitizeForIPLD({
@@ -291,10 +307,8 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
           updatedAt: Date.now()
         });
 
-        // Свежая запись из БД: `contact` из замыкания устаревает и затирал бы isPending/isBlocked/lastMessage
-        const base = (await getContact(contactsDb, contact.id)) || contact;
         const updatedContact: ContactItem = {
-          ...base,
+          ...current,
           ...cleanProfile
         };
         

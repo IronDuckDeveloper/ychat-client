@@ -65,7 +65,16 @@ export async function notifyArchivist(
 }
 
 // === Функция синхронизации кэша релеев ===
-export async function checkAndSyncRelays(helia: Helia, force = false): Promise<void> {
+// Один запуск за раз: параллельные PEER-SYNC делят топик ответа и отписывают друг друга в cleanup
+let peerSyncInFlight: Promise<void> | null = null;
+
+export function checkAndSyncRelays(helia: Helia, force = false): Promise<void> {
+  if (peerSyncInFlight) return peerSyncInFlight;
+  peerSyncInFlight = runPeerSync(helia, force).finally(() => { peerSyncInFlight = null; });
+  return peerSyncInFlight;
+}
+
+async function runPeerSync(helia: Helia, force: boolean): Promise<void> {
   const lastSync = localStorage.getItem(CONFIG.KEY_LAST_PEER_SYNC);
   const now = Date.now();
 

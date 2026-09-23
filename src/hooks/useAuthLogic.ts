@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { initializeApp } from '../lib/p2p/services/authService.ts';
 import { 
   saveSeedFromAuth, 
   generateNewMnemonic, 
@@ -46,6 +45,12 @@ export const useAuthLogic = () => {
 
     if (isRegister) {
       generateWords();
+    }
+
+    const pendingError = localStorage.getItem(CONFIG.KEY_AUTH_ERROR);
+    if (pendingError) {
+      localStorage.removeItem(CONFIG.KEY_AUTH_ERROR);
+      showToast(`❌ ${pendingError}`);
     }
   }, [isRegister, navigate]);
 
@@ -117,9 +122,14 @@ export const useAuthLogic = () => {
       const seed32 = seed64.slice(0, 32);
 
       await saveSeedFromAuth(seed32);
-      await initializeApp(isRegister ? nickname : undefined);
 
-      localStorage.setItem(CONFIG.IS_LOADING, 'true');
+      // Соединение открывает только App.tsx на /contacts. Если открыть его здесь
+      // и тут же убить хардредиректом — на релее остаётся битый gossipsub-mesh
+      // для этого PeerId (см. диагностику PEER-SYNC).
+      if (isRegister) {
+        localStorage.setItem(CONFIG.KEY_PENDING_NICKNAME, nickname);
+      }
+
       window.location.href = import.meta.env.BASE_URL + 'contacts';
 
     } catch (error: any) {
@@ -128,7 +138,6 @@ export const useAuthLogic = () => {
       if (isRegister) {
         console.log('🔄 Откат изменений: удаляем фейковые ключи из памяти...');
         await clearAuthData(); 
-        localStorage.removeItem(CONFIG.IS_LOADING);
         setNickname('');
         generateWords(); 
       }

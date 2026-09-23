@@ -28,8 +28,9 @@ export const CONFIG = {
 
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
   KEY_PROFILE_DB_ADDRESS_PREFIX: 'ychat_profile_addr_', // + identity.id, чтобы не путать аккаунты на одном устройстве
+  KEY_PENDING_NICKNAME: 'ychat_pending_nickname', // Никнейм для регистрации, ждёт App.tsx после хардредиректа
+  KEY_AUTH_ERROR: 'ychat_auth_error', // Ошибка неудачной регистрации, показывается один раз на /  после отката
 
-  IS_LOADING: 'ychat_is_logged_in', // Ключ для хранения состояния авторизации
   KEY_GLOBAL_REGISTRY_ADDRESS: 'YCHAT_GLOBAL_REGISTRY_ADDRESS', // Ключ для хранения состояния авторизации
   
   KEY_FINGERPRINT: 'fingerprint', // Ключ для хранения отпечатка устройства

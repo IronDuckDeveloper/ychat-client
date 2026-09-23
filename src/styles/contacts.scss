@@ -97,7 +97,7 @@
     to { opacity: 1; }
   }
 
-  .contact-item {
+.contact-item {
     display: flex;
     align-items: center;
     gap: 1rem;
@@ -110,7 +110,8 @@
     &.blocked {
       .contact-avatar,
       .contact-info,
-      .contact-time {
+      .contact-time,
+      .contact-pending-actions {
         opacity: 0.5;
         filter: grayscale(100%);
         pointer-events: none; 
@@ -138,6 +139,7 @@
       justify-content: center;
       color: $accent-prime;
       font-weight: bold;
+      flex-shrink: 0;
 
       .unread-badge {
         position: absolute;
@@ -160,13 +162,21 @@
       }
     }
 
+    // 1. Блок с именем и последним сообщением
     .contact-info {
       flex: 1;
-      overflow: hidden; 
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      overflow: hidden;
 
       .contact-name {
         font-weight: 600;
         color: $text;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .contact-last-message {
@@ -176,18 +186,72 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        margin-top: 2px;
       }
     }
 
+    // 2. Время (в ту же строку)
     .contact-time {
       font-size: 0.625rem;
       color: $hint;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
+    // 3. Блок "Вас добавили" и кнопки (в ту же строку)
+    .contact-pending-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      flex-shrink: 0;
+
+      .contact-pending-hint {
+        font-size: 0.6875rem;
+        color: $hint;
+        line-height: 1;
+        text-align: center;
+      }
+
+      .pending-buttons-group {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+
+        .pending-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0.25rem 0.5rem;
+          border: 2px solid rgba($accent-prime, 0.2);
+          border-radius: 6px;
+          background: transparent;
+          color: $hint;
+          font-size: 0.75rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+
+          &:hover {
+            border-color: $accent-prime;
+            color: $accent-prime;
+          }
+
+          &.danger,
+          &.accept {
+            color: $hint;
+          }
+        }
+      }
+    }
+
+    // 4. Меню трех точек
     .contact-actions {
       position: relative;
       display: flex;
       align-items: center;
+      flex-shrink: 0;
 
       .menu-button {
         background: none;
