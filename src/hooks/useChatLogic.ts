@@ -17,6 +17,7 @@ import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService.ts';
 import {
   globalContactsDb,
   globalHelia,
+  globalRelayManager,
 } from '../lib/p2p/services/authService.ts';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 import {
@@ -596,6 +597,10 @@ const handleSendMessage = async () => {
           await (globalHelia as any).libp2p.services.pubsub.publish(targetMailbox, encoded);
         } catch (err) {
           console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
+        }
+
+        if (globalRelayManager) {
+          globalRelayManager.notifyPush(peerId).catch(() => {});
         }
       }
     } catch (err) {

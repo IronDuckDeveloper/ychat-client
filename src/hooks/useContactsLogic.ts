@@ -413,7 +413,8 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       // 1. Достаем ТЕКУЩИЕ (старые) CID аватарки перед загрузкой новой
       let currentAvatarCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_CID);
       let currentAvatarServerCid = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
-      let currentAvatarEncryptionKey = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
+      // let currentAvatarEncryptionKey = await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
+      await dbInstance.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
       let serverRelays = await dbInstance.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
 
       if (newAvatarBlob && globalHelia) {
@@ -455,7 +456,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
 
         currentAvatarCid = newCid; // Обновляем для отправки в broadcast
         currentAvatarServerCid = newServerCid; // ОБЯЗАТЕЛЬНО обновляем serverCid для бродкаста!
-        currentAvatarEncryptionKey = newEncryptionKey; // обновляем переменную ключа для бродкаста
+        // currentAvatarEncryptionKey = newEncryptionKey; // обновляем переменную ключа для бродкаста
         serverRelays = newServerRelays; 
 
         setMyAvatarUrl(URL.createObjectURL(newAvatarBlob));

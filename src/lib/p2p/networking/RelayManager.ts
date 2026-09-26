@@ -514,4 +514,101 @@ public getRelayIp(relay: RelayConfig): string | null {
       throw new Error(`Сбой связи с Архивариусом: ${error.message || error}`);
     }
   }
+
+    /**
+   * Отправляет Web Push подписку на активный релей (с фолбэком по пулу).
+   */
+  public async subscribePush(subscription: PushSubscriptionJSON): Promise<boolean> {
+    if (!this.libp2p) return false;
+
+    const ordered = [
+      ...this.relayPool.slice(this.currentIdx),
+      ...this.relayPool.slice(0, this.currentIdx),
+    ];
+
+    for (const relay of ordered) {
+      if (this.isRelayFailed(relay.peerId)) continue;
+
+      try {
+        const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+        const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.PUSH_SUBSCRIBE);
+
+        await (pipe as any)(
+          [new TextEncoder().encode(JSON.stringify(subscription))],
+          lp.encode,
+          stream.sink
+        );
+
+        let accepted = false;
+        await (pipe as any)(stream.source, lp.decode, async (source: any) => {
+          for await (const chunk of source) {
+            accepted = JSON.parse(new TextDecoder().decode(chunk.subarray())).status === CONFIG.MSG.SUCCESS;
+            break;
+          }
+        });
+
+        await stream.close();
+        console.log(`🔔 [Push] Релей ${relay.name} ${accepted ? 'принял' : 'отклонил'} подписку`);
+        return accepted;
+      } catch (err: any) {
+        console.warn(`⚠️ [Push] Релей ${relay.name} недоступен: ${err.message}`);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Удаляет Web Push подписку с активного релея.
+   */
+  public async unsubscribePush(endpoint: string): Promise<boolean> {
+    if (!this.libp2p) return false;
+
+    const relay = this.getActiveRelay();
+    if (!relay || this.isRelayFailed(relay.peerId)) return false;
+
+    try {
+      const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+      const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.PUSH_UNSUBSCRIBE);
+
+      await (pipe as any)(
+        [new TextEncoder().encode(JSON.stringify({ endpoint }))],
+        lp.encode,
+        stream.sink
+      );
+
+      let accepted = false;
+      await (pipe as any)(stream.source, lp.decode, async (source: any) => {
+        for await (const chunk of source) {
+          accepted = JSON.parse(new TextDecoder().decode(chunk.subarray())).status === CONFIG.MSG.SUCCESS;
+          break;
+        }
+      });
+
+      await stream.close();
+      return accepted;
+    } catch (err: any) {
+      console.warn(`⚠️ [Push] Не удалось отписаться через ${relay.name}: ${err.message}`);
+      return false;
+    }
+  }
+
+    /** Просит активный relay запушить получателя. Fire-and-forget, не блокирует отправку. */
+  public async notifyPush(targetPeerId: string): Promise<void> {
+    if (!this.libp2p) return;
+    const relay = this.getActiveRelay();
+    if (!relay || this.isRelayFailed(relay.peerId)) return;
+
+    try {
+      const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+      const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.PUSH_NOTIFY);
+      await (pipe as any)(
+        [new TextEncoder().encode(JSON.stringify({ targetId: targetPeerId }))],
+        lp.encode,
+        stream.sink
+      );
+      await stream.close();
+    } catch (err: any) {
+      console.warn(`⚠️ [Push] notify не отправлен: ${err.message}`);
+    }
+  }
 }

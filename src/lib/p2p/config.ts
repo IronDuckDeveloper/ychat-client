@@ -6,6 +6,7 @@ export const CONFIG = {
   DATA_DIR: './data', // Директория для хранения данных Helia (включая ключи)
   ORBITDB_DIR: './orbitdb', // Директория для хранения баз OrbitDB
   GLOBAL_REGISTRY_ADDRESS: '', // Адрес глобальной базы профилей (будет установлен при старте)
+  VAPID_PUBLIC_KEY: 'BEHw3EO2DZbAL4iFwJCYdPWa9hlKN7-j4IZ6IOeGQ_aj4HyPrTw0--p-l0Gf-xuAPPeW0U82pZx05naISNiFC_0', // Публичный ключ VAPID для Push-уведомений
 
       
   PROFILE: {
@@ -73,5 +74,8 @@ export const CONFIG = {
     PROFILE_MAILBOX_PREFIX: 'ychat/profiles/mailbox/', // Для обновления контакта + peerId получателя и анонсирования нового сообщения
     CONTACT_REQUEST_DEPOSIT: '/ychat/contact-request/1.0.0', // Положить запрос в контакты на релей
     CONTACT_REQUEST_FETCH: '/ychat/contact-requests-fetch/1.0.0', // Забрать свои запросы с релея
+    PUSH_SUBSCRIBE: '/ychat/push-subscribe/1.0.0', // Подписаться на Web Push
+    PUSH_UNSUBSCRIBE: '/ychat/push-unsubscribe/1.0.0', // Отписаться от Web Push
+    PUSH_NOTIFY: '/ychat/push-notify/1.0.0', // Уведомление Web Push
   }
 };

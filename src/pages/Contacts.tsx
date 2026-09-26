@@ -72,8 +72,6 @@ const ContactList = () => {
 
     addVideoRef,
     closeDialog,
-    toggleContactMenu,
-    toggleHeaderMenu,
     handleCopyPeerId,
     onSubmitAddContact,
     handleRefreshContact,
