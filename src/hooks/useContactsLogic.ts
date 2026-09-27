@@ -10,7 +10,8 @@ import { CONFIG } from '../lib/p2p/config.ts';
 import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
 import { forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
-import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts'; 
+import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts';
+import { enablePush, disablePush } from '../lib/push/pushService.ts';
 
 export const useContactsLogic = () => {
   const { t } = useTranslation();
@@ -43,6 +44,24 @@ export const useContactsLogic = () => {
   // --- СЕТЬ ---
   const [netState, setNetState] = useState<string>(globalNetworkState?.state || 'DISCONNECTED');
   const isNetworkReady = netState === 'CONNECTED';
+
+ // --- ПУШ-УВЕДОМЛЕНИЯ ---
+  const [isPushEnabled, setIsPushEnabled] = useState<boolean>(false);
+
+  // Сверяемся с реальной подпиской браузера при заходе на страницу
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    let isMounted = true;
+
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        if (isMounted) setIsPushEnabled(!!sub);
+      })
+      .catch((err) => console.warn('⚠️ Не удалось проверить push-подписку:', err));
+
+    return () => { isMounted = false; };
+  }, []);
 
   // --- РЕФЫ КАМЕРЫ ---
   const addVideoRef = useRef<HTMLVideoElement>(null);
@@ -352,6 +371,23 @@ export const useContactsLogic = () => {
   const toggleHeaderMenu = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     setIsHeaderMenuOpen(!isHeaderMenuOpen);
+  };
+
+    const togglePush = async () => {
+    try {
+      if (isPushEnabled) {
+        await disablePush();
+        setIsPushEnabled(false);
+        showToast(t('contactsLogic.pushDisabled'));
+      } else {
+        await enablePush();
+        setIsPushEnabled(true);
+        showToast(t('contactsLogic.pushEnabled'));
+      }
+    } catch (err) {
+      console.error('❌ Ошибка переключения пушей:', err);
+      showToast(t('contactsLogic.pushError'));
+    }
   };
 
   const handleCopyPeerId = async () => {
@@ -733,6 +769,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     syncContactInQueue,
     closeDialog, showToast, toggleContactMenu, toggleHeaderMenu, handleCopyPeerId, onSubmitAddContact,
     handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleAdd,
-    handleBlockContact, handleUnblockAndRefresh, handleAcceptContact
+    handleBlockContact, handleUnblockAndRefresh, handleAcceptContact,
+    isPushEnabled, togglePush,
   };
 };

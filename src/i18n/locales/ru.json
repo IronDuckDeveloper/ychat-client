@@ -178,7 +178,12 @@
     "addByPeerIdTitle": "Добавить по Peer ID",
     "peerIdPlaceholder": "Введите Peer ID пользователя",
     "unknownPeer": "Unknown Peer",
-    "addedYouHint": "Вас добавили в контакты"
+    "addedYouHint": "Вас добавили в контакты",
+    "pushOn": "Уведомления включены",
+    "pushOff": "Уведомления выключены",
+    "pushEnabled": "Уведомления включены",
+    "pushDisabled": "Уведомления отключены",
+    "pushError": "Не удалось изменить настройку уведомлений"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ Нет слов для копирования",

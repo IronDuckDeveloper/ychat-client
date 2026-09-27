@@ -9,6 +9,7 @@ import {
   Ban,
   X,
   Copy,
+  Bell,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -82,6 +83,8 @@ const ContactList = () => {
     handleUnblockAndRefresh,
     handleAcceptContact,
     syncContactInQueue,
+    isPushEnabled,
+    togglePush,
   } = useContactsLogic();
 
   const observer = useRef<IntersectionObserver | null>(null);
@@ -164,6 +167,16 @@ const ContactList = () => {
         </div>
 
         <div className="header-actions" onClick={(e) => e.stopPropagation()}>
+          <HeaderActionButton
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePush();
+            }}
+            icon={<Bell size={22} color={isPushEnabled ? '#ffffff' : '#94a3b8'} />}
+            title={t(isPushEnabled ? 'contactsPage.pushOn' : 'contactsPage.pushOff')}
+            disabled={isLoading}
+          />
+
           <HeaderActionButton
             onClick={(e) => {
               e.stopPropagation();

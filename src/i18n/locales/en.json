@@ -178,7 +178,9 @@
     "addByPeerIdTitle": "Add by Peer ID",
     "peerIdPlaceholder": "Enter the user's Peer ID",
     "unknownPeer": "Unknown Peer",
-    "addedYouHint": "Added you to contacts"
+    "addedYouHint": "Added you to contacts",
+    "pushOn": "Notifications on",
+    "pushOff": "Notifications off"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ No words to copy",
@@ -235,7 +237,10 @@
     "blockError": "❌ Failed to save the block",
     "unblockError": "❌ Failed to unblock contact",
     "contactUnblocked": "🔓 Contact unblocked",
-    "peerFallbackNickname": "Peer: {{id}}..."
+    "peerFallbackNickname": "Peer: {{id}}...",
+    "pushEnabled": "Notifications enabled",
+    "pushDisabled": "Notifications disabled",
+    "pushError": "Couldn't change notification setting"
   },
   "uploadEvents": {
     "retrying": "{{fileName}}: retry {{attempt}}/{{maxRetries}}..."

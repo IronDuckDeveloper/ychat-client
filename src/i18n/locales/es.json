@@ -178,7 +178,9 @@
     "addByPeerIdTitle": "Añadir por Peer ID",
     "peerIdPlaceholder": "Introduce el Peer ID del usuario",
     "unknownPeer": "Peer desconocido",
-    "addedYouHint": "Te hemos añadido a la lista de contactos."
+    "addedYouHint": "Te hemos añadido a la lista de contactos.",
+    "pushOn": "Notificaciones activadas",
+    "pushOff": "Notificaciones desactivadas"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ No hay palabras para copiar",
@@ -235,7 +237,10 @@
     "blockError": "❌ Error al guardar el bloqueo",
     "unblockError": "❌ Error al desbloquear el contacto",
     "contactUnblocked": "🔓 Contacto desbloqueado",
-    "peerFallbackNickname": "Par: {{id}}..."
+    "peerFallbackNickname": "Par: {{id}}...",
+    "pushEnabled": "Notificaciones activadas",
+    "pushDisabled": "Notificaciones desactivadas",
+    "pushError": "No se pudo cambiar la configuración de notificaciones"
   },
   "uploadEvents": {
     "retrying": "{{fileName}}: reintento {{attempt}}/{{maxRetries}}..."
