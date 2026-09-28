@@ -1,11 +1,11 @@
-import { createBrowserHelia, relayManager, resetHeliaInitialization } from '../networking/heliaClient.ts';
+import { createBrowserHelia, relayManager, resetHeliaInitialization, announceOwnDatabases } from '../networking/heliaClient.ts';
 import i18n from '../../../i18n/config.ts';
 import { getOrbitDB } from '../orbit/client.ts';
 import { getFilteredProfileData, initProfileDB, initGlobalRegistryDB } from './profileService.ts';
 import { generateDeviceFingerprint, getClientIpAddress } from '../utils/fingerprint.ts';
 import { CONFIG } from '../config.ts';
 import { RelayManager } from '../networking/RelayManager.ts';
-import { initContactsDB, getContact, saveContact, isAvatarBundleStale, type ContactItem, updateContactProfileAddress } from './contactsService.ts';
+import { initContactsDB, getContact, saveContact, isAvatarBundleStale, type ContactItem, updateContactProfileAddress, waitForDbSettle } from './contactsService.ts';
 import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
 import { initHiddenMessagesDB } from './hiddenMessagesService.ts';
 
@@ -301,21 +301,25 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
     // 3. Поднимаем OrbitDB и профиль
     globalOrbitDB = await getOrbitDB(globalHelia);
-    globalProfileDb = await initProfileDB(globalOrbitDB);
+    globalProfileDb = await initProfileDB(globalOrbitDB, nicknameForRegistration);
     globalContactsDb = await initContactsDB(globalOrbitDB);
     globalHiddenMessagesDb = await initHiddenMessagesDB(globalOrbitDB);
     await initGlobalRegistryDB(globalOrbitDB);
 
-  const pubsub = libp2p.services.pubsub;
-  if (!pubsub) {
-    throw new Error('PubSub service is not available on libp2p node');
-  }
+    // Первый анонс баз Архивариусу. startMonitoring's onRelayChanged здесь не сработает —
+    // он реагирует только на переключение релея, не на первый коннект.
+    announceOwnDatabases(libp2p).catch(() => {});
 
-  const myPeerId = globalHelia.libp2p.peerId.toString();
-  const myMailboxTopic = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${myPeerId}`;
+    const pubsub = libp2p.services.pubsub;
+    if (!pubsub) {
+      throw new Error('PubSub service is not available on libp2p node');
+    }
 
-  await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC); // Пинги пробуждения — общий топик
-  await pubsub.subscribe(myMailboxTopic);                  // Личный почтовый ящик для профильных обновлений
+    const myPeerId = globalHelia.libp2p.peerId.toString();
+    const myMailboxTopic = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${myPeerId}`;
+
+    await pubsub.subscribe(CONFIG.TOPICS.WAKEUP_SYNC_TOPIC); // Пинги пробуждения — общий топик
+    await pubsub.subscribe(myMailboxTopic);                  // Личный почтовый ящик для профильных обновлений
 
   // ==========================================
   // ЛОГИКА ОБРАБОТКИ СООБЩЕНИЙ (ОБНОВЛЕНИЯ ПРОФИЛЯ И ПРОБУЖДЕНИЯ)
@@ -476,8 +480,11 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
     console.log('✅ [Init] Инициализация успешно завершена!');
 
-    // Запросы в контакты, пришедшие пока мы были офлайн
-    syncContactRequests().catch(() => {});
+    // Даём contactsDb шанс дореплицироваться (после clearCache локальная копия пуста) —
+    // иначе уже известный контакт по гонке будет принят за новую заявку (isPending)
+    waitForDbSettle(globalContactsDb)
+      .then(() => syncContactRequests())
+      .catch(() => {});
     
     // 🔥 СМАРТ-ФИКС: Циклический запуск WAKEUP с контролем пиров и версионированием
     let wakeupAttempts = 0;

@@ -20,7 +20,7 @@ import peersConfig from '../../known-peers.json';
 import { CONFIG } from '../config.ts';
 import { notifyArchivist } from './connectionManager.ts';
 // import { kadDHT } from '@libp2p/kad-dht';
-import { pushProfileUpdateToContacts, globalProfileDb, globalHiddenMessagesDb } from '../services/authService.ts';
+import { pushProfileUpdateToContacts, globalProfileDb, globalHiddenMessagesDb, globalContactsDb } from '../services/authService.ts';
 import { multiaddr } from '@multiformats/multiaddr';
 
 let initializationPromise: Promise<any> | null = null;
@@ -177,41 +177,48 @@ export function createBrowserHelia(): Promise<any> {
       throw new Error('🚨 [HeliaInit] ФАТАЛЬНАЯ ОШИБКА: Ни один релей из пула не доступен!');
     }
 
-    // Запускаем мониторинг именно здесь, один раз
-    relayManager.startMonitoring(heliaNode.libp2p, async () => {
-      
-      // Отправляем Архивариусу адрес НАШЕЙ базы профиля, чтобы он её закэшировал
-      if (globalProfileDb) {
-        notifyArchivist(heliaNode.libp2p, peerId, globalProfileDb.address.toString());
-        console.log(`📢 Оповестили Архивариус о нашей базе профиля`);
-      }
+    relayManager.startMonitoring(heliaNode.libp2p, () => announceOwnDatabases(heliaNode.libp2p));
 
-      if (globalHiddenMessagesDb) {
-        notifyArchivist(heliaNode.libp2p, peerId, globalHiddenMessagesDb.address.toString());
-        console.log(`📢 Оповестили Архивариус о нашей базе скрытых сообщений`);
-      }
-
-      if (heliaNode) {
-        try {
-          const pubsub = heliaNode.libp2p.services.pubsub;
-          
-          // 1. Принудительно публикуем запрос синхронизации пиров
-          await pubsub.publish( 
-            CONFIG.TOPICS.WAKEUP_SYNC_TOPIC,
-            new TextEncoder().encode(JSON.stringify({ type: CONFIG.MSG.WAKEUP }))
-          );
-
-          // 2. Дергаем публикацию профиля. 
-          await pushProfileUpdateToContacts();
-          
-          console.log('🔄 [Network Fix] Меш PubSub и базы OrbitDB успешно переинициализированны на новом релее.');
-        } catch (pubSubRefreshError) {
-          console.error('❌ [Network Fix] Не удалось обновить меш подписок или базы:', pubSubRefreshError);
-        }
-      }
-    });
     return await heliaNode;
   })();
 
   return initializationPromise;
+}
+
+/**
+ * Анонсирует Архивариусу адреса наших локальных баз и подталкивает mesh/профили контактам.
+ * Вызывается дважды: (1) явно из initializeApp() сразу после того, как все базы реально
+ * открыты — первый вход; (2) как onRelayChanged-колбэк из RelayManager.startMonitoring —
+ * он срабатывает только при переключении на резервный релей после дисконнекта активного,
+ * НЕ при первом коннекте.
+ */
+export async function announceOwnDatabases(libp2p: any) {
+  const connectedPeers = libp2p.getPeers();
+
+  const dbs: Array<[any, string]> = [
+    [globalProfileDb, 'профиля'],
+    [globalHiddenMessagesDb, 'скрытых сообщений'],
+    [globalContactsDb, 'контактов'],
+  ];
+
+  for (const [db, label] of dbs) {
+    if (!db) continue;
+    const address = db.address.toString();
+    connectedPeers.forEach((peer: any) => notifyArchivist(libp2p, peer, address));
+    console.log(`📢 Оповестили Архивариус о нашей базе ${label}`);
+  }
+
+  if (libp2p) {
+    try {
+      const pubsub = libp2p.services.pubsub;
+      await pubsub.publish(
+        CONFIG.TOPICS.WAKEUP_SYNC_TOPIC,
+        new TextEncoder().encode(JSON.stringify({ type: CONFIG.MSG.WAKEUP }))
+      );
+      await pushProfileUpdateToContacts();
+      console.log('🔄 [Network Fix] Меш PubSub и базы OrbitDB успешно переинициализированны на новом релее.');
+    } catch (pubSubRefreshError) {
+      console.error('❌ [Network Fix] Не удалось обновить меш подписок или базы:', pubSubRefreshError);
+    }
+  }
 }

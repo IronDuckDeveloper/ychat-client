@@ -354,6 +354,39 @@ export async function updateChatDbAddress(db: any, peerId: string, address: stri
   }
 }
 
+/**
+ * Ждёт, пока OrbitDB-база "успокоится" после открытия — набор update-событий от репликации
+ * затихнет на idleMs, либо истечёт maxWaitMs. Общий хелпер: используется для contactsDb
+ * (гонка с syncContactRequests после очистки кэша) и для profileDb (гонка с дефолтным ником).
+ */
+export function waitForDbSettle(db: any, idleMs = 800, maxWaitMs = 4000): Promise<void> {
+  return new Promise((resolve) => {
+    if (!db?.events) return resolve();
+
+    let idleTimer: any;
+    let maxTimer: any;
+    let done = false;
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
+      db.events.off('update', onUpdate);
+      resolve();
+    };
+
+    const onUpdate = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(finish, idleMs);
+    };
+
+    db.events.on('update', onUpdate);
+    idleTimer = setTimeout(finish, idleMs); // апдейтов может не быть вообще — тоже финишируем
+    maxTimer = setTimeout(finish, maxWaitMs);
+  });
+}
+
 export async function syncContactHistory(contact: ContactItem, contactsDb: any) {
   // Заявка не принята — чат-БД не открываем и архивариуса не анонсируем
   if (contact.isPending) return;

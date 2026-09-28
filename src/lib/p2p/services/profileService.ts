@@ -10,7 +10,7 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from "../config.ts";
 import { getOrOpenDb, globalOrbitDB, globalHelia } from './authService.ts';
-import { checkAndSyncRelays } from '../networking/connectionManager.ts';
+import { checkAndSyncRelays, notifyArchivist } from '../networking/connectionManager.ts';
 import { saveContact, getContact, isAvatarBundleStale, type ContactItem } from './contactsService.ts';
 import i18n from '../../../i18n/config.ts';
 
@@ -27,6 +27,33 @@ const recentlySyncedPeers = new Set<string>();
 
 // 🔥 Добавляем кэш промиса инициализации для защиты от параллельной гонки
 let profileInitPromise: Promise<any> | null = null;
+
+/** Ждёт, пока в БД появится значение по ключу (репликация с релея), либо истечёт таймаут. */
+function waitForDbKey(db: any, key: string, timeoutMs: number): Promise<any> {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer: any;
+
+    const finish = (value: any) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      db.events.off('update', onUpdate);
+      resolve(value);
+    };
+
+    const onUpdate = async () => {
+      try {
+        const value = await db.get(key);
+        if (value) finish(value);
+      } catch { /* БД могла закрыться */ }
+    };
+
+    db.events.on('update', onUpdate);
+    timer = setTimeout(() => finish(undefined), timeoutMs);
+    onUpdate(); // данные могли приехать между прошлой проверкой и подпиской
+  });
+}
 
 export async function initProfileDB(orbitdb: any, nicknameForRegistration?: string) {
   // Если инициализация уже запущена параллельно (например, из регистрации),
@@ -62,7 +89,18 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
 
       console.log(`✅ [ProfileDB] База открыта. Адрес: ${profileDb.address} 🔒 Право на запись только у: ${orbitdb.identity.id}`);
 
-      const existingNickname = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+      let existingNickname = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
+
+      // Ника нет, и это не регистрация — скорее всего кэш очищен и локальная копия ещё не
+      // среплицировалась. Анонсируем адрес (релей про него в этой сессии ещё не знает) и ждём
+      // САМИ ДАННЫЕ: idle-таймер срабатывает раньше первого update.
+      if (!existingNickname && !nicknameForRegistration) {
+        const profileLibp2p = orbitdb.ipfs.libp2p;
+        profileLibp2p.getPeers().forEach((peer: any) => notifyArchivist(profileLibp2p, peer, actualAddress));
+        console.log('⏳ [ProfileDB] Профиль пуст — ждём репликацию с релея...');
+        existingNickname = await waitForDbKey(profileDb, CONFIG.PROFILE.KEY_NICKNAME, 10000);
+      }
+
       const dateCreated = await profileDb.get(CONFIG.PROFILE.KEY_DATE_CREATED);
 
       // 1. Если явно передан никнейм для регистрации — приоритетно записываем его
@@ -78,16 +116,13 @@ export async function initProfileDB(orbitdb: any, nicknameForRegistration?: stri
           console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname}`);
         }
       } 
-      // 2. Если никнейм не передан, и база абсолютно пустая — только тогда пишем дефолтный никнейм
-      else if (!existingNickname && !dateCreated) {
-        console.log(`🆕 [ProfileDB] Данные профиля пусты. Заполняем...`);
-        
-        await profileDb.put(CONFIG.PROFILE.KEY_NICKNAME, i18n.t('profileService.anonymousUser'));
-        await profileDb.put(CONFIG.PROFILE.KEY_DATE_CREATED, Date.now());
-
-        console.log(`✅ [ProfileDB] Базовые данные успешно записаны.`);
+      // 2. Ника нет и это не регистрация — ничего не пишем. Дефолт в БД не нужен: UI
+      // (`name || defaultNickname`) и рассылка профиля (`?? anonymousFallback`) подставляют его
+      // сами, а запись в общий лог при гонке с репликацией затирала реальный профиль.
+      else if (!existingNickname) {
+        console.warn('⚠️ [ProfileDB] Ник так и не пришёл с релея — оставляем профиль пустым, ничего не затираем.');
       } else {
-        console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname || i18n.t('profileService.anonymousUser')}`);
+        console.log(`♻️ [ProfileDB] Профиль восстановлен: ${existingNickname}`);
       }
 
       return profileDb;
