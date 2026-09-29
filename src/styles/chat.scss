@@ -217,13 +217,6 @@
       padding-top: 36px;
     }
 
-    /* Когда в сообщении появляется кнопка сворачивания, расширяем отступ под 2 кнопки */
-    &:has(.hidden-message-collapse-btn) {
-      .text-content {
-        padding-right: 56px;
-      }
-    }
-
     &:has(.reply-message-indicator) {
       padding-top: 12px;
     }
@@ -260,6 +253,12 @@
         &:active {
           opacity: 0.6;
         }
+      }
+    }
+
+    &:has(.hidden-message-collapse-btn) {
+      .text-content {
+        padding-right: 56px;
       }
     }
 
