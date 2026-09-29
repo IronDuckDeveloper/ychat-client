@@ -88,14 +88,12 @@
 
     .profile-privacy-badge {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px; 
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
       margin-bottom: 24px;
       width: 100%;
       box-sizing: border-box;
-      flex-wrap: nowrap; 
-      height: 40px;
 
       .privacy-label {
         font-size: 0.95rem;
@@ -105,6 +103,8 @@
       }
 
       .privacy-select {
+        width: 100%;
+        box-sizing: border-box;
         padding: 8px 32px 8px 12px; 
         border: 2px solid rgba($accent-prime, 0.2);
         border-radius: $radius;

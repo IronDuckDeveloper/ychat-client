@@ -92,6 +92,7 @@ const Chat = () => {
     contact,
     messages,
     draft,
+    inputKey,
     messagesContainerRef,
     isLoadingMore,
     isLoadingRef,
@@ -617,7 +618,6 @@ const Chat = () => {
               ref={audioInputRef}
               style={{ display: 'none' }}
               accept="audio/*"
-              capture="user"
               onChange={handleFileSelect}
             />
 
@@ -733,6 +733,7 @@ const Chat = () => {
 
                 <textarea
                   value={draft}
+                  key={inputKey}
                   onChange={handleInput}
                   onKeyDown={handleKeyDown}
                   placeholder={

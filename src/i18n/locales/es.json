@@ -206,7 +206,7 @@
     "waitingNode": "Esperando a que el nodo arranque...",
     "openingRoomDb": "Abriendo la base de datos de la sala...",
     "findingPeers": "Buscando pares y uniéndose a la red...",
-    "typeMessage": "Escribe un mensaje...",
+    "typeMessage": "Un mensaje...",
     "deleteFromNetworkTitle": "¿Eliminar este mensaje de la red?",
     "deleteFromDeviceTitle": "¿Eliminar este mensaje de tu dispositivo?",
     "deleteFromNetworkMessage": "Este mensaje se eliminará permanentemente de la red.",

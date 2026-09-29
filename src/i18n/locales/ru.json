@@ -209,7 +209,7 @@
     "waitingNode": "Ожидание запуска узла...",
     "openingRoomDb": "Открытие базы данных комнаты...",
     "findingPeers": "Поиск пиров и склейка сети...",
-    "typeMessage": "Напишите сообщение...",
+    "typeMessage": "Сообщение...",
     "deleteFromNetworkTitle": "Удалить сообщение из сети?",
     "deleteFromDeviceTitle": "Удалить сообщение с устройства?",
     "deleteFromNetworkMessage": "Сообщение будет навсегда удалено из сети.",

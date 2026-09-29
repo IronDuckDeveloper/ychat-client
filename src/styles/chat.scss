@@ -61,11 +61,11 @@
   touch-action: pan-y;
   overscroll-behavior: none;
   flex: 1;
-  padding: 1rem 1rem 95px 1rem;
   display: flex;
   flex-direction: column-reverse;
   gap: 1rem;
   min-height: 0;
+  padding: 1rem 1rem calc(95px + env(safe-area-inset-bottom)) 1rem;
 
   .date-separator {
     align-self: center;
@@ -216,10 +216,17 @@
     &.has-forwarded {
       padding-top: 36px;
     }
-    
-        &:has(.reply-message-indicator) {
-          padding-top: 12px;
-        }
+
+    /* Когда в сообщении появляется кнопка сворачивания, расширяем отступ под 2 кнопки */
+    &:has(.hidden-message-collapse-btn) {
+      .text-content {
+        padding-right: 56px;
+      }
+    }
+
+    &:has(.reply-message-indicator) {
+      padding-top: 12px;
+    }
 
     &.system {
       align-self: center;
@@ -320,7 +327,8 @@
   z-index: 10;
 
   box-sizing: border-box;
-  padding: 0.75rem 0.5rem;
+  // Добавлен env(safe-area-inset-bottom) для отступа от Home Bar на iPhone
+  padding: 0.75rem 0.5rem calc(0.75rem + env(safe-area-inset-bottom, 0px)) 0.5rem;
 
   background-color: transparent;
 
@@ -405,29 +413,40 @@
     }
 
     textarea {
-      flex: 1;
+      // 1. Исправляем баг схлопывания ширины во Flexbox в Safari
+      flex: 1 1 auto;
+      width: 100%; 
       min-width: 0;
-      margin: 0 2px;
+      margin: 0 8px;
+      
       background-color: transparent;
       outline: none;
-      font-size: 16px;
+      font-size: 16px; 
       border: none;
       resize: none;
-      line-height: 20px;
+      
       height: 20px;
+      line-height: 20px;
       max-height: 60px;
       padding: 0;
-      display: inline-block;
-      vertical-align: middle;
+
+      -webkit-appearance: none;
+      appearance: none;
+      transform: translateZ(0);
+      
       caret-color: $accent-prime;
       color: $text;
 
       &::placeholder {
         color: $hint;
-        font-size: 11px;         /* 1. Уменьшаем размер текста плейсхолдера */
-        white-space: nowrap;      /* 2. Запрещаем перенос текста на новую строку */
-        overflow: hidden;         /* 2. Скрываем текст, который не помещается */
-        text-overflow: ellipsis;  /* 2. Добавляем три точки в конце */
+        font-size: 13px;
+        opacity: 1; 
+        line-height: 20px;
+
+        // 2. Принудительно отключаем внутренние механизмы обрезки текста в WebKit
+        overflow: visible;
+        text-overflow: clip;
+        white-space: pre-wrap;
       }
     }
   }
@@ -534,6 +553,8 @@
   vertical-align: middle;
   margin-left: 6px;
   color: inherit;
+  margin-right: 4px;
+  flex-shrink: 0;
 }
 
 .attachment-wrapper {

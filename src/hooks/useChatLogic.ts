@@ -64,6 +64,8 @@ export const useChatLogic = () => {
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  // Баг - после ввода текста placeholder обрезает текст
+  const [inputKey, setInputKey] = useState(0);
 
   const isMobileDevice = () => {
     if ('userAgentData' in navigator && (navigator as any).userAgentData) {
@@ -146,16 +148,23 @@ const triggerVideoCapture = () => {
 const closeVideoModal = () => setIsVideoModalOpen(false);
 
 const triggerAudioCapture = () => {
-  setIsAttachmentMenuOpen(false);
+    setIsAttachmentMenuOpen(false);
 
-  if (isMobileDevice()) {
-    setTimeout(() => {
-      audioInputRef.current?.click();
-    }, 10);
-  } else {
-    setIsAudioModalOpen(true);
-  }
-};
+    // Определяем, является ли устройство iOS (включая новые iPad)
+    const isIOS = 
+      /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+      (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+
+    if (isMobileDevice() && !isIOS) {
+      // Для Android используем нативный инпут (откроет системный диктофон)
+      setTimeout(() => {
+        audioInputRef.current?.click();
+      }, 10);
+    } else {
+      // Для ПК и iOS открываем вашу встроенную модалку (MediaRecorder API)
+      setIsAudioModalOpen(true);
+    }
+  };
 
 const closeAudioModal = () => setIsAudioModalOpen(false);
 
@@ -555,6 +564,7 @@ const handleSendMessage = async () => {
       }
 
       setDraft('');
+      setInputKey((prev) => prev + 1); // 🔥 Принудительно пересоздаем DOM-узел textarea для iOS Safari
       setIsHiddenMode(false);
       setSelectedFile(null);
       setReplyingTo(null);
@@ -701,6 +711,7 @@ const handleSendMessage = async () => {
     avatarUrl,
     messages,
     draft,
+    inputKey,
     messagesContainerRef,
     isLoadingMore,
     isLoadingRef,

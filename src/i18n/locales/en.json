@@ -206,7 +206,7 @@
     "waitingNode": "Waiting for the node to start...",
     "openingRoomDb": "Opening room database...",
     "findingPeers": "Finding peers and joining the network...",
-    "typeMessage": "Type a message...",
+    "typeMessage": "A message...",
     "deleteFromNetworkTitle": "Delete this message from the network?",
     "deleteFromDeviceTitle": "Delete this message from your device?",
     "deleteFromNetworkMessage": "This message will be permanently deleted from the network.",
