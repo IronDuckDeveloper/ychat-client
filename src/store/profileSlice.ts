@@ -9,7 +9,7 @@ export interface ProfileState {
   loaded: boolean;
 }
 
-const initialState: ProfileState = {
+export const initialProfileState: ProfileState = {
   nickname: '',
   bio: '',
   privacy: 'public',
@@ -19,7 +19,7 @@ const initialState: ProfileState = {
 
 const profileSlice = createSlice({
   name: 'profile',
-  initialState,
+  initialState: initialProfileState,
   reducers: {
     profileUpdated(state, action: PayloadAction<Partial<ProfileState>>) {
       Object.assign(state, action.payload);

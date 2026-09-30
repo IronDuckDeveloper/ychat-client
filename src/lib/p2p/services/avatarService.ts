@@ -5,7 +5,7 @@ import {
   type FileAttachment
 } from './fileService';
 
-export { peekCachedFileUrl as peekAvatarUrl } from './fileService';
+export { peekCachedFileUrl as peekAvatarUrl, fetchCachedFileUrl as fetchCachedAvatarUrl } from './fileService';
 
 /**
  * Загрузка аватара в Helia и Kubo через fileService.

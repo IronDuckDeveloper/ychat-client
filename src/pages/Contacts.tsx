@@ -236,10 +236,8 @@ const ContactList = () => {
       </div>
 
       <div className="contacts-list">
-        {!isNetworkReady ? (
-          <div className="empty-state">{/* Иконка "Нет сети" */}</div>
-        ) : isLoading ? (
-          <div className="empty-state">
+        {isLoading ? (
+          <div className="empty-state local-db-loader">
             <div className="animate-spin" style={{ marginBottom: '8px' }}>
               ⏳
             </div>
@@ -256,7 +254,7 @@ const ContactList = () => {
               ref={(el) => contactRef(el, contact)}
               className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
               onClick={(e) => {
-                if (contact.isBlocked || contact.isPending) {
+                if (!isNetworkReady || contact.isBlocked || contact.isPending) {
                   e.preventDefault();
                   e.stopPropagation();
                   return;

@@ -33,6 +33,23 @@ export function peekCachedFileUrl(cidString?: string): string | null {
   return fileCache.get(cidString) || null;
 }
 
+/** RAM-кэш, затем Cache API (без Helia, сети и ключа: в Cache API лежит уже расшифрованный файл). */
+export async function fetchCachedFileUrl(cidString?: string): Promise<string | null> {
+  if (!cidString) return null;
+  const ram = peekCachedFileUrl(cidString);
+  if (ram) return ram;
+  try {
+    const cache = await caches.open(CONFIG.CACHE_NAME_FILES);
+    const res = await cache.match(cidString);
+    if (!res) return null;
+    const url = URL.createObjectURL(await res.blob());
+    fileCache.set(cidString, url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 function getGatewayCandidates(serverRelays?: string[]): string[] {
   if (!serverRelays || serverRelays.length === 0) {
     const ip = relayManager.getActiveRelayIp();

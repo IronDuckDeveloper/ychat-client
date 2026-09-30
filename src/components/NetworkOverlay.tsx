@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { globalNetworkState, NET_STATE } from '../lib/p2p/networking/NetworkStateMachine';
 import '../styles/networkOverlay.scss';
-// import { wasPickerRecentlyUsed } from '../lib/filePickerGuard';
-// import { CONFIG } from '../lib/p2p/config.ts';
 
 export const NetworkOverlay: React.FC = () => {
   const { t } = useTranslation();
   const location = useLocation();
   const [status, setStatus] = useState(globalNetworkState?.state || NET_STATE.CONNECTING);
-  const wasSleeping = useRef(false);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -18,12 +15,6 @@ export const NetworkOverlay: React.FC = () => {
       if (globalNetworkState && !unsubscribe) {
         unsubscribe = globalNetworkState.subscribe((newState) => {
           setStatus(newState);
-          if (newState === NET_STATE.SLEEPING) wasSleeping.current = true;
-          if (newState === NET_STATE.CONNECTED && wasSleeping.current) {
-            wasSleeping.current = false;
-            // Убрал так как не нужно полностью обновлять UI
-            // if (!wasPickerRecentlyUsed()) window.location.reload(); 
-          }
         });
         setStatus(globalNetworkState.state);
       }

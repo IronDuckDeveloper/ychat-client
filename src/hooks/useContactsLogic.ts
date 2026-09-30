@@ -8,7 +8,7 @@ import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileU
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
-import { uploadAvatarToHelia, fetchAvatarFromHelia, peekAvatarUrl } from '../lib/p2p/services/avatarService';
+import { uploadAvatarToHelia, fetchAvatarFromHelia, peekAvatarUrl, fetchCachedAvatarUrl } from '../lib/p2p/services/avatarService';
 import { forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
 import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts';
@@ -33,6 +33,18 @@ export const useContactsLogic = () => {
   const setMyPrivacy = (privacy: PrivacyType) => dispatch(profileUpdated({ privacy }));
   const setContacts = (list: ContactItem[]) => dispatch(contactsReplaced(list));
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(() => peekAvatarUrl(profile.avatarCid));
+
+    // Холодный старт: картинка из Cache API по cid из снимка, не дожидаясь открытия БД
+  useEffect(() => {
+    if (!profile.avatarCid) return;
+    let alive = true;
+    fetchCachedAvatarUrl(profile.avatarCid).then((url) => {
+      if (alive && url) setMyAvatarUrl((prev) => prev ?? url);
+    });
+    return () => { alive = false; };
+  }, [profile.avatarCid]);
+
+  
   const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
@@ -238,32 +250,39 @@ export const useContactsLogic = () => {
     
     const loadData = async (profileDb: any) => {
       try {
-        const name = await profileDb.get(CONFIG.PROFILE.KEY_NICKNAME);
-        const bio = await profileDb.get(CONFIG.PROFILE.KEY_BIO);
-        const avatarCID = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID);
-        const avatarEncryptionKey = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
-        const privacy = (await profileDb.get(CONFIG.PROFILE.KEY_PRIVACY)) || 'public';
-        setMyPrivacy(privacy);
+        const [name, bio, avatarCID, avatarEncryptionKey, privacyRaw, serverCid, serverRelays, encryptedBlacklist] =
+          await Promise.all([
+            profileDb.get(CONFIG.PROFILE.KEY_NICKNAME),
+            profileDb.get(CONFIG.PROFILE.KEY_BIO),
+            profileDb.get(CONFIG.PROFILE.KEY_AVATAR_CID),
+            profileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY),
+            profileDb.get(CONFIG.PROFILE.KEY_PRIVACY),
+            profileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid'),
+            profileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS),
+            profileDb.get(CONFIG.PROFILE.DB_BLACKLIST_KEY),
+          ]);
 
-        const encryptedBlacklist = await profileDb.get(CONFIG.PROFILE.DB_BLACKLIST_KEY);
+        if (isMounted) {
+          dispatch(profileUpdated({
+            nickname: name || t('contactsLogic.defaultNickname'),
+            bio: bio || '',
+            privacy: privacyRaw || 'public',
+            avatarCid: avatarCID || '',
+          }));
+        }
+
         if (encryptedBlacklist) {
           try {
             const decryptedList = await decryptBlacklist(encryptedBlacklist);
             const localListStr = localStorage.getItem(CONFIG.PROFILE.BLACKLIST_KEY);
             const remoteListStr = JSON.stringify(decryptedList);
-            
+
             if (localListStr !== remoteListStr) {
               localStorage.setItem(CONFIG.PROFILE.BLACKLIST_KEY, remoteListStr);
             }
           } catch (e) {
             console.error('Не удалось расшифровать блэклист', e);
           }
-        }
-        
-        if (isMounted) {
-          setMyNickname(name || t('contactsLogic.defaultNickname'));
-          setMyBio(bio || '');
-          dispatch(profileUpdated({ avatarCid: avatarCID || '' }));
         }
 
         if (globalContactsDb && isMounted) {
@@ -275,14 +294,9 @@ export const useContactsLogic = () => {
         }
 
         if (avatarCID && globalHelia && isMounted) {
-          const serverCid = await profileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
-          const serverRelays = await profileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS || []);
-          // Передаем timeoutMs = 15000 и serverCid для быстрой загрузки с Gateway
           const url = await fetchAvatarFromHelia(globalHelia, avatarCID, 15000, serverCid, avatarEncryptionKey, false, serverRelays);
-
           if (isMounted) setMyAvatarUrl(url);
         }
-
       } catch (error) {
         if (isMounted) setMyNickname(t('contactsLogic.loadProfileError'));
       } finally {
