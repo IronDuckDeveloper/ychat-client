@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
@@ -7,27 +8,36 @@ import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileU
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
-import { uploadAvatarToHelia, fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
+import { uploadAvatarToHelia, fetchAvatarFromHelia, peekAvatarUrl } from '../lib/p2p/services/avatarService';
 import { forceSyncContactProfile } from '../lib/p2p/services/profileService.ts';
 import { globalNetworkState } from '../lib/p2p/networking/NetworkStateMachine.ts';
 import { globalSyncQueue } from '../lib/p2p/networking/SyncQueue.ts';
 import { enablePush, disablePush } from '../lib/push/pushService.ts';
+import type { RootState } from '../store';
+import { contactsReplaced } from '../store/contactsSlice.ts';
+import { profileUpdated } from '../store/profileSlice.ts';
 
 export const useContactsLogic = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   // --- БАЗОВЫЕ СТЕЙТЫ ПРОФИЛЯ И БАЗЫ ---
-  const [myNickname, setMyNickname] = useState<string>('');
-  const [myBio, setMyBio] = useState<string>(''); 
-  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
-  const [myPrivacy, setMyPrivacy] = useState<PrivacyType>('public');
+  const dispatch = useDispatch();
+  const profile = useSelector((s: RootState) => s.profile);
+  const contacts = useSelector((s: RootState) => s.contacts.items);
+  const myNickname = profile.nickname;
+  const myBio = profile.bio;
+  const myPrivacy = profile.privacy;
+  const setMyNickname = (nickname: string) => dispatch(profileUpdated({ nickname }));
+  const setMyBio = (bio: string) => dispatch(profileUpdated({ bio }));
+  const setMyPrivacy = (privacy: PrivacyType) => dispatch(profileUpdated({ privacy }));
+  const setContacts = (list: ContactItem[]) => dispatch(contactsReplaced(list));
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(() => peekAvatarUrl(profile.avatarCid));
   const [peerId, setPeerId] = useState<string | null>(null);
   
   const [dbInstance, setDbInstance] = useState<any>(globalProfileDb);
   const [, setContactsDbInstance] = useState<any>(globalContactsDb);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [contacts, setContacts] = useState<ContactItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !profile.loaded);
 
   // --- СТЕЙТ ПОИСКА ---
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -90,7 +100,7 @@ export const useContactsLogic = () => {
     if (contact.chatDbAddress) {
       const isIgnored = await isPeerIgnored(globalContactsDb, contact.id);
       if (!isIgnored) {
-        globalSyncQueue.add(contact, globalContactsDb);
+        globalSyncQueue.add({ ...contact }, globalContactsDb); // state заморожен, а syncContactHistory пишет contact.room
       }
     }
   };
@@ -189,12 +199,8 @@ export const useContactsLogic = () => {
       try {
         const freshContacts = await getAllContacts(db);
         
-        setContacts(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(freshContacts)) {
-            return [...freshContacts];
-          }
-          return prev;
-        });
+        dispatch(contactsReplaced(freshContacts));
+
       } catch (err) {
         console.error('❌ Ошибка обновления:', err);
       }
@@ -257,6 +263,15 @@ export const useContactsLogic = () => {
         if (isMounted) {
           setMyNickname(name || t('contactsLogic.defaultNickname'));
           setMyBio(bio || '');
+          dispatch(profileUpdated({ avatarCid: avatarCID || '' }));
+        }
+
+        if (globalContactsDb && isMounted) {
+          setContacts(await getAllContacts(globalContactsDb));
+        }
+        if (isMounted) {
+          dispatch(profileUpdated({ loaded: true }));
+          setIsLoading(false);
         }
 
         if (avatarCID && globalHelia && isMounted) {
@@ -268,10 +283,6 @@ export const useContactsLogic = () => {
           if (isMounted) setMyAvatarUrl(url);
         }
 
-        if (globalContactsDb && isMounted) {
-          const rawContacts = await getAllContacts(globalContactsDb);
-          if (isMounted) setContacts(rawContacts);
-        }
       } catch (error) {
         if (isMounted) setMyNickname(t('contactsLogic.loadProfileError'));
       } finally {
@@ -491,6 +502,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
         await dbInstance.put(CONFIG.PROFILE.KEY_AVATAR_CID, newCid);
 
         currentAvatarCid = newCid; // Обновляем для отправки в broadcast
+        dispatch(profileUpdated({ avatarCid: newCid }));
         currentAvatarServerCid = newServerCid; // ОБЯЗАТЕЛЬНО обновляем serverCid для бродкаста!
         // currentAvatarEncryptionKey = newEncryptionKey; // обновляем переменную ключа для бродкаста
         serverRelays = newServerRelays; 

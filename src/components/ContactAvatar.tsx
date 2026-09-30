@@ -3,7 +3,7 @@ import { User, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { globalHelia } from '../lib/p2p/services/authService.ts';
-import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService';
+import { fetchAvatarFromHelia, peekAvatarUrl } from '../lib/p2p/services/avatarService';
 import '../styles/contactAvatar.scss';
 
 function ContactAvatar({ 
@@ -18,14 +18,23 @@ function ContactAvatar({
   serverRelays?: string[]
 }) {
   const { t } = useTranslation();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => peekAvatarUrl(cid));
+  const [isRetrying, setIsRetrying] = useState<boolean>(() => !!cid && !peekAvatarUrl(cid));
   const [retryCount, setRetryCount] = useState(0); 
 
   useEffect(() => {
     if (!cid || !globalHelia) return;
     
     let isMounted = true;
+
+    if (retryCount === 0) {
+      const cached = peekAvatarUrl(cid);
+      if (cached) {
+        setAvatarUrl(cached);
+        setIsRetrying(false);
+        return;
+      }
+    }
 
     const loadAvatar = async () => {
       setIsRetrying(true);

@@ -1,11 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
-
-// Dummy reducer to fix the error
-const dummyReducer = (state = {}, _action: any) => state;
+import contacts from './contactsSlice.ts';
+import profile from './profileSlice.ts';
 
 export const store = configureStore({
   reducer: {
-    dummy: dummyReducer,
+    contacts,
+    profile,
   },
 });
 

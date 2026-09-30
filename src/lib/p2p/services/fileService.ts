@@ -27,6 +27,12 @@ export interface FileAttachment {
 const fileCache = new LruObjectUrlCache(50); // Лимит 50–100 файлов оптимален для комфортного скролла без нагрузки на RAM
 const pendingFetches = new Map<string, Promise<string | null>>();
 
+/** Синхронно отдаёт готовый blob: URL из RAM-кэша (без async и сети). */
+export function peekCachedFileUrl(cidString?: string): string | null {
+  if (!cidString || !fileCache.has(cidString)) return null;
+  return fileCache.get(cidString) || null;
+}
+
 function getGatewayCandidates(serverRelays?: string[]): string[] {
   if (!serverRelays || serverRelays.length === 0) {
     const ip = relayManager.getActiveRelayIp();
