@@ -218,9 +218,11 @@ public getRelayIp(relay: RelayConfig): string | null {
     this.disconnectHandler = async (evt: any) => {
       const disconnectedPeerId = evt.detail.toString();
 
-      // 🛡️ СПАСИТЕЛЬНАЯ ПРОВЕРКА: Если мы спим, это браузер убил сокеты. Карантин не даем.
-      if (globalNetworkState?.state === 'SLEEPING') {
-        console.log(`💤 [RelayManager] Релей ${disconnectedPeerId.slice(-6)} отпал, но мы в спячке. Прощаем.`);
+      // 🛡️ СПАСИТЕЛЬНАЯ ПРОВЕРКА: в спячке сокеты убивает браузер, а в RECOVERING мёртвый сокет
+      // добивает сам recoverNetwork (ping/dial). Карантин не даём, иначе recovery упрётся в наш же gater.
+      const netState = globalNetworkState?.state;
+      if (netState === 'SLEEPING' || netState === 'RECOVERING') {
+        console.log(`💤 [RelayManager] Релей ${disconnectedPeerId.slice(-6)} отпал (${netState}). Прощаем.`);
         return;
       }
       

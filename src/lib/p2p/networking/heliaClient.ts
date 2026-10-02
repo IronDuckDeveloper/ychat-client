@@ -101,17 +101,18 @@ export function createBrowserHelia(): Promise<any> {
             streamMuxers: [yamux()],
             
             // 🟢 ИЗМЕНЕНО: Подключаем вахтера (Connection Gater) к нашему карантину
-            connectionGater: { 
+            connectionGater: {
               denyDialMultiaddr: (multiaddr) => {
                 const targetPeerId = multiaddr.getPeerId();
                 if (targetPeerId && relayManager.isRelayFailed(targetPeerId)) {
-                  // Отменяем дозвон до релея, который сейчас в карантине
-                  return true; 
+                  // Карантин имеет смысл, только если есть куда переключиться:
+                  // единственный релей блокировать нельзя, дозвониться больше некуда
+                  return relayManager.getPool().length > 1;
                 }
-                return false; 
-              } 
+                return false;
+              }
             },
-            
+
             services: {
               identify: identify(),
               ping: ping(),

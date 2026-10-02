@@ -3,12 +3,7 @@ import {
   Search,
   Share2,
   Plus,
-  Trash2,
-  RefreshCcw,
-  MoreVertical,
-  Ban,
   X,
-  Copy,
   Bell,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -17,15 +12,13 @@ import ReplyPreview from '../components/ReplyPreview.tsx';
 import type { ReplyInfo } from '../lib/p2p/services/roomService.ts';
 import { QRCodeSVG } from 'qrcode.react';
 import ProfileDrawer from '../components/ProfileDrawer';
-import ContactAvatar from '../components/ContactAvatar.tsx';
+import ContactRow, { type ContactRowActions } from '../components/ContactRow.tsx';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useContactsLogic } from '../hooks/useContactsLogic.ts';
 import HeaderActionButton from '../components/HeaderActionButton.tsx';
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import Avatar from '../components/Avatar.tsx';
-import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 import ContextMenu from '../components/ContextMenu';
-import { CONFIG } from '../lib/p2p/config.ts';
 
 const ContactList = () => {
   const { t } = useTranslation();
@@ -87,9 +80,37 @@ const ContactList = () => {
     togglePush,
   } = useContactsLogic();
 
+  // Актуальные значения для стабильных колбэков: строки не зависят от идентичности хендлеров хука
+  const latest = useRef({
+    contacts,
+    forwardMessage,
+    isNetworkReady,
+    navigateLogic,
+    syncContactInQueue,
+    handleAcceptContact,
+    handleBlockContact,
+    handleDeleteContact,
+    handleRefreshContact,
+    handleUnblockAndRefresh,
+    handleCopyContactId,
+  });
+  latest.current = {
+    contacts,
+    forwardMessage,
+    isNetworkReady,
+    navigateLogic,
+    syncContactInQueue,
+    handleAcceptContact,
+    handleBlockContact,
+    handleDeleteContact,
+    handleRefreshContact,
+    handleUnblockAndRefresh,
+    handleCopyContactId,
+  };
+
   const observer = useRef<IntersectionObserver | null>(null);
-  const elementsMap = useRef(new Map<Element, any>());
-  const scrollTimers = useRef(new Map<Element, NodeJS.Timeout>());
+  const elementsMap = useRef(new Map<Element, string>()); // node -> contact.id
+  const scrollTimers = useRef(new Map<Element, ReturnType<typeof setTimeout>>());
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
@@ -98,23 +119,26 @@ const ContactList = () => {
       (entries) => {
         entries.forEach((entry) => {
           const target = entry.target;
-          const contact = elementsMap.current.get(target);
+          const id = elementsMap.current.get(target);
 
           if (entry.isIntersecting) {
-            if (contact && contact.id) {
+            if (id && !scrollTimers.current.has(target)) {
               const timer = setTimeout(() => {
+                scrollTimers.current.delete(target);
+                const contact = latest.current.contacts.find((c) => c.id === id);
+                if (!contact) return;
                 console.log(
                   `⏱️ [Smart Render] ${contact.nickname} задержался на экране. Добавляем в очередь.`,
                 );
-                syncContactInQueue(contact);
-                scrollTimers.current.delete(target);
+                latest.current.syncContactInQueue(contact);
               }, 2000);
 
               scrollTimers.current.set(target, timer);
             }
           } else {
-            if (scrollTimers.current.has(target)) {
-              clearTimeout(scrollTimers.current.get(target)!);
+            const timer = scrollTimers.current.get(target);
+            if (timer) {
+              clearTimeout(timer);
               scrollTimers.current.delete(target);
             }
           }
@@ -123,23 +147,62 @@ const ContactList = () => {
       { threshold: 0.1 },
     );
 
-    return () => {
-      if (observer.current) observer.current.disconnect();
+    // Эффекты строк выполняются раньше этого: подписываем тех, кто успел зарегистрироваться
+    elementsMap.current.forEach((_id, node) => observer.current?.observe(node));
 
+    return () => {
+      observer.current?.disconnect();
+      observer.current = null;
       scrollTimers.current.forEach((timer) => clearTimeout(timer));
       scrollTimers.current.clear();
       elementsMap.current.clear();
     };
-  }, [syncContactInQueue]);
+  }, []);
 
-  const contactRef = useCallback(
-    (node: HTMLDivElement | null, contact: ContactItem) => {
-      if (node) {
-        elementsMap.current.set(node, contact);
-        if (observer.current) observer.current.observe(node);
+  const observe = useCallback((node: Element, id: string) => {
+    elementsMap.current.set(node, id);
+    observer.current?.observe(node);
+    return () => {
+      observer.current?.unobserve(node);
+      elementsMap.current.delete(node);
+      const timer = scrollTimers.current.get(node);
+      if (timer) {
+        clearTimeout(timer);
+        scrollTimers.current.delete(node);
       }
-    },
-    [],
+    };
+  }, []);
+
+  const actions = useMemo<ContactRowActions>(
+    () => ({
+      open: (contact) => {
+        const l = latest.current;
+        if (!l.isNetworkReady) return;
+        l.navigateLogic(`/chat/${contact.id}`, {
+          state: {
+            contactName: contact.nickname || contact.id,
+            contact: { ...contact }, // в сторе объекты заморожены
+            forwardMessage: l.forwardMessage,
+          },
+        });
+      },
+      accept: (e, id) => latest.current.handleAcceptContact(e, id),
+      block: (e, id) => latest.current.handleBlockContact(e, id),
+      remove: (e, id) => latest.current.handleDeleteContact(e, id),
+      refresh: (e, id) => latest.current.handleRefreshContact(e, id),
+      unblock: (e, id) => latest.current.handleUnblockAndRefresh(e, id),
+      copyId: (e, id) => latest.current.handleCopyContactId(e, id),
+      openMenu: (id, anchor) => {
+        setActiveMenuId(id);
+        setMenuAnchor(anchor);
+      },
+      closeMenu: () => {
+        setActiveMenuId(null);
+        setMenuAnchor(null);
+      },
+      observe,
+    }),
+    [observe, setActiveMenuId],
   );
 
   return (
@@ -249,180 +312,13 @@ const ContactList = () => {
           <div className="empty-state">{t('contactsPage.emptySearch')}</div>
         ) : (
           filteredContacts.map((contact) => (
-            <div
+            <ContactRow
               key={contact.id}
-              ref={(el) => contactRef(el, contact)}
-              className={`contact-item ${contact.isBlocked ? 'blocked' : ''} ${activeMenuId === contact.id ? 'menu-open' : ''}`}
-              onClick={(e) => {
-                if (!isNetworkReady || contact.isBlocked || contact.isPending) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return;
-                }
-                navigateLogic(`/chat/${contact.id}`, {
-                  state: {
-                    contactName: contact.nickname || contact.id,
-                    contact: contact,
-                    forwardMessage: forwardMessage,
-                  },
-                });
-              }}
-            >
-              {/* 1. Аватар */}
-              <div className="contact-avatar">
-                <ContactAvatar
-                  cid={contact.avatarCid}
-                  serverCid={contact.avatarServerCid}
-                  encryptionKey={contact.avatarEncryptionKey}
-                  serverRelays={contact.serverRelays}
-                />
-                {contact.unreadCount && contact.unreadCount > 0 ? (
-                  <span className="unread-badge">
-                    {contact.unreadCount > 9 ? '9+' : contact.unreadCount}
-                  </span>
-                ) : null}
-              </div>
-
-              {/* 2. Блок с именем и текстом сообщения */}
-              <div className="contact-info">
-                <div className="contact-name">{contact.nickname}</div>
-                <div className="contact-last-message">
-                  {contact.lastMessage === CONFIG.MSG.MESSAGE_DELETED
-                    ? t('chat.messageDeletedLabel')
-                    : contact.lastMessage || t('contactsPage.noMessages')}
-                </div>
-              </div>
-
-              {/* 3. Время отправки */}
-              {contact.lastMessageTime &&
-                contact.lastMessage &&
-                contact.lastMessage !== CONFIG.MSG.MESSAGE_DELETED &&
-                !contact.isPending && (
-                  <div className="contact-time">
-                    {new Date(contact.lastMessageTime).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </div>
-                )}
-
-              {/* 4. Блок "Вас добавили" и кнопки */}
-              {contact.isPending && (
-                <div
-                  className="contact-pending-actions"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <span className="contact-pending-hint">
-                    {t('contactsPage.addedYouHint')}
-                  </span>
-                  <div className="pending-buttons-group">
-                    <button
-                      className="pending-btn accept"
-                      onClick={(e) => handleAcceptContact(e, contact.id)}
-                    >
-                      {t('contactsPage.add')}
-                    </button>
-                    <button
-                      className="pending-btn"
-                      onClick={(e) => handleBlockContact(e, contact.id)}
-                    >
-                      {t('contactsPage.block')}
-                    </button>
-                    <button
-                      className="pending-btn danger"
-                      onClick={(e) => handleDeleteContact(e, contact.id)}
-                    >
-                      {t('contactsPage.delete')}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* 5. Опции (только если не pending) */}
-              {!contact.isPending && (
-                <div
-                  className="contact-actions"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    className="menu-button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (activeMenuId === contact.id) {
-                        setActiveMenuId(null);
-                        setMenuAnchor(null);
-                      } else {
-                        setActiveMenuId(contact.id);
-                        setMenuAnchor(e.currentTarget);
-                      }
-                    }}
-                    title={t('contactsPage.options')}
-                  >
-                    <MoreVertical size={20} />
-                  </button>
-
-                  {activeMenuId === contact.id && (
-                    <ContextMenu
-                      className="item-contact-context-menu"
-                      anchorEl={menuAnchor}
-                      items={[
-                        ...(!contact.isBlocked
-                          ? [
-                              {
-                                label: t('contactsPage.refreshProfile'),
-                                icon: <RefreshCcw size={16} />,
-                                onClick: (e: React.MouseEvent) => {
-                                  handleRefreshContact(e, contact.id);
-                                  setActiveMenuId(null);
-                                  setMenuAnchor(null);
-                                },
-                              },
-                              {
-                                label: t('contactsPage.block'),
-                                icon: <Ban size={16} />,
-                                onClick: (e: React.MouseEvent) => {
-                                  handleBlockContact(e, contact.id);
-                                  setActiveMenuId(null);
-                                  setMenuAnchor(null);
-                                },
-                              },
-                            ]
-                          : [
-                              {
-                                label: t('contactsPage.unblockAndRefresh'),
-                                icon: <RefreshCcw size={16} />,
-                                onClick: (e: React.MouseEvent) => {
-                                  handleUnblockAndRefresh(e, contact.id);
-                                  setActiveMenuId(null);
-                                  setMenuAnchor(null);
-                                },
-                              },
-                            ]),
-                        {
-                          label: t('contactsPage.copyId'),
-                          icon: <Copy size={16} />,
-                          onClick: (e) => {
-                            handleCopyContactId(e, contact.id);
-                            setActiveMenuId(null);
-                            setMenuAnchor(null);
-                          },
-                        },
-                        {
-                          label: t('contactsPage.delete'),
-                          icon: <Trash2 size={16} />,
-                          danger: true,
-                          onClick: (e) => {
-                            handleDeleteContact(e, contact.id);
-                            setActiveMenuId(null);
-                            setMenuAnchor(null);
-                          },
-                        },
-                      ]}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
+              contact={contact}
+              isMenuOpen={activeMenuId === contact.id}
+              menuAnchor={activeMenuId === contact.id ? menuAnchor : null}
+              actions={actions}
+            />
           ))
         )}
       </div>
