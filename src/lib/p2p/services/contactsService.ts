@@ -471,12 +471,11 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
         chatDb.events.off('update', onUpdate);
 
         try {
-          const allRecords = await chatDb.all();
-          const sortedRecords = allRecords
-            .map((r: any) => r.value || r)
-            .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0));
-
-          const records = sortedRecords.slice(-10);
+          const records: any[] = [];
+          for await (const entry of chatDb.iterator({ amount: 10 })) {
+            records.push(entry.value ?? entry);
+          }
+          records.reverse(); // iterator отдаёт от новых к старым, код ниже ждёт по возрастанию ts
 
           if (records.length > 0) {
             const latestMsg = records[records.length - 1];
@@ -567,9 +566,9 @@ export async function syncTopContactsHistory(contactsDb: any, limit = 10) {
     const allContacts = await getAllContacts(contactsDb); 
     const topContacts = allContacts.slice(0, limit);
     
-    for (const contact of topContacts) {
-      await syncContactHistory(contact, contactsDb);
-    }
+    await Promise.allSettled(
+      topContacts.map((contact) => syncContactHistory(contact, contactsDb))
+    );
     
     console.log(`✅ [Холодный старт] Синхронизация первых ${topContacts.length} контактов завершена.`);
   } catch (error) {

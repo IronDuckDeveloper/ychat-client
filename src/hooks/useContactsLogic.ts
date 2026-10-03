@@ -108,6 +108,8 @@ export const useContactsLogic = () => {
     // 🛡️ Пока идет холодный старт — Smart Render ничего не кидает в очередь
     if (!isColdStartDone) return;
 
+    console.log(`⏱️ [Smart Render] ${contact.nickname} задержался на экране. Добавляем в очередь.`);
+    
     // Быстрый отсев по свойствам объекта + полная проверка фаервола
     if (contact.chatDbAddress) {
       const isIgnored = await isPeerIgnored(globalContactsDb, contact.id);

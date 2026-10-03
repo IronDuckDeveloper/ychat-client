@@ -127,9 +127,6 @@ const ContactList = () => {
                 scrollTimers.current.delete(target);
                 const contact = latest.current.contacts.find((c) => c.id === id);
                 if (!contact) return;
-                console.log(
-                  `⏱️ [Smart Render] ${contact.nickname} задержался на экране. Добавляем в очередь.`,
-                );
                 latest.current.syncContactInQueue(contact);
               }, 2000);
 
