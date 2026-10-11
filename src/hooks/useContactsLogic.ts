@@ -17,12 +17,7 @@ import type { RootState } from '../store';
 import { contactsReplaced } from '../store/contactsSlice.ts';
 import { profileUpdated } from '../store/profileSlice.ts';
 import { joinGroup, sendGroupInvites, joinGroupByLink, parseGroupHash } from '../lib/p2p/services/groupService.ts';
-
-import { groupContactId, buildAct } from '../lib/p2p/services/groupState.ts';
-import { getOrbitDB } from '../lib/p2p/orbit/client.ts';
-import { GroupAccessController } from '../lib/p2p/orbit/groupAccessController.ts';
-
-if (import.meta.env.DEV) (window as any).__bench = { joinGroup, getHelia: () => globalHelia, getOrbitDB, GroupAccessController, buildAct }; // ВРЕМЕННО, удалить после замера
+import { groupContactId } from '../lib/p2p/services/groupState.ts';
 
 const JOIN_ERRORS = {
   unavailable: 'contactsLogic.joinUnavailable',
