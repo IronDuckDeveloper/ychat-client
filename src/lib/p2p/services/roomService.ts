@@ -126,11 +126,21 @@ export async function joinRoom(
 
 const dbAddress = db.address.toString();
 
-  let oldestHash: string | null = null; 
-  let hasMore = true; 
+  let oldestHash: string | null = null;
+  let hasMore = true;
+  let disposed = false;
 
   // msgId -> снепшот контента, чтобы не терять и не дублировать события 'update'
   const seen = new Map<string, string>();
+
+  // Кэш документов: db.all() декодирует весь лог (секунды на тысячах записей), поэтому читаем его
+  // целиком только при открытии и когда в событии виден пропуск; обычные обновления берём из самого события.
+  const cache = new Map<string, any>();
+  const known = new Set<string>();
+  let sortedDesc: any[] | null = null;
+  let windowStartTs = 0; // ts самого старого загруженного сообщения; старее показываем только при прокрутке вверх
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastReloadMs = 0;
 
   const emitIfChanged = (messageData: any, isBackgroundSync: boolean) => {
     if (!messageData?._id && !messageData?.id) return;
@@ -162,13 +172,31 @@ const dbAddress = db.address.toString();
     }, isBackgroundSync);
   };
 
+  // Возвращает документы, которых в кэше ещё не было
+  const fullReload = async (): Promise<any[]> => {
+    const t0 = performance.now();
+    const rows: any[] = await db.all();
+    const added: any[] = [];
+    for (const r of rows) {
+      const d = r?.value ?? r;
+      const id = d?._id || d?.id;
+      if (typeof id !== 'string') continue;
+      if (!cache.has(id)) added.push(d);
+      cache.set(id, d);
+      if (typeof r?.hash === 'string') known.add(r.hash);
+    }
+    sortedDesc = null;
+    lastReloadMs = performance.now() - t0;
+    return added;
+  };
+
+  const getSorted = () =>
+    (sortedDesc ??= [...cache.values()].sort((a: any, b: any) => (b.ts || 0) - (a.ts || 0)));
+
   const loadHistoryChunk = async (limit: number, beforeHash: string | null = null) => {
     const chunk: any[] = [];
     try {
-      const allRecords = await db.all();
-      const sorted = allRecords
-        .map((r: any) => r.value || r)
-        .sort((a: any, b: any) => (b.ts || 0) - (a.ts || 0));
+      const sorted = getSorted();
 
       let startIndex = 0;
       if (beforeHash) {
@@ -191,8 +219,9 @@ const dbAddress = db.address.toString();
     }
 
     if (chunk.length < limit) {
-      hasMore = false; 
+      hasMore = false;
     }
+    windowStartTs = hasMore && chunk.length > 0 ? (chunk[chunk.length - 1].value.ts || 0) : 0;
 
     if (chunk.length > 0) {
       oldestHash = chunk[chunk.length - 1].hash;
@@ -206,25 +235,56 @@ const dbAddress = db.address.toString();
     }
   };
 
-  const onDbUpdate = async () => {
-    try {
-      const allRecords = await db.all();
-      const sorted = allRecords
-        .map((r: any) => r.value || r)
-        .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0));
-
-      for (const messageData of sorted) {
-        emitIfChanged(messageData, false);
+  // Полное чтение не чаще раза в 1,5 с и не чаще, чем раз в тройное время самого чтения (нагрузка ~25%)
+  const scheduleReload = () => {
+    if (reloadTimer || disposed) return;
+    reloadTimer = setTimeout(async () => {
+      reloadTimer = null;
+      if (disposed) return;
+      try {
+        const added = await fullReload();
+        if (disposed) return;
+        // окно загруженных сообщений (правки, tombstone) + всё новое; старее окна появится при прокрутке вверх
+        const batch = new Map<string, any>();
+        for (const d of getSorted()) {
+          if ((d.ts || 0) < windowStartTs) break;
+          batch.set(d._id || d.id, d);
+        }
+        for (const d of added) batch.set(d._id || d.id, d);
+        [...batch.values()]
+          .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+          .forEach((d) => emitIfChanged(d, false));
+      } catch (e) {
+        console.error('❌ Ошибка чтения БД чата:', e);
       }
-    } catch (e) {
-      console.error('❌ Ошибка обработки update-события OrbitDB:', e);
+    }, Math.max(1500, lastReloadMs * 3));
+  };
+
+  const onDbUpdate = (entry?: any) => {
+    if (disposed) return;
+    const p = entry?.payload;
+    const doc = p?.op === 'PUT' ? p.value : null;
+    const id = doc?._id || doc?.id;
+
+    if (typeof id === 'string') {
+      const isNew = !cache.has(id);
+      cache.set(id, doc);
+      sortedDesc = null;
+      if (typeof entry.hash === 'string') known.add(entry.hash);
+      // новый документ показываем всегда; уже известный (правка, tombstone) — только если он уже был показан
+      if (isNew || seen.has(id)) emitIfChanged(doc, false);
     }
+
+    // записи, которых мы не видели (пачка при синке), подбираем полным чтением
+    const gap = typeof id !== 'string' || !Array.isArray(entry?.next) || entry.next.some((h: string) => !known.has(h));
+    if (gap) scheduleReload();
   };
 
   db.events.off('update', onDbUpdate);
   db.events.on('update', onDbUpdate);
 
   const chunkSize = CONFIG.CHUNK_SIZE || 15;
+  await fullReload();
   await loadHistoryChunk(chunkSize);
 
   const onConnect = (evt: any) => {
@@ -269,6 +329,9 @@ const dbAddress = db.address.toString();
       }
     },
     leaveRoom: () => {
+      disposed = true;
+      if (reloadTimer) clearTimeout(reloadTimer);
+      db.events.off('update', onDbUpdate);
       libp2p.removeEventListener('peer:connect', onConnect);
       
       const currentSession = roomSessions.get(roomName);

@@ -115,8 +115,6 @@ export async function joinGroup(
   const fullReload = async () => {
     const t0 = performance.now();
     const rows: any[] = await db.all();
-    cache.clear();
-    known.clear();
     for (const r of rows) {
       const d = r?.value ?? r;
       if (d && typeof d._id === 'string') cache.set(d._id, d);
