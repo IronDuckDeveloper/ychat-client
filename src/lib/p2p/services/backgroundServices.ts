@@ -14,7 +14,7 @@ export const startBackgroundProfileWatcher = async (contactsDb: any) => {
     // 🧹 Фильтруем контакты через единую систему фаервола
     const validContacts = [];
     for (const c of rawContacts) {
-      if (c && !(await isPeerIgnored(contactsDb, c.id))) {
+      if (c && c.type !== 'group' && !(await isPeerIgnored(contactsDb, c.id))) {
         validContacts.push(c);
       }
     }

@@ -145,7 +145,9 @@ const ContactRow = memo(function ContactRow({
               className="item-contact-context-menu"
               anchorEl={menuAnchor}
               items={[
-                ...(!contact.isBlocked
+                ...(contact.type === 'group'
+                  ? []
+                  : !contact.isBlocked
                   ? [
                       {
                         label: t('contactsPage.refreshProfile'),

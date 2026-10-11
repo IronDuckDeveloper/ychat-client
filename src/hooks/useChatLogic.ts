@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import type { UIEvent, ChangeEvent, KeyboardEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -14,17 +14,18 @@ import {
 import { CONFIG } from '../lib/p2p/config.ts';
 import * as contactsService from '../lib/p2p/services/contactsService.ts';
 import { fetchAvatarFromHelia } from '../lib/p2p/services/avatarService.ts';
-import {
-  globalContactsDb,
-  globalHelia,
-  globalRelayManager,
-} from '../lib/p2p/services/authService.ts';
 import type { ContactItem } from '../lib/p2p/services/contactsService.ts';
 import {
   uploadFileToHelia,
   deleteFileFromHelia,
   type FileAttachment,
 } from '../lib/p2p/services/fileService.ts';
+import { useSelector } from 'react-redux';
+import type { RootState } from '../store';
+import { joinGroup, groupPingTopic, type GroupActions, type GroupSnapshot } from '../lib/p2p/services/groupService.ts';
+import { groupAddressOf } from '../lib/p2p/services/groupState.ts';
+import { hideMessageLocally } from '../lib/p2p/services/hiddenMessagesService.ts';
+import { globalContactsDb, globalHelia, globalRelayManager, globalProfileDb } from '../lib/p2p/services/authService.ts';
 
 interface RouterState {
   contactName?: string;
@@ -49,6 +50,16 @@ export const useChatLogic = () => {
 
   const { isReady, nodeId, joinRoom } = useIPFS();
 
+  const isGroup = !!peerId?.startsWith('grp_');
+  const myNickname = useSelector((s: RootState) => s.profile.nickname);
+  const myPrivacy = useSelector((s: RootState) => s.profile.privacy);
+  const myAvatarCid = useSelector((s: RootState) => s.profile.avatarCid);
+  const [groupHandle, setGroupHandle] = useState<GroupActions | null>(null);
+  const [groupSnap, setGroupSnap] = useState<GroupSnapshot | null>(null);
+  const [memberNames, setMemberNames] = useState<Record<string, string>>({});
+  const namesRef = useRef<Record<string, string>>({});
+  const profilePublished = useRef(false);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -59,7 +70,9 @@ export const useChatLogic = () => {
 
   const [roomHandle, setRoomHandle] = useState<RoomActions | null>(null);
   const [isRoomConnected, setIsRoomConnected] = useState<boolean>(false);
-  const isRoomReady = isReady && !!roomHandle && isRoomConnected;
+  const activeRoom = isGroup ? groupHandle : roomHandle;
+  // для группы «готов» включает право писать: от этого флага зависит disabled всего композера
+  const isRoomReady = isReady && !!activeRoom && isRoomConnected && (!isGroup || !!groupSnap?.canWrite);
 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
 
@@ -326,7 +339,7 @@ const handleCameraCapture = (file: File) => {
   ]);
 
   useEffect(() => {
-    if (!isReady || !joinRoom) return;
+    if (!isReady || !joinRoom || isGroup) return;
 
     let isMounted = true;
     let activeHandle: any = null;
@@ -429,9 +442,139 @@ const handleCameraCapture = (file: File) => {
     };
   }, [isReady, joinRoom, nodeId, peerId]);
 
+  // Группа: снимок состояния из groupService вместо joinRoom
+  useEffect(() => {
+    if (!isGroup || !isReady || !globalHelia || !peerId) return;
+
+    let isMounted = true;
+    let handle: GroupActions | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    profilePublished.current = false;
+    setIsRoomConnected(false);
+    setMessages([]);
+    setGroupSnap(null);
+
+    const onSnapshot = (snap: GroupSnapshot) => {
+      if (!isMounted) return;
+      setGroupSnap(snap);
+      setMessages(snap.messages);
+
+      const last = snap.messages[0];
+      
+      if (snap.state.name && globalContactsDb) {
+        contactsService.getContactById(globalContactsDb, peerId).then((c) => {
+          if (c && c.nickname !== snap.state.name) {
+            contactsService.saveContact(globalContactsDb, { ...c, nickname: snap.state.name }); // updatedAt не трогаем: порядок списка прежний
+          }
+        });
+      }
+
+      if (last && globalContactsDb) {
+        const who =
+          last.type === 'sent'
+            ? t('chatLogic.you')
+            : namesRef.current[last.whoSent] ||
+              snap.state.profiles.get(last.whoSent)?.nickname ||
+              `${last.whoSent.slice(0, 6)}...`;
+        const body =
+          last.text || (last.attachment ? t('chatLogic.attachmentFallback') : '');
+        const preview =
+          last.text === CONFIG.MSG.MESSAGE_DELETED ? CONFIG.MSG.MESSAGE_DELETED : `${who}: ${body}`;
+        contactsService.updateLastMessage(globalContactsDb, peerId, preview, last.ts, false, last.hidden || false);
+      }
+      if (globalContactsDb) contactsService.clearUnread(globalContactsDb, peerId);
+    };
+
+    // Релей может ещё не взять БД: повторяем с нарастающей паузой (5, 10, 15, 20, 25, 30 с)
+    const tryJoin = (attempt: number) => {
+      joinGroup(globalHelia, { address: groupAddressOf(peerId) }, onSnapshot)
+        .then((h) => {
+          if (!isMounted) { h.leaveRoom(); return; }
+          handle = h;
+          setGroupHandle(h);
+          setIsRoomConnected(true);
+        })
+        .catch((err) => {
+          console.error(`Failed to join group (попытка ${attempt + 1}):`, err);
+          if (!isMounted || attempt >= 5) return;
+          retryTimer = setTimeout(() => tryJoin(attempt + 1), 5000 * (attempt + 1));
+        });
+    };
+    tryJoin(0);
+
+    return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      handle?.leaveRoom();
+      setGroupHandle(null);
+      setGroupSnap(null);
+      setIsRoomConnected(false);
+    };
+  }, [isGroup, isReady, peerId]);
+
+  // Публикуем профиль (ник и аватар) в группе: только при публичном профиле, не чаще раза за открытие
+  useEffect(() => {
+    if (!groupHandle || !groupSnap || groupSnap.myRole === null || profilePublished.current) return;
+    const published = groupSnap.state.profiles.get(groupHandle.myId);
+
+    if (myPrivacy !== 'public' || !myNickname) {
+      if (published) {
+        profilePublished.current = true;
+        groupHandle.act('profile', { nickname: '' }).catch(() => { profilePublished.current = false; });
+      }
+      return;
+    }
+    if (published?.nickname === myNickname && (published.avatarCid ?? '') === (myAvatarCid ?? '')) return;
+
+    profilePublished.current = true;
+    (async () => {
+      const fields: Record<string, any> = { nickname: myNickname };
+      if (myAvatarCid && globalProfileDb) {
+        const [serverCid, key, relays] = await Promise.all([
+          globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID),
+          globalProfileDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY),
+          globalProfileDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS),
+        ]);
+        if (serverCid && key) {
+          fields.avatarCid = myAvatarCid;
+          fields.avatarServerCid = serverCid;
+          fields.avatarEncryptionKey = key;
+          if (Array.isArray(relays) && relays.length) fields.serverRelays = relays;
+        }
+      }
+      await groupHandle.act('profile', fields);
+    })().catch(() => { profilePublished.current = false; });
+  }, [groupHandle, groupSnap, myNickname, myAvatarCid, myPrivacy]);
+
+  // Имена участников: контакт → ник из группы → короткий id
+  const namesKey = useMemo(() => {
+    if (!groupSnap) return '';
+    const { members, profiles } = groupSnap.state;
+    return `${members.size}#${[...profiles].map(([k, v]) => k + v.nickname).join('|')}#${groupSnap.messages.map((m) => m.whoSent).join('|')}`;
+  }, [groupSnap]);
+
+  useEffect(() => {
+    if (!groupSnap || !globalContactsDb) return;
+    let alive = true;
+    (async () => {
+      const list = await contactsService.getAllContacts(globalContactsDb);
+      const byId = new Map(list.map((c) => [c.id, c.nickname]));
+      const ids = new Set([...groupSnap.state.members.keys(), ...groupSnap.messages.map((m) => m.whoSent)]);
+      const next: Record<string, string> = {};
+      for (const id of ids) {
+        next[id] =
+          id === nodeId
+            ? t('chatLogic.you')
+            : byId.get(id) || groupSnap.state.profiles.get(id)?.nickname || `${id.slice(0, 6)}...${id.slice(-4)}`;
+      }
+      if (alive) { namesRef.current = next; setMemberNames(next); }
+    })();
+    return () => { alive = false; };
+  }, [namesKey]);
+
   const handleScroll = async (e: UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
-    if (isLoadingRef.current || !roomHandle) return;
+    if (isLoadingRef.current || !activeRoom) return;
 
     const scrollOffset = Math.abs(target.scrollTop);
     isUserScrolledUp.current = scrollOffset > 50;
@@ -439,11 +582,11 @@ const handleCameraCapture = (file: File) => {
     const isAtTop =
       scrollOffset + target.clientHeight >= target.scrollHeight - 10;
 
-    if (isAtTop && roomHandle.hasMoreHistory && roomHandle.hasMoreHistory()) {
+    if (isAtTop && activeRoom.hasMoreHistory && activeRoom.hasMoreHistory()) {
       isLoadingRef.current = true;
       setIsLoadingMore(true);
       try {
-        await roomHandle.loadMoreHistory();
+        await activeRoom.loadMoreHistory();
       } catch (err) {
         console.error('Ошибка при подгрузке истории:', err);
       } finally {
@@ -455,7 +598,7 @@ const handleCameraCapture = (file: File) => {
 
 const handleSendMessage = async () => {
     const text = draft.trim();
-    if ((!text && !selectedFile && !forwardMessage) || !roomHandle) return;
+    if ((!text && !selectedFile && !forwardMessage) || !activeRoom) return;
 
     isUserScrolledUp.current = false;
     const sendAsHidden = isHiddenMode;
@@ -536,7 +679,7 @@ const handleSendMessage = async () => {
       }
 
       if (forwardMessage) {
-        await roomHandle.sendMessage(
+        await activeRoom.sendMessage(
           forwardMessage.text || '',
           forwardMessage.attachment,
           sendAsHidden,
@@ -545,7 +688,7 @@ const handleSendMessage = async () => {
         );
 
         if (text || attachmentInfo) {
-          await roomHandle.sendMessage(
+          await activeRoom.sendMessage(
             text,
             attachmentInfo,
             sendAsHidden,
@@ -554,7 +697,7 @@ const handleSendMessage = async () => {
           );
         }
       } else {
-        await roomHandle.sendMessage(
+        await activeRoom.sendMessage(
           text,
           attachmentInfo,
           sendAsHidden,
@@ -585,32 +728,38 @@ const handleSendMessage = async () => {
       }
 
       if (globalHelia && peerId) {
-        try {
-          const myPeerId = (globalHelia as any).libp2p.peerId.toString();
-          const targetMailbox = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${peerId}`; // 🔥 тот же тёплый топик
+        const pubsub = (globalHelia as any).libp2p.services.pubsub;
 
-          let notificationText = t('chatLogic.newMessage');
-          if (text) notificationText = text;
-          else if (attachmentInfo) notificationText = t('chatLogic.fileNotification', { name: attachmentInfo.name });
-          else if (forwardMessage) notificationText = t('chatLogic.forwardedNotification', { text: forwardMessage.text || t('chatLogic.attachmentFallback') });
-          else if (replyToSend) notificationText = t('chatLogic.replyNotification', { text: replyToSend.text || t('chatLogic.attachmentFallback') });
+        if (isGroup) {
+          // один лёгкий ping в топик группы вместо рассылки каждому участнику
+          pubsub.publish(groupPingTopic(peerId), new TextEncoder().encode('{"t":1}')).catch(() => {});
+        } else {
+          try {
+            const myPeerId = (globalHelia as any).libp2p.peerId.toString();
+            const targetMailbox = `${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${peerId}`;
 
-          const notificationData = {
-            type: 'NEW_MESSAGE', // отличаем от PROFILE_UPDATED в общем обработчике
-            senderId: myPeerId,
-            from: myPeerId,
-            text: notificationText,
-            ts: now,
-            hidden: sendAsHidden,
-          };
-          const encoded = new TextEncoder().encode(JSON.stringify(notificationData));
-          await (globalHelia as any).libp2p.services.pubsub.publish(targetMailbox, encoded);
-        } catch (err) {
-          console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
-        }
+            let notificationText = t('chatLogic.newMessage');
+            if (text) notificationText = text;
+            else if (attachmentInfo) notificationText = t('chatLogic.fileNotification', { name: attachmentInfo.name });
+            else if (forwardMessage) notificationText = t('chatLogic.forwardedNotification', { text: forwardMessage.text || t('chatLogic.attachmentFallback') });
+            else if (replyToSend) notificationText = t('chatLogic.replyNotification', { text: replyToSend.text || t('chatLogic.attachmentFallback') });
 
-        if (globalRelayManager) {
-          globalRelayManager.notifyPush(peerId).catch(() => {});
+            const notificationData = {
+              type: 'NEW_MESSAGE', // отличаем от PROFILE_UPDATED в общем обработчике
+              senderId: myPeerId,
+              from: myPeerId,
+              text: notificationText,
+              ts: now,
+              hidden: sendAsHidden,
+            };
+            await pubsub.publish(targetMailbox, new TextEncoder().encode(JSON.stringify(notificationData)));
+          } catch (err) {
+            console.warn('⚠️ Не удалось отправить фоновый пуш:', err);
+          }
+
+          if (globalRelayManager) {
+            globalRelayManager.notifyPush(peerId).catch(() => {});
+          }
         }
       }
     } catch (err) {
@@ -634,8 +783,10 @@ const handleSendMessage = async () => {
 
   const getInputPlaceholder = () => {
     if (!isReady) return t('chatLogic.waitingNode');
-    if (!roomHandle) return t('chatLogic.openingRoomDb');
+    if (!activeRoom) return t('chatLogic.openingRoomDb');
     if (!isRoomConnected) return t('chatLogic.findingPeers');
+    if (isGroup && groupSnap?.state.closed) return t('chatLogic.groupClosed');
+    if (isGroup && groupSnap && !groupSnap.canWrite) return t('chatLogic.groupReadOnly', { defaultValue: 'Только чтение' });
     return t('chatLogic.typeMessage');
   };
 
@@ -661,12 +812,14 @@ const handleSendMessage = async () => {
     serverRelays?: string[],
     isOwnMessage: boolean = false,
   ) => {
+    const isStaff = groupSnap?.myRole === 'owner' || groupSnap?.myRole === 'admin';
+    const forEveryone = isOwnMessage || (isGroup && isStaff);
     setDialogConfig({
       isOpen: true,
-      title: isOwnMessage
+      title: forEveryone
         ? t('chatLogic.deleteFromNetworkTitle')
         : t('chatLogic.deleteFromDeviceTitle'),
-      message: isOwnMessage
+      message: forEveryone
         ? t('chatLogic.deleteFromNetworkMessage')
         : t('chatLogic.deleteFromDeviceMessage'),
       confirmText: t('chatLogic.confirmYes'),
@@ -680,6 +833,16 @@ const handleSendMessage = async () => {
             serverRelays,
             isOwnMessage,
           );
+        }
+
+        if (isGroup) {
+          if (forEveryone) {
+            // автор: tombstone, admin/owner для чужого: событие del_msg (снимок обновится сам)
+            await groupHandle?.deleteMessage(messageId);
+            closeDialog();
+            return;
+          }
+          hideMessageLocally(messageId);
         }
 
         setMessages((prev) =>
@@ -704,8 +867,20 @@ const handleSendMessage = async () => {
     });
   };
 
+  const headerTitle = isGroup
+    ? groupSnap?.state.name || contact?.nickname || displayName
+    : contact?.nickname || displayName || t('chat.unknownContact');
+  // состояние уже загружено (есть название), а нас в списке участников нет: кикнут/забанен
+  const groupAccessDenied = isGroup && !!groupSnap && groupSnap.state.name !== '' && groupSnap.myRole === null;
+
   return {
     navigate,
+    isGroup,
+    groupSnap,
+    groupHandle,
+    memberNames,
+    headerTitle,
+    groupAccessDenied,
     displayName,
     contact,
     avatarUrl,

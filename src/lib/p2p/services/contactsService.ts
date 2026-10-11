@@ -4,8 +4,12 @@ import { getOrOpenDb, globalHelia, activeDbs } from './authService.ts';
 import { getDeterministicRoomName } from './roomService.ts';
 import { notifyArchivist } from '../networking/connectionManager.ts';
 import i18n from '../../../i18n/config.ts';
+import type { GroupActions, GroupSnapshot } from './groupService.ts';
+
+const GROUP_SYNC_TIMEOUT_MS = 12_000; // дольше не ждём открытия БД группы: холодный
 
 export interface ContactItem {
+  type?: 'group'; // нет поля = личный чат; id группы = grp_<хэш адреса БД>
   id: string;               // PeerID контакта
   profileDbAddress: string; // Адрес его OrbitDB с профилем
   chatDbAddress: string;    // Адрес вашей общей базы сообщений (eventlog)
@@ -388,6 +392,7 @@ export function waitForDbSettle(db: any, idleMs = 800, maxWaitMs = 4000): Promis
 }
 
 export async function syncContactHistory(contact: ContactItem, contactsDb: any) {
+  if (contact.type === 'group') return syncGroupContact(contact, contactsDb);
   // Заявка не принята — чат-БД не открываем и архивариуса не анонсируем
   if (contact.isPending) return;
   // 🛡️ Выходим, если контакт заблокирован, удален или находится в блэклисте
@@ -558,6 +563,115 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
     // 🧹 Обязательно освобождаем блокировку в блоке finally
     activeSyncs.delete(contact.chatDbAddress || contact.id);
   }
+}
+
+/**
+ * Фоновый синк группы: превью последнего сообщения, непрочитанные, название.
+ * БД открывается через joinGroup (общая сессия с открытым чатом, закрывается по refCount).
+ */
+async function syncGroupContact(contact: ContactItem, contactsDb: any) {
+  if (contact.isPending || contact.isDeleted || !contact.chatDbAddress || !globalHelia) return;
+
+  const lockKey = contact.chatDbAddress;
+  if (activeSyncs.has(lockKey)) return;
+  const now = Date.now();
+  if (now - (syncCooldowns.get(contact.id) || 0) < CONFIG.COOLDOWN_TIME) return;
+  activeSyncs.add(lockKey);
+  syncCooldowns.set(contact.id, now);
+
+  let handle: GroupActions | null = null;
+  try {
+    const { joinGroup } = await import('./groupService.ts');
+    const holder: { snap: GroupSnapshot | null; changedAt: number } = { snap: null, changedAt: Date.now() };
+
+    const joined = joinGroup(globalHelia, { address: contact.chatDbAddress }, (s) => {
+      holder.snap = s;
+      holder.changedAt = Date.now();
+    });
+    handle = await Promise.race([
+      joined,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), GROUP_SYNC_TIMEOUT_MS)),
+    ]);
+    if (!handle) {
+      // не успели: когда открытие всё же завершится, сразу отпускаем сессию
+      joined.then((h) => h.leaveRoom()).catch(() => {});
+      return;
+    }
+
+    // ждём, пока репликация затихнет (не дольше 6 с)
+    const startedAt = Date.now();
+    while (Date.now() - holder.changedAt < 1500 && Date.now() - startedAt < 6000) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    const s = holder.snap;
+    if (!s) return;
+
+    const fresh = (await getContact(contactsDb, contact.id)) || contact;
+    if (fresh.isDeleted) return;
+
+    const sinceTs = fresh.lastMessageTime || 0;
+    const updated: ContactItem = { ...fresh };
+    if (s.state.name) updated.nickname = s.state.name;
+
+    const last = s.messages[0];
+    if (last && last.ts > sinceTs) {
+      const url = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
+      const inChat = url.includes(contact.id);
+      // первый синк (ещё не было ни одного сообщения в контакте): счётчик не накручиваем
+      const fromOthers =
+        s.myRole === null || sinceTs === 0
+          ? 0
+          : s.messages.filter((m) => m.ts > sinceTs && m.type !== 'sent').length;
+
+      let who: string;
+      if (last.type === 'sent') {
+        who = i18n.t('chatLogic.you');
+      } else {
+        const author = await getContact(contactsDb, last.whoSent);
+        who = author?.nickname || s.state.profiles.get(last.whoSent)?.nickname || `${last.whoSent.slice(0, 6)}...`;
+      }
+      const body = last.text || (last.attachment ? i18n.t('contactsService.attachmentFallback') : '');
+
+      updated.lastMessage = last.hidden
+        ? i18n.t('contactsService.hiddenMessage')
+        : last.text === CONFIG.MSG.MESSAGE_DELETED
+          ? CONFIG.MSG.MESSAGE_DELETED
+          : `${who}: ${body}`;
+      updated.lastMessageTime = last.ts;
+      updated.updatedAt = Math.max(fresh.updatedAt || 0, last.ts);
+      updated.unreadCount = inChat ? 0 : (fresh.unreadCount || 0) + fromOthers;
+    }
+
+    await saveContact(contactsDb, updated);
+    window.dispatchEvent(new Event('onContactsUpdated'));
+  } catch (err) {
+    console.warn(`[GroupSync] Не удалось синхронизировать группу ${contact.nickname}:`, err);
+  } finally {
+    handle?.leaveRoom();
+    activeSyncs.delete(lockKey);
+  }
+}
+
+const pingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Ping из топика группы ничему не доверяем: он только запускает проверенный синк (с троттлингом и джиттером). */
+export async function onGroupPing(contactsDb: any, groupId: string) {
+  if (!contactsDb || pingTimers.has(groupId)) return;
+  const contact = await getContact(contactsDb, groupId);
+  if (!contact || contact.type !== 'group' || contact.isDeleted || contact.isPending) return;
+
+  // чат этой группы открыт: живые записи уже приходят через открытую БД
+  const url = typeof window !== 'undefined' ? decodeURIComponent(window.location.href) : '';
+  if (url.includes(groupId)) return;
+
+  const sinceLast = Date.now() - (syncCooldowns.get(groupId) || 0);
+  const wait = Math.max(CONFIG.COOLDOWN_TIME - sinceLast, 0) + 1500 + Math.random() * 3000;
+  pingTimers.set(groupId, setTimeout(async () => {
+    pingTimers.delete(groupId);
+    const fresh = await getContact(contactsDb, groupId);
+    if (fresh && !fresh.isDeleted) await syncGroupContact(fresh, contactsDb);
+  }, wait));
 }
 
 export async function syncTopContactsHistory(contactsDb: any, limit = 10) {

@@ -120,7 +120,11 @@
     "switchToRegister": "¿No tienes cuenta? Crea un perfil"
   },
   "app": {
-    "connectionError": "No se pudo conectar a la red P2P."
+    "connectionError": "No se pudo conectar a la red P2P.",
+    "joinHandedOff": "El enlace se pasó a la pestaña abierta de la app. Puedes cerrar esta pestaña.",
+    "openElsewhere": "La aplicación ya está abierta en otra pestaña.", 
+    "useHere": "Usar aquí",
+    "joinRejected": "El grupo no aceptó tu solicitud"
   },
   "chat": {
     "unknownContact": "Desconocido",
@@ -151,7 +155,8 @@
     "attachFile": "Adjuntar archivo",
     "sendMessage": "Enviar mensaje",
     "you": "Yo",
-    "messageDeletedLabel": "Mensaje eliminado"
+    "messageDeletedLabel": "Mensaje eliminado",
+    "groupNoAccess": "Ya no eres miembro de este grupo"
   },
   "contactsPage": {
     "shareContact": "Compartir contacto",
@@ -180,7 +185,10 @@
     "unknownPeer": "Peer desconocido",
     "addedYouHint": "Te hemos añadido a la lista de contactos.",
     "pushOn": "Notificaciones activadas",
-    "pushOff": "Notificaciones desactivadas"
+    "pushOff": "Notificaciones desactivadas",
+    "createGroupTitle": "Nuevo grupo",
+    "groupNamePlaceholder": "Nombre del grupo",
+    "createGroupButton": "Crear"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ No hay palabras para copiar",
@@ -211,7 +219,11 @@
     "deleteFromDeviceTitle": "¿Eliminar este mensaje de tu dispositivo?",
     "deleteFromNetworkMessage": "Este mensaje se eliminará permanentemente de la red.",
     "deleteFromDeviceMessage": "Este mensaje se eliminará permanentemente de tu dispositivo.",
-    "confirmYes": "Sí"
+    "confirmYes": "Sí",
+    "groupReadOnly": "Solo lectura",
+    "groupCreated": "Grupo creado",
+    "groupCreateError": "Error al crear el grupo",
+    "groupClosed": "El propietario eliminó el grupo"
   },
   "contactsLogic": {
     "confirmYes": "Sí",
@@ -240,7 +252,17 @@
     "peerFallbackNickname": "Par: {{id}}...",
     "pushEnabled": "Notificaciones activadas",
     "pushDisabled": "Notificaciones desactivadas",
-    "pushError": "No se pudo cambiar la configuración de notificaciones"
+    "pushError": "No se pudo cambiar la configuración de notificaciones",
+    "joinConfirmTitle": "¿Unirte al grupo?",
+    "joinConfirmMessage": "Abriste un enlace de invitación. ¿Unirte al grupo?",
+    "joinConfirm": "Unirme",
+    "joining": "Abriendo el grupo...",
+    "joinInvalid": "Enlace de invitación no válido",
+    "joinUnavailable": "No se pudo abrir el grupo. Inténtalo más tarde",
+    "joinDisabled": "Unirse por enlace está desactivado",
+    "joinBanned": "Estás bloqueado en este grupo",
+    "joinFull": "El grupo no tiene plazas libres",
+    "joinClosed": "El grupo fue eliminado"
   },
   "uploadEvents": {
     "retrying": "{{fileName}}: reintento {{attempt}}/{{maxRetries}}..."
@@ -252,7 +274,8 @@
     "profileNotFound": "Perfil no encontrado. Comprueba que tu frase semilla sea correcta.",
     "allRelaysUnavailableRegister": "No se pudo registrar: todos los relés de la red no están disponibles.",
     "allRelaysUnavailableLogin": "No se pudo iniciar sesión: todos los relés de la red no están disponibles.",
-    "anonymousFallback": "Anónimo"
+    "anonymousFallback": "Anónimo",
+    "groupFallback": "Grupo"
   },
   "contactsService": {
     "hiddenMessage": "Mensaje oculto",
@@ -272,5 +295,57 @@
     "anonymousUser": "Usuario anónimo",
     "hiddenProfile": "Perfil oculto",
     "contactsOnlyProfile": "Solo para contactos"
+  },
+  "groupDrawer": {
+    "members": "Miembros",
+    "membersCount": "Miembros: {{count}}",
+    "banned": "Bloqueados",
+    "owner": "Propietario",
+    "admin": "Administrador",
+    "canWrite": "Puede escribir",
+    "readOnly": "Solo lectura",
+    "bannedLabel": "Bloqueado",
+    "makeAdmin": "Nombrar administrador",
+    "removeAdmin": "Quitar administrador",
+    "allowWrite": "Permitir escribir",
+    "denyWrite": "Prohibir escribir",
+    "kick": "Expulsar",
+    "kickTitle": "¿Expulsar al miembro?",
+    "kickMessage": "{{name}} será expulsado del grupo. Se le puede volver a añadir.",
+    "ban": "Bloquear",
+    "banTitle": "¿Bloquear al miembro?",
+    "banMessage": "{{name}} será bloqueado: sus mensajes se ocultarán y solo se le podrá añadir de nuevo tras desbloquearlo.",
+    "unban": "Desbloquear",
+    "writeModeLabel": "Quién puede escribir:",
+    "writeModeAll": "Todos los miembros",
+    "writeModeAllowed": "Solo administradores y miembros autorizados",
+    "addMembers": "Añadir miembros",
+    "addConfirm": "Añadir",
+    "noCandidates": "No hay contactos para añadir",
+    "leave": "Salir del grupo",
+    "leaveTitle": "¿Salir del grupo?",
+    "leaveMessage": "Saldrás del grupo y dejarás de recibir sus mensajes.",
+    "removeFromList": "Quitar de la lista",
+    "removeTitle": "¿Quitar el grupo de la lista?",
+    "descriptionPlaceholder": "Descripción del grupo",
+    "saveInfo": "Guardar",
+    "transfer": "Transferir la propiedad",
+    "transferTitle": "¿Transferir la propiedad?",
+    "transferMessage": "{{name}} será el propietario del grupo y tú serás administrador. Solo él podrá devolverte la propiedad.",
+    "deleteGroup": "Eliminar grupo",
+    "deleteTitle": "¿Eliminar el grupo?",
+    "deleteMessage": "El grupo pasará a ser de solo lectura para todos los miembros. No se puede deshacer.",
+    "removeMessage": "El grupo desaparecerá de tu lista.",
+    "slotsAll": "Miembros: {{count}}/{{max}}",
+    "slotsAllowed": "Escritores: {{count}}/{{max}}",
+    "joinModeLabel": "Unirse:",
+    "joinInvite": "Solo por invitación",
+    "joinLink": "Por enlace",
+    "copyLink": "Copiar enlace",
+    "linkCopied": "Enlace copiado",
+    "staff": "Administración",
+    "searchPlaceholder": "Buscar miembros",
+    "showMore": "Mostrar más ({{count}})",
+    "noFreeSlots": "No hay plazas libres ({{count}}/{{max}}): libera una para desbloquear"
   }
 }

@@ -30,6 +30,7 @@ export const CONFIG = {
   PREFIX_ROOM: 'room_', // Префикс для имен комнат (для генерации детерминированных имен)
   KEY_PROFILE_DB_ADDRESS_PREFIX: 'ychat_profile_addr_', // + identity.id, чтобы не путать аккаунты на одном устройстве
   KEY_PENDING_NICKNAME: 'ychat_pending_nickname', // Никнейм для регистрации, ждёт App.tsx после хардредиректа
+  KEY_PENDING_JOIN: 'ychat_pending_join', // Хэш группы из ссылки ?join=..., ждёт входа в аккаунт
   KEY_AUTH_ERROR: 'ychat_auth_error', // Ошибка неудачной регистрации, показывается один раз на /  после отката
 
   KEY_GLOBAL_REGISTRY_ADDRESS: 'YCHAT_GLOBAL_REGISTRY_ADDRESS', // Ключ для хранения состояния авторизации
@@ -63,6 +64,7 @@ export const CONFIG = {
     WAKEUP : 'WAKEUP_PING',
     MESSAGE_DELETED : '__MESSAGE_DELETED__', // Языконезависимый маркер для БД. Текст переводится в момент рендера через t('chat.messageDeletedLabel')
     HIDDEN_MESSAGE_LABEL: '__HIDDEN_MESSAGE__', // Аналогично — маркер, не текст
+    GROUP_INVITE: 'GROUP_INVITE', // Тип сообщения для приглашения в группу
   },
 
   TOPICS: {
@@ -77,5 +79,7 @@ export const CONFIG = {
     PUSH_SUBSCRIBE: '/ychat/push-subscribe/1.0.0', // Подписаться на Web Push
     PUSH_UNSUBSCRIBE: '/ychat/push-unsubscribe/1.0.0', // Отписаться от Web Push
     PUSH_NOTIFY: '/ychat/push-notify/1.0.0', // Уведомление Web Push
+    GROUP_PING_PREFIX: 'ychat/groups/', // + groupId + GROUP_PING_SUFFIX: один лёгкий ping на сообщение в группе
+    GROUP_PING_SUFFIX: '/ping',
   }
 };

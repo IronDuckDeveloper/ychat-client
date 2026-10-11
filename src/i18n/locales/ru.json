@@ -120,7 +120,10 @@
     "switchToRegister": "Нет аккаунта? Создать профиль"
   },
   "app": {
-    "connectionError": "Не удалось подключиться к P2P-сети."
+    "connectionError": "Не удалось подключиться к P2P-сети.",
+    "joinHandedOff": "Ссылка передана в открытую вкладку приложения. Эту вкладку можно закрыть.",
+    "openElsewhere": "Приложение уже открыто в другой вкладке.", 
+    "useHere": "Использовать здесь"
   },
   "chat": {
     "unknownContact": "Неизвестный",
@@ -151,7 +154,8 @@
     "attachFile": "Прикрепить файл",
     "sendMessage": "Отправить сообщение",
     "you": "Я",
-    "messageDeletedLabel": "Сообщение удалено"
+    "messageDeletedLabel": "Сообщение удалено",
+    "groupNoAccess": "Вы больше не участник этой группы"
   },
   "contactsPage": {
     "shareContact": "Обменяться контактом",
@@ -183,7 +187,10 @@
     "pushOff": "Уведомления выключены",
     "pushEnabled": "Уведомления включены",
     "pushDisabled": "Уведомления отключены",
-    "pushError": "Не удалось изменить настройку уведомлений"
+    "pushError": "Не удалось изменить настройку уведомлений",
+    "createGroupTitle": "Новая группа",
+    "groupNamePlaceholder": "Название группы",
+    "createGroupButton": "Создать"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ Нет слов для копирования",
@@ -214,7 +221,9 @@
     "deleteFromDeviceTitle": "Удалить сообщение с устройства?",
     "deleteFromNetworkMessage": "Сообщение будет навсегда удалено из сети.",
     "deleteFromDeviceMessage": "Сообщение будет навсегда удалено с вашего устройства.",
-    "confirmYes": "Да"
+    "confirmYes": "Да",
+    "groupReadOnly": "Только чтение",
+    "groupClosed": "Группа удалена владельцем"
   },
   "contactsLogic": {
     "confirmYes": "Да",
@@ -240,7 +249,20 @@
     "blockError": "❌ Ошибка при сохранении блокировки",
     "unblockError": "❌ Ошибка при разблокировке контакта",
     "contactUnblocked": "🔓 Контакт разблокирован",
-    "peerFallbackNickname": "Пир: {{id}}..."
+    "peerFallbackNickname": "Пир: {{id}}...",
+    "groupCreated": "Группа создана",
+    "groupCreateError": "Не удалось создать группу",
+    "joinConfirmTitle": "Вступить в группу?",
+    "joinConfirmMessage": "Вы открыли ссылку-приглашение. Вступить в группу?",
+    "joinConfirm": "Вступить",
+    "joining": "Открываем группу...",
+    "joinInvalid": "Некорректная ссылка-приглашение",
+    "joinUnavailable": "Не удалось открыть группу. Попробуйте позже",
+    "joinDisabled": "Вступление по ссылке отключено",
+    "joinBanned": "Вы забанены в этой группе",
+    "joinFull": "В группе нет свободных мест",
+    "joinClosed": "Группа удалена",
+    "joinRejected": "Группа не приняла вступление"
   },
   "uploadEvents": {
     "retrying": "{{fileName}}: повтор {{attempt}}/{{maxRetries}}..."
@@ -252,7 +274,8 @@
     "profileNotFound": "Профиль не найден. Проверьте правильность seed-фразы.",
     "allRelaysUnavailableRegister": "Не удалось зарегистрироваться: все релеи сети недоступны.",
     "allRelaysUnavailableLogin": "Не удалось войти: все релеи сети недоступны.",
-    "anonymousFallback": "Аноним"
+    "anonymousFallback": "Аноним",
+    "groupFallback": "Группа"
   },
   "contactsService": {
     "hiddenMessage": "Скрытое сообщение",
@@ -272,5 +295,57 @@
     "anonymousUser": "Анонимный пользователь",
     "hiddenProfile": "Скрытый профиль",
     "contactsOnlyProfile": "Только для контактов"
+  },
+  "groupDrawer": {
+    "members": "Участники",
+    "membersCount": "Участников: {{count}}",
+    "banned": "Забанены",
+    "owner": "Владелец",
+    "admin": "Админ",
+    "canWrite": "Может писать",
+    "readOnly": "Только чтение",
+    "bannedLabel": "Забанен",
+    "makeAdmin": "Назначить админом",
+    "removeAdmin": "Снять админа",
+    "allowWrite": "Разрешить писать",
+    "denyWrite": "Запретить писать",
+    "kick": "Исключить",
+    "kickTitle": "Исключить участника?",
+    "kickMessage": "{{name}} будет исключён из группы. Его можно добавить снова.",
+    "ban": "Забанить",
+    "banTitle": "Забанить участника?",
+    "banMessage": "{{name}} будет забанен: его сообщения скроются, добавить снова можно только после разбана.",
+    "unban": "Разбанить",
+    "writeModeLabel": "Писать могут:",
+    "writeModeAll": "Все участники",
+    "writeModeAllowed": "Только админы и разрешённые",
+    "addMembers": "Добавить участников",
+    "addConfirm": "Добавить",
+    "noCandidates": "Нет контактов для добавления",
+    "leave": "Выйти из группы",
+    "leaveTitle": "Выйти из группы?",
+    "leaveMessage": "Вы покинете группу и перестанете получать сообщения.",
+    "removeFromList": "Убрать из списка",
+    "removeTitle": "Убрать группу из списка?",
+    "descriptionPlaceholder": "Описание группы",
+    "saveInfo": "Сохранить",
+    "transfer": "Передать владение",
+    "transferTitle": "Передать владение?",
+    "transferMessage": "{{name}} станет владельцем группы, а вы — админом. Вернуть владение сможет только он.",
+    "deleteGroup": "Удалить группу",
+    "deleteTitle": "Удалить группу?",
+    "deleteMessage": "Группа станет доступна только для чтения у всех участников. Отменить это нельзя.",
+    "removeMessage": "Группа исчезнет из вашего списка.",
+    "slotsAll": "Участников: {{count}}/{{max}}",
+    "slotsAllowed": "Писателей: {{count}}/{{max}}",
+    "joinModeLabel": "Вступление:",
+    "joinInvite": "Только по приглашению",
+    "joinLink": "По ссылке",
+    "copyLink": "Скопировать ссылку",
+    "linkCopied": "Ссылка скопирована",
+    "staff": "Администрация",
+    "searchPlaceholder": "Поиск участников",
+    "showMore": "Показать ещё ({{count}})",
+    "noFreeSlots": "Нет свободных мест ({{count}}/{{max}}): чтобы разбанить, освободите место"
   }
 }

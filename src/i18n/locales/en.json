@@ -120,7 +120,11 @@
     "switchToRegister": "No account? Create one"
   },
   "app": {
-    "connectionError": "Couldn't connect to the P2P network."
+    "connectionError": "Couldn't connect to the P2P network.",
+    "joinHandedOff": "The link was passed to the open app tab. You can close this tab.",
+    "openElsewhere": "The app is already open in another tab.", 
+    "useHere": "Use here",
+    "joinRejected": "The group did not accept your join"
   },
   "chat": {
     "unknownContact": "Unknown",
@@ -151,7 +155,8 @@
     "attachFile": "Attach file",
     "sendMessage": "Send message",
     "you": "Me",
-    "messageDeletedLabel": "Message deleted"
+    "messageDeletedLabel": "Message deleted",
+    "groupNoAccess": "You are no longer a member of this group"
   },
   "contactsPage": {
     "shareContact": "Share contact",
@@ -180,7 +185,10 @@
     "unknownPeer": "Unknown Peer",
     "addedYouHint": "Added you to contacts",
     "pushOn": "Notifications on",
-    "pushOff": "Notifications off"
+    "pushOff": "Notifications off",
+    "createGroupTitle": "New Group",
+    "groupNamePlaceholder": "Group name",
+    "createGroupButton": "Create"
   },
   "authLogic": {
     "noWordsToCopy": "⚠️ No words to copy",
@@ -211,7 +219,9 @@
     "deleteFromDeviceTitle": "Delete this message from your device?",
     "deleteFromNetworkMessage": "This message will be permanently deleted from the network.",
     "deleteFromDeviceMessage": "This message will be permanently deleted from your device.",
-    "confirmYes": "Yes"
+    "confirmYes": "Yes",
+    "groupReadOnly": "Read-only",
+    "groupClosed": "The group was deleted by the owner"
   },
   "contactsLogic": {
     "confirmYes": "Yes",
@@ -240,7 +250,19 @@
     "peerFallbackNickname": "Peer: {{id}}...",
     "pushEnabled": "Notifications enabled",
     "pushDisabled": "Notifications disabled",
-    "pushError": "Couldn't change notification setting"
+    "pushError": "Couldn't change notification setting",
+    "groupCreated": "Group created",
+    "groupCreateError": "Failed to create group",
+    "joinConfirmTitle": "Join the group?",
+    "joinConfirmMessage": "You opened an invite link. Join the group?",
+    "joinConfirm": "Join",
+    "joining": "Opening the group...",
+    "joinInvalid": "Invalid invite link",
+    "joinUnavailable": "Couldn't open the group. Try again later",
+    "joinDisabled": "Joining by link is turned off",
+    "joinBanned": "You are banned from this group",
+    "joinFull": "The group has no free places",
+    "joinClosed": "The group was deleted"
   },
   "uploadEvents": {
     "retrying": "{{fileName}}: retry {{attempt}}/{{maxRetries}}..."
@@ -252,7 +274,8 @@
     "profileNotFound": "Profile not found. Check that your seed phrase is correct.",
     "allRelaysUnavailableRegister": "Couldn't register: all network relays are unavailable.",
     "allRelaysUnavailableLogin": "Couldn't log in: all network relays are unavailable.",
-    "anonymousFallback": "Anonymous"
+    "anonymousFallback": "Anonymous",
+    "groupFallback": "Group"
   },
   "contactsService": {
     "hiddenMessage": "Hidden message",
@@ -272,5 +295,57 @@
     "anonymousUser": "Anonymous user",
     "hiddenProfile": "Hidden profile",
     "contactsOnlyProfile": "Contacts only"
+  },
+  "groupDrawer": {
+    "members": "Members",
+    "membersCount": "Members: {{count}}",
+    "banned": "Banned",
+    "owner": "Owner",
+    "admin": "Admin",
+    "canWrite": "Can write",
+    "readOnly": "Read only",
+    "bannedLabel": "Banned",
+    "makeAdmin": "Make admin",
+    "removeAdmin": "Remove admin",
+    "allowWrite": "Allow writing",
+    "denyWrite": "Deny writing",
+    "kick": "Remove",
+    "kickTitle": "Remove member?",
+    "kickMessage": "{{name}} will be removed from the group. They can be added again.",
+    "ban": "Ban",
+    "banTitle": "Ban member?",
+    "banMessage": "{{name}} will be banned: their messages will be hidden and they can only be added again after an unban.",
+    "unban": "Unban",
+    "writeModeLabel": "Who can write:",
+    "writeModeAll": "All members",
+    "writeModeAllowed": "Admins and allowed members only",
+    "addMembers": "Add members",
+    "addConfirm": "Add",
+    "noCandidates": "No contacts to add",
+    "leave": "Leave group",
+    "leaveTitle": "Leave group?",
+    "leaveMessage": "You will leave the group and stop receiving its messages.",
+    "removeFromList": "Remove from list",
+    "removeTitle": "Remove group from list?",
+    "descriptionPlaceholder": "Group description",
+    "saveInfo": "Save",
+    "transfer": "Transfer ownership",
+    "transferTitle": "Transfer ownership?",
+    "transferMessage": "{{name}} will become the group owner and you will become an admin. Only they can give ownership back.",
+    "deleteGroup": "Delete group",
+    "deleteTitle": "Delete group?",
+    "deleteMessage": "The group becomes read-only for all members. This can't be undone.",
+    "removeMessage": "The group will disappear from your list.",
+    "slotsAll": "Members: {{count}}/{{max}}",
+    "slotsAllowed": "Writers: {{count}}/{{max}}",
+    "joinModeLabel": "Joining:",
+    "joinInvite": "Invite only",
+    "joinLink": "By link",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "staff": "Staff",
+    "searchPlaceholder": "Search members",
+    "showMore": "Show more ({{count}})",
+    "noFreeSlots": "No free places ({{count}}/{{max}}): free a place to unban"
   }
 }

@@ -35,6 +35,7 @@ import { CONFIG } from '../lib/p2p/config.ts';
 import CameraCaptureModal from '../components/CameraCaptureModal.tsx';
 import VideoCaptureModal from '../components/VideoCaptureModal.tsx';
 import AudioRecordModal from '../components/AudioRecordModal.tsx';
+import GroupMembersDrawer from '../components/GroupMembersDrawer.tsx';
 
 // Локаль для форматирования даты берётся из текущего языка i18n
 const localeMap: Record<string, string> = {
@@ -137,6 +138,7 @@ const Chat = () => {
     isAudioModalOpen,
     closeAudioModal,
     handleAudioCapture,
+    isGroup, groupSnap, groupHandle, memberNames, headerTitle, groupAccessDenied,
   } = useChatLogic();
 
   const [expandedHiddenIds, setExpandedHiddenIds] = useState<Set<string>>(
@@ -148,7 +150,8 @@ const Chat = () => {
       messageToForward.forwardedFrom?.senderName ||
       (messageToForward.type === 'sent'
         ? t('chat.you', { defaultValue: 'Я' })
-        : contact?.nickname || displayName || t('chat.unknownContact'));
+        : (isGroup ? memberNames[messageToForward.whoSent] : undefined) ||
+          contact?.nickname || displayName || t('chat.unknownContact'));
 
     return {
       ...messageToForward,
@@ -247,13 +250,24 @@ const Chat = () => {
   
   return (
     <div className="chat-container">
-      <ContactProfileDrawer
-        isOpen={isContactProfileOpen}
-        onClose={() => setIsContactProfileOpen(false)}
-        nickname={contact?.nickname || displayName || t('chat.unknownContact')}
-        bio={contact?.bio || ''}
-        avatarUrl={avatarUrl}
-      />
+      {isGroup && groupSnap && groupHandle ? (
+        <GroupMembersDrawer
+          isOpen={isContactProfileOpen}
+          onClose={() => setIsContactProfileOpen(false)}
+          snap={groupSnap}
+          actions={groupHandle}
+          memberNames={memberNames}
+          onLeft={() => navigate('/contacts', { replace: true })}
+        />
+      ) : (
+        <ContactProfileDrawer
+          isOpen={isContactProfileOpen}
+          onClose={() => setIsContactProfileOpen(false)}
+          nickname={headerTitle}
+          bio={contact?.bio || ''}
+          avatarUrl={avatarUrl}
+        />
+      )}
 
       <header className="chat-header">
         <div className="header-left">
@@ -265,7 +279,7 @@ const Chat = () => {
             <ArrowLeft className="back-icon" size={20} />
           </button>
           <span className="contact-name">
-            {contact?.nickname || displayName || t('chat.unknownContact')}
+            {headerTitle}
           </span>
         </div>
 
@@ -276,9 +290,9 @@ const Chat = () => {
         />
       </header>
 
-      {isBlocked ? (
+      {isBlocked || groupAccessDenied ? (
         <div className="blocked-dialog-overlay">
-          <p>{t('chat.userBlocked')}</p>
+          <p>{groupAccessDenied ? t('chat.groupNoAccess', { defaultValue: 'Вы больше не участник этой группы' }) : t('chat.userBlocked')}</p>
           <button className="unblock-delete-btn" onClick={onBack}>
             {t('chat.back')}
           </button>
@@ -394,6 +408,13 @@ const Chat = () => {
                               </>
                             ) : (
                               <>
+                                  {isGroup && message.type === 'received' && !isDeleted && (
+                                    <div className="message-sender">
+                                      {memberNames[message.whoSent] ||
+                                        `${message.whoSent.slice(0, 6)}...${message.whoSent.slice(-4)}`}
+                                    </div>
+                                  )}
+
                                   {message.replyTo && !isDeleted && (
                                     <div className="reply-message-indicator">
                                       <span>{t('chat.replyingToLabel')}</span>

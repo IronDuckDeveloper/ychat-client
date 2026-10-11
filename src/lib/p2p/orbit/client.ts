@@ -3,6 +3,7 @@ import { getPrivateKey } from '../crypto/crypto.ts';
 import { HeliaIdentityProvider } from './identity.ts';
 import { CONFIG } from '../config.ts';
 import { RateLimitedAccessController } from './rateLimitedAccessController.ts';
+import { GroupAccessController } from './groupAccessController.ts';
 
 // Регистрируем кастомный AccessController один раз при загрузке модуля —
 // ДО первого orbitdb.open(). Без этого при открытии комнаты по уже
@@ -10,6 +11,7 @@ import { RateLimitedAccessController } from './rateLimitedAccessController.ts';
 // (getAccessController(acType) бросит "not supported").
 useAccessController(RateLimitedAccessController as any);
 useIdentityProvider(HeliaIdentityProvider as any);
+useAccessController(GroupAccessController as any);
 
 // Храним синглтон инстанса OrbitDB, чтобы не создавать его заново при смене комнат
 let orbitdbInstance: any = null;

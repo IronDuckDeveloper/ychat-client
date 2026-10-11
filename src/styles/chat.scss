@@ -116,6 +116,14 @@
           }
         }
 
+        .message-sender {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: $accent-prime;
+          padding-right: 28px;
+          line-height: 1.2;
+        }
+
         .text-content .chat-message-link {
           color: $secondary;
         }

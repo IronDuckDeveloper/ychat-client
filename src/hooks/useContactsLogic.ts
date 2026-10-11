@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { CID } from 'multiformats/cid';
 import jsQR from 'jsqr';
-import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileUpdateToContacts, globalRelayManager, sendMyProfileTo } from '../lib/p2p/services/authService.ts';
+import { globalProfileDb, globalContactsDb, onDbReady, globalHelia, pushProfileUpdateToContacts, globalRelayManager, sendMyProfileTo, syncGroupPingSubscriptions } from '../lib/p2p/services/authService.ts';
 import { getAllContacts, saveContact, deleteContact, syncContactHistory, getContactById, type ContactItem, type PrivacyType, isColdStartDone, isPeerIgnored } from '../lib/p2p/services/contactsService.ts';
 import { decryptBlacklist, isAuthenticated, encryptBlacklist } from '../lib/p2p/crypto/crypto.ts';
 import { CONFIG } from '../lib/p2p/config.ts';
@@ -16,6 +16,22 @@ import { enablePush, disablePush } from '../lib/push/pushService.ts';
 import type { RootState } from '../store';
 import { contactsReplaced } from '../store/contactsSlice.ts';
 import { profileUpdated } from '../store/profileSlice.ts';
+import { joinGroup, sendGroupInvites, joinGroupByLink, parseGroupHash } from '../lib/p2p/services/groupService.ts';
+
+import { groupContactId, buildAct } from '../lib/p2p/services/groupState.ts';
+import { getOrbitDB } from '../lib/p2p/orbit/client.ts';
+import { GroupAccessController } from '../lib/p2p/orbit/groupAccessController.ts';
+
+if (import.meta.env.DEV) (window as any).__bench = { joinGroup, getHelia: () => globalHelia, getOrbitDB, GroupAccessController, buildAct }; // ВРЕМЕННО, удалить после замера
+
+const JOIN_ERRORS = {
+  unavailable: 'contactsLogic.joinUnavailable',
+  disabled: 'contactsLogic.joinDisabled',
+  banned: 'contactsLogic.joinBanned',
+  full: 'contactsLogic.joinFull',
+  closed: 'contactsLogic.joinClosed',
+  rejected: 'contactsLogic.joinRejected',
+} as const;
 
 export const useContactsLogic = () => {
   const { t } = useTranslation();
@@ -62,6 +78,7 @@ export const useContactsLogic = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addPeerId, setAddPeerId] = useState('');
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
 
   // --- СЕТЬ ---
   const [netState, setNetState] = useState<string>(globalNetworkState?.state || 'DISCONNECTED');
@@ -232,6 +249,54 @@ export const useContactsLogic = () => {
       window.removeEventListener('onContactsUpdated', refreshContactsList);
     };
   }, [isNetworkReady]);
+
+    // Вступление по ссылке: хэш кладёт authService (эта вкладка) или JoinLinkBridge (ссылка из другой вкладки)
+  const joinHandled = useRef<() => void>(() => {});
+  joinHandled.current = () => {
+    if (isLoading || !isNetworkReady || !globalHelia || !globalContactsDb) return;
+    const pending = sessionStorage.getItem(CONFIG.KEY_PENDING_JOIN);
+    if (!pending) return;
+    sessionStorage.removeItem(CONFIG.KEY_PENDING_JOIN);
+
+    const address = parseGroupHash(pending);
+    if (!address) { showToast(t('contactsLogic.joinInvalid')); return; }
+    const id = groupContactId(address);
+
+    setDialogConfig({
+      isOpen: true,
+      title: t('contactsLogic.joinConfirmTitle'),
+      message: t('contactsLogic.joinConfirmMessage'),
+      confirmText: t('contactsLogic.joinConfirm'),
+      isDanger: false,
+      onConfirm: async () => {
+        closeDialog();
+        const existing = await getContactById(globalContactsDb, id);
+        if (existing && !existing.isDeleted) {
+          navigate(`/chat/${id}`, { state: { contactName: existing.nickname, contact: { ...existing } } });
+          return;
+        }
+        showToast(t('contactsLogic.joining'));
+        const res = await joinGroupByLink(globalHelia, address);
+        if (!res.ok) { showToast(t(JOIN_ERRORS[res.reason])); return; }
+        const group: ContactItem = {
+          id, type: 'group', chatDbAddress: address, profileDbAddress: '',
+          nickname: res.name, avatarCid: '', updatedAt: Date.now(), isBlocked: false, isDeleted: false,
+        };
+        await saveContact(globalContactsDb, group);
+        await syncGroupPingSubscriptions();
+        setContacts(await getAllContacts(globalContactsDb));
+        navigate(`/chat/${id}`, { state: { contactName: res.name, contact: group } });
+      },
+    });
+  };
+
+  useEffect(() => { joinHandled.current(); }, [isLoading, isNetworkReady]);
+
+  useEffect(() => {
+    const onLink = () => joinHandled.current();
+    window.addEventListener('ychat:join-link', onLink);
+    return () => window.removeEventListener('ychat:join-link', onLink);
+  }, []);
 
   // Защита роута
   useEffect(() => {
@@ -768,6 +833,27 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     }
   };
 
+    const handleCreateGroup = async (name: string, memberIds: string[]): Promise<boolean> => {
+    if (!globalHelia || !globalContactsDb || !name.trim()) return false;
+    try {
+      // Сессию не закрываем: пока создатель держит БД открытой, релей успевает забрать записи
+      const g = await joinGroup(globalHelia, { create: { name, members: memberIds } }, () => {});
+      await saveContact(globalContactsDb, {
+        id: groupContactId(g.dbAddress), type: 'group', chatDbAddress: g.dbAddress, profileDbAddress: '',
+        nickname: name, avatarCid: '', updatedAt: Date.now(), isBlocked: false, isDeleted: false,
+      });
+      await sendGroupInvites(globalHelia, { dbAddress: g.dbAddress, name }, memberIds);
+      setContacts(await getAllContacts(globalContactsDb));
+      await syncGroupPingSubscriptions();
+      showToast(t('contactsLogic.groupCreated', { defaultValue: 'Группа создана' }));
+      return true;
+    } catch (err) {
+      console.error('❌ Ошибка создания группы:', err);
+      showToast(t('contactsLogic.groupCreateError', { defaultValue: 'Не удалось создать группу' }));
+      return false;
+    }
+  };
+
   const handleCopyContactId = async (e: React.MouseEvent, contactId: string) => {
     e.stopPropagation();
     try {
@@ -793,7 +879,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
     isNetworkReady, netState,
     
     addVideoRef,
-    
+    isGroupModalOpen, setIsGroupModalOpen, handleCreateGroup,
     syncContactInQueue,
     closeDialog, showToast, toggleContactMenu, toggleHeaderMenu, handleCopyPeerId, onSubmitAddContact,
     handleRefreshContact, handleDeleteContact, handleSaveProfile, handleLogout, handleAdd,

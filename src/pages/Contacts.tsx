@@ -19,6 +19,7 @@ import HeaderActionButton from '../components/HeaderActionButton.tsx';
 import { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import Avatar from '../components/Avatar.tsx';
 import ContextMenu from '../components/ContextMenu';
+import CreateGroupModal from '../components/CreateGroupModal.tsx';
 
 const ContactList = () => {
   const { t } = useTranslation();
@@ -50,6 +51,9 @@ const ContactList = () => {
     showToast,
     isNetworkReady,
     handleCopyContactId,
+    isGroupModalOpen,
+    setIsGroupModalOpen,
+    handleCreateGroup,
 
     searchQuery,
     setSearchQuery,
@@ -234,6 +238,16 @@ const ContactList = () => {
             }}
             icon={<Bell size={22} color={isPushEnabled ? '#ffffff' : '#94a3b8'} />}
             title={t(isPushEnabled ? 'contactsPage.pushOn' : 'contactsPage.pushOff')}
+            disabled={isLoading}
+          />
+
+          <HeaderActionButton
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsGroupModalOpen(true);
+            }}
+            icon={<Plus size={22} />}
+            title={t('contactsPage.createGroupTitle', { defaultValue: 'Новая группа' })}
             disabled={isLoading}
           />
 
@@ -429,6 +443,13 @@ const ContactList = () => {
         isDanger={dialogConfig.isDanger}
         onConfirm={dialogConfig.onConfirm}
         onCancel={closeDialog}
+      />
+
+      <CreateGroupModal
+        isOpen={isGroupModalOpen}
+        contacts={contacts}
+        onClose={() => setIsGroupModalOpen(false)}
+        onCreate={handleCreateGroup}
       />
     </div>
   );

@@ -8,6 +8,16 @@ import { RelayManager } from '../networking/RelayManager.ts';
 import { initContactsDB, getContact, saveContact, isAvatarBundleStale, type ContactItem, updateContactProfileAddress, waitForDbSettle } from './contactsService.ts';
 import { RateLimitedAccessController } from '../orbit/rateLimitedAccessController.ts';
 import { initHiddenMessagesDB } from './hiddenMessagesService.ts';
+import { groupContactId } from './groupState.ts';
+
+// Ссылка-приглашение ?join=<хэш группы>: запоминаем до редиректов роутера и логина, адресную строку чистим
+try {
+  const joinParam = new URLSearchParams(window.location.search).get('join');
+  if (joinParam) {
+    sessionStorage.setItem(CONFIG.KEY_PENDING_JOIN, joinParam);
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.hash);
+  }
+} catch { /* нет window или localStorage */ }
 
 export let globalHelia: any = null;
 export let globalOrbitDB: any = null;
@@ -138,6 +148,7 @@ export async function pushProfileUpdateToContacts() {
     const contacts = await getAllContacts(globalContactsDb);
 
     for (const contact of contacts) {
+      if (contact.type === 'group') continue;
       if (contact.isPending) continue; // заявка не принята — профиль не раскрываем
       if (await isPeerIgnored(globalContactsDb, contact.id)) continue;
 
@@ -190,6 +201,26 @@ export async function syncContactRequests() {
   } catch (err) {
     console.error('❌ [ContactRequests] Ошибка получения запросов с релея:', err);
   }
+}
+
+/** Приглашение в группу: принимаем только от своих контактов. */
+async function applyGroupInvite(msg: any, senderId: string) {
+  const address = msg?.groupAddress;
+  if (typeof address !== 'string' || !address.startsWith('/orbitdb/') || address.length > 120) return;
+
+  const sender = await getContact(globalContactsDb, senderId);
+  if (!sender || sender.isPending || sender.isDeleted) return;
+
+  const id = groupContactId(address);
+  const existing = await getContact(globalContactsDb, id);
+  if (existing && !existing.isDeleted) return;
+
+  await saveContact(globalContactsDb, {
+    id, type: 'group', chatDbAddress: address, profileDbAddress: '',
+    nickname: String(msg.name || '').slice(0, 100) || i18n.t('authService.groupFallback', { defaultValue: 'Группа' }),
+    avatarCid: '', updatedAt: Date.now(), isBlocked: false, isDeleted: false,
+  });
+  window.dispatchEvent(new Event('onContactsUpdated'));
 }
 
 /** Применяет входящий профиль. Неизвестный отправитель становится входящей заявкой (isPending). */
@@ -275,6 +306,36 @@ function getFriendlyAuthErrorMessage(status: string | undefined, rawMessage: str
     : i18n.t('authService.allRelaysUnavailableLogin');
 }
 
+const subscribedPingTopics = new Set<string>();
+
+/** Подписывает узел на ping-топики своих групп и отписывает от ушедших. Идемпотентно. */
+export async function syncGroupPingSubscriptions() {
+  if (!globalHelia || !globalContactsDb) return;
+  const pubsub = globalHelia.libp2p?.services?.pubsub;
+  if (!pubsub) return;
+
+  const { getAllContacts } = await import('./contactsService.ts');
+  const contacts = await getAllContacts(globalContactsDb);
+  const wanted = new Set(
+    contacts
+      .filter((c) => c.type === 'group' && !c.isDeleted && !c.isPending)
+      .map((c) => `${CONFIG.TOPICS.GROUP_PING_PREFIX}${c.id}${CONFIG.TOPICS.GROUP_PING_SUFFIX}`),
+  );
+
+  const actual = new Set<string>(pubsub.getTopics());
+  for (const topic of wanted) {
+    if (!actual.has(topic)) {
+      try { pubsub.subscribe(topic); } catch (e) { console.warn('⚠️ [GroupPing] Не удалось подписаться:', e); continue; }
+    }
+    subscribedPingTopics.add(topic);
+  }
+  for (const topic of [...subscribedPingTopics]) {
+    if (wanted.has(topic)) continue;
+    try { pubsub.unsubscribe(topic); } catch { /* уже отписан */ }
+    subscribedPingTopics.delete(topic);
+  }
+}
+
 export async function initializeApp(nicknameForRegistration?: string) {
   if (globalHelia && globalProfileDb) {
     console.log('⚡️ [Init] P2P узел уже запущен, пропускаем повторную инициализацию.');
@@ -333,6 +394,21 @@ export async function initializeApp(nicknameForRegistration?: string) {
 
     const currentTopic = evt.detail.topic;
 
+    // Ping группы: payload не читаем, доверяем только подписанному отправителю (evt.detail.from)
+    if (
+      currentTopic.startsWith(CONFIG.TOPICS.GROUP_PING_PREFIX) &&
+      currentTopic.endsWith(CONFIG.TOPICS.GROUP_PING_SUFFIX)
+    ) {
+      const fromId = evt.detail.from.toString();
+      if (fromId === myPeerId) return;
+      const groupId = currentTopic.slice(CONFIG.TOPICS.GROUP_PING_PREFIX.length, -CONFIG.TOPICS.GROUP_PING_SUFFIX.length);
+      if (!groupId.startsWith('grp_')) return;
+      const { isPeerIgnored, onGroupPing } = await import('./contactsService.ts');
+      if (await isPeerIgnored(globalContactsDb, fromId)) return;
+      void onGroupPing(globalContactsDb, groupId);
+      return;
+    }
+
     // 1. Пропускаем топики, которые не умеем обрабатывать
     if (
       currentTopic !== CONFIG.TOPICS.WAKEUP_SYNC_TOPIC &&
@@ -390,12 +466,18 @@ export async function initializeApp(nicknameForRegistration?: string) {
       await applyIncomingProfile(msg, senderId);
     }
 
+    if (msg.type === CONFIG.MSG.GROUP_INVITE) {
+      await applyGroupInvite(msg, senderId);
+      return;
+    }
+
     if (msg.type === 'NEW_MESSAGE') {
       const { updateLastMessage, isPeerIgnored } = await import('./contactsService.ts');
 
       if (await isPeerIgnored(globalContactsDb, senderId)) return;
 
       const isCurrentlyInThisChat = window.location.pathname.includes(senderId);
+
       await updateLastMessage(
         globalContactsDb,
         senderId,
@@ -530,6 +612,9 @@ export async function initializeApp(nicknameForRegistration?: string) {
         console.error('❌ Ошибка при попытке отправить WAKEUP:', err);
       }
     }, 3000); 
+
+    window.addEventListener('onContactsUpdated', () => { void syncGroupPingSubscriptions(); });
+    syncGroupPingSubscriptions().catch(() => {});
 
     dbReadyCallbacks.forEach(cb => cb());
     dbReadyCallbacks = []; 
