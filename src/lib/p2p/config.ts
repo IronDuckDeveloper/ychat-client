@@ -81,5 +81,7 @@ export const CONFIG = {
     PUSH_NOTIFY: '/ychat/push-notify/1.0.0', // Уведомление Web Push
     GROUP_PING_PREFIX: 'ychat/groups/', // + groupId + GROUP_PING_SUFFIX: один лёгкий ping на сообщение в группе
     GROUP_PING_SUFFIX: '/ping',
+    PUSH_NOTIFY_GROUP: '/ychat/push-notify-group/1.0.0',
+    PUSH_MUTE: '/ychat/push-mute/1.0.0',
   }
 };

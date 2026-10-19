@@ -156,7 +156,9 @@
     "sendMessage": "Enviar mensaje",
     "you": "Yo",
     "messageDeletedLabel": "Mensaje eliminado",
-    "groupNoAccess": "Ya no eres miembro de este grupo"
+    "groupNoAccess": "Ya no eres miembro de este grupo",
+    "pushMuted": "Notificaciones desactivadas",
+    "pushUnmuted": "Notificaciones activadas"
   },
   "contactsPage": {
     "shareContact": "Compartir contacto",

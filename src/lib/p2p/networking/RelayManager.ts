@@ -613,4 +613,51 @@ public getRelayIp(relay: RelayConfig): string | null {
       console.warn(`⚠️ [Push] notify не отправлен: ${err.message}`);
     }
   }
+
+    /** Просит релей разослать пуш участникам группы. Fire-and-forget. */
+  public async notifyGroupPush(groupId: string): Promise<void> {
+    if (!this.libp2p) return;
+    const relay = this.getActiveRelay();
+    if (!relay || this.isRelayFailed(relay.peerId)) return;
+    try {
+      const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+      const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.PUSH_NOTIFY_GROUP);
+      await (pipe as any)(
+        [new TextEncoder().encode(JSON.stringify({ groupId }))],
+        lp.encode,
+        stream.sink
+      );
+      await stream.close();
+    } catch (err: any) {
+      console.warn(`⚠️ [Push] group notify не отправлен: ${err.message}`);
+    }
+  }
+
+  /** Передаёт релею список выключенных чатов (id собеседников и групп). */
+  public async setPushMuted(muted: string[]): Promise<boolean> {
+    if (!this.libp2p) return false;
+    const relay = this.getActiveRelay();
+    if (!relay || this.isRelayFailed(relay.peerId)) return false;
+    try {
+      const target = multiaddr(`${relay.address}/p2p/${relay.peerId}`);
+      const stream = await this.libp2p.dialProtocol(target, CONFIG.TOPICS.PUSH_MUTE);
+      await (pipe as any)(
+        [new TextEncoder().encode(JSON.stringify({ muted }))],
+        lp.encode,
+        stream.sink
+      );
+      let accepted = false;
+      await (pipe as any)(stream.source, lp.decode, async (source: any) => {
+        for await (const chunk of source) {
+          accepted = JSON.parse(new TextDecoder().decode(chunk.subarray())).status === CONFIG.MSG.SUCCESS;
+          break;
+        }
+      });
+      await stream.close();
+      return accepted;
+    } catch (err: any) {
+      console.warn(`⚠️ [Push] mute не отправлен: ${err.message}`);
+      return false;
+    }
+  }
 }

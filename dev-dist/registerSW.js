@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/ychat-client/dev-sw.js?dev-sw', { scope: '/ychat-client/', type: 'module' })

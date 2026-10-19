@@ -17,7 +17,7 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html')))
 
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
-    let data: { from?: string } = {}
+    let data: { from?: string; g?: string } = {}
     try { data = event.data?.json() ?? {} } catch { /* пустой/не-JSON payload */ }
     // try { data = event.data?.json() ?? {} } catch (e) { console.error('[SW] payload не JSON', e) }
     console.log('[SW] parsed data:', data)
@@ -39,8 +39,9 @@ self.addEventListener('push', (event) => {
     await self.registration.showNotification('ychat', {
       body,
       icon: new URL('apple-touch-icon.png', self.registration.scope).href,
-      tag: data.from ? `msg-${data.from}` : 'msg', // дубли заменяют друг друга
-    })
+      tag: data.g ? `grp-${data.g}` : data.from ? `msg-${data.from}` : 'msg', // дубли заменяют друг друга
+      renotify: true, // замена с новым оповещением (звук/баннер), а не тихая
+    } as NotificationOptions & { renotify?: boolean }) // renotify нет в lib.dom
     console.log('[SW] showNotification вызван')
   })())
 })

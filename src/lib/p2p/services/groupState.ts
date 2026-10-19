@@ -1,7 +1,7 @@
 export type GroupRole = 'owner' | 'admin' | 'member';
 export type GroupActType =
   | 'add' | 'kick' | 'ban' | 'unban' | 'role' | 'write'
-  | 'leave' | 'profile' | 'group' | 'del_msg' | 'transfer' | 'close' | 'join';
+  | 'leave' | 'profile' | 'group' | 'del_msg' | 'transfer' | 'close' | 'join' | 'day';
 
 export interface GroupMember {
   id: string;
@@ -24,6 +24,7 @@ export interface GroupState {
   deletedMsgIds: Set<string>;                        // скрытые админом
   closed: boolean;
   closedAt: number | null;
+  days: Set<string>; // непустые дни (индекс периодов с сообщениями), 'YYYYMMDD'
 }
 
 export interface GroupProfile {
@@ -96,6 +97,7 @@ export function computeGroupState(docs: any[], owner: string): GroupState {
     members: new Map([[owner, { id: owner, role: 'owner', status: 'active' }]]),
     former: new Map(), profiles: new Map(), deletedMsgIds: new Set(),
     closed: false, closedAt: null,
+    days: new Set(),
   };
 
   const remove = (id: string, ts: number) => { s.members.delete(id); s.former.set(id, ts); };
@@ -228,6 +230,14 @@ export function computeGroupState(docs: any[], owner: string): GroupState {
         if (actor === s.owner) { s.closed = true; s.closedAt = e.ts; }
         break;
 
+      case 'day': {
+        // индекс непустых дней: будущее и мусор отбрасываем, писать может только тот, кому можно писать
+        if (typeof e.d !== 'string' || !/^\d{8}$/.test(e.d) || e.d > nextDayOf(e.ts)) break;
+        if (!canWrite(s, actor) || s.days.size >= 5000) break;
+        s.days.add(e.d);
+        break;
+      }
+
       case 'del_msg':
         if (isStaff && target) s.deletedMsgIds.add(target);
         break;
@@ -252,4 +262,11 @@ export function buildAct(
 }
 
 export const groupContactId = (address: string) => `grp_${address.replace('/orbitdb/', '')}`;
+/** Суточный период по UTC: 'YYYYMMDD'. Сообщения группы лежат в БД своего дня. */
+// export const dayOf = (ts: number): string => new Date(ts).toISOString().slice(0, 10).replace(/-/g, '');
 export const groupAddressOf = (id: string) => `/orbitdb/${id.slice(4)}`;
+
+
+export const PERIOD_MS = 86_400_000;
+export const dayOf = (ts: number): string => new Date(ts).toISOString().slice(0, 10).replace(/-/g, '');
+export const nextDayOf = (ts: number): string => dayOf(ts + PERIOD_MS);

@@ -27,6 +27,7 @@ export interface ContactItem {
   isBlocked?: boolean; // Флаг блокировки
   isDeleted?: boolean; // Флаг удаления
   isPending?: boolean; // Входящая заявка: нас добавили, решение ещё не принято
+  pushMuted?: boolean; // Флаг отключения пуш-уведомлений для этого контакта
 }
 
 export interface PeerRestrictionStatus {
@@ -177,7 +178,8 @@ export const saveContact = async (contactsDb: any, contact: ContactItem) => {
       existingContact.unreadCount === sanitizedContact.unreadCount &&
       existingContact.isBlocked === sanitizedContact.isBlocked &&
       existingContact.isDeleted === sanitizedContact.isDeleted &&
-    !!existingContact.isPending === !!sanitizedContact.isPending;
+      !!existingContact.isPending === !!sanitizedContact.isPending &&
+      !!existingContact.pushMuted === !!sanitizedContact.pushMuted;
 
     if (isIdentical) {
       return; 
@@ -587,7 +589,7 @@ async function syncGroupContact(contact: ContactItem, contactsDb: any) {
     const joined = joinGroup(globalHelia, { address: contact.chatDbAddress }, (s) => {
       holder.snap = s;
       holder.changedAt = Date.now();
-    });
+    }, { maxDays: 2 });
     handle = await Promise.race([
       joined,
       new Promise<null>((resolve) => setTimeout(() => resolve(null), GROUP_SYNC_TIMEOUT_MS)),

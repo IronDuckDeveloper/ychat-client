@@ -155,7 +155,9 @@
     "sendMessage": "Отправить сообщение",
     "you": "Я",
     "messageDeletedLabel": "Сообщение удалено",
-    "groupNoAccess": "Вы больше не участник этой группы"
+    "groupNoAccess": "Вы больше не участник этой группы",
+    "pushMuted": "Уведомления выключены",
+    "pushUnmuted": "Уведомления включены"
   },
   "contactsPage": {
     "shareContact": "Обменяться контактом",

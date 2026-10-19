@@ -52,7 +52,8 @@ export async function notifyArchivist(
     const data = new TextEncoder().encode(
       JSON.stringify({ address: dbAddress }),
     );
-    await pipe([data], stream);
+    await pipe([data], stream.sink);
+    await stream.close().catch(() => {});
 
     console.log(
       `📡 [Protocol] Адрес базы данных ${dbAddress} отправлен Архивариусу ${peerId.toString().slice(-6)}`,
@@ -60,7 +61,8 @@ export async function notifyArchivist(
   } catch (err: any) {
     // При ошибке сбрасываем кэш, чтобы следующий вызов мог попытаться снова
     recentAnnouncements.delete(cacheKey);
-    console.error('❌ Ошибка отправки анонса Архивариусу:', err.message);
+    const log = /ended pushable|closed|reset/i.test(err.message) ? console.warn : console.error;
+    log('⚠️ Ошибка отправки анонса Архивариусу:', err.message);
   }
 }
 

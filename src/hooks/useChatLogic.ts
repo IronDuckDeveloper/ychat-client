@@ -733,6 +733,7 @@ const handleSendMessage = async () => {
         if (isGroup) {
           // один лёгкий ping в топик группы вместо рассылки каждому участнику
           pubsub.publish(groupPingTopic(peerId), new TextEncoder().encode('{"t":1}')).catch(() => {});
+          globalRelayManager?.notifyGroupPush(peerId).catch(() => {});
         } else {
           try {
             const myPeerId = (globalHelia as any).libp2p.peerId.toString();

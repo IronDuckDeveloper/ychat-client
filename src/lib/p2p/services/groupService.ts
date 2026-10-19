@@ -9,8 +9,8 @@ import { isHiddenLocally } from './hiddenMessagesService.ts';
 import type { ChatMessage, ReplyInfo, ForwardedFrom } from './roomService.ts';
 import type { FileAttachment } from './fileService.ts';
 import {
-  computeGroupState, isVisible, canWrite, roleOf, buildAct, writerSlots, MAX_WRITERS,
-type GroupState, type GroupRole, type GroupActType, type GroupActField,
+  computeGroupState, isVisible, canWrite, roleOf, buildAct, writerSlots, MAX_WRITERS, groupContactId, dayOf, nextDayOf,
+  type GroupState, type GroupRole, type GroupActType, type GroupActField,
 } from './groupState.ts';
 
 export type GroupTarget =
@@ -40,76 +40,52 @@ export interface GroupActions {
   leaveRoom: () => void;
 }
 
+export interface JoinGroupOptions {
+  messages?: boolean; // false: только управляющая БД (вступление по ссылке), периоды с сообщениями не открываются
+  maxDays?: number;   // сколько прошлых дней максимум открыть (фоновый синк берёт 2)
+}
+
 const PAGE = CONFIG.CHUNK_SIZE || 15;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const groupSessions = new Map<string, { promise: Promise<any>; refCount: number }>();
+// Общий пул БД с подсчётом ссылок: управляющая БД (ключ — адрес) и периоды (ключ — имя)
+const sharedDbs = new Map<string, { promise: Promise<any>; refCount: number }>();
 
-async function acquire(orbitdb: any, target: GroupTarget): Promise<any> {
-  if ('address' in target) {
-    let s = groupSessions.get(target.address);
-    if (!s) {
-      s = { promise: orbitdb.open(target.address), refCount: 0 };
-      groupSessions.set(target.address, s);
-    }
-    s.refCount++;
-    try {
-      return await s.promise;
-    } catch (err) {
-      s.refCount--;
-      if (s.refCount <= 0) groupSessions.delete(target.address);
-      throw err;
-    }
+async function acquireShared(key: string, open: () => Promise<any>): Promise<any> {
+  let s = sharedDbs.get(key);
+  if (!s) {
+    s = { promise: open(), refCount: 0 };
+    sharedDbs.set(key, s);
   }
-  const db = await orbitdb.open(`group_${Math.random().toString(36).slice(2, 12)}_${Date.now()}`, {
-    type: 'documents',
-    docIndex: '_id',
-    AccessController: GroupAccessController(),
-  });
-  groupSessions.set(db.address.toString(), { promise: Promise.resolve(db), refCount: 1 });
-  return db;
+  s.refCount++;
+  try {
+    return await s.promise;
+  } catch (err) {
+    s.refCount--;
+    if (s.refCount <= 0) sharedDbs.delete(key);
+    throw err;
+  }
 }
 
-export async function joinGroup(
-  helia: Helia,
-  target: GroupTarget,
-  onSnapshot: (snap: GroupSnapshot) => void,
-): Promise<GroupActions> {
-  const libp2p = (helia as any).libp2p as Libp2p;
-  const orbitdb = await getOrbitDB(helia);
-  const myId: string = orbitdb.identity.id;
-
-  const db = await acquire(orbitdb, target);
-  const dbAddress: string = db.address.toString();
-
-  const release = () => {
-    const s = groupSessions.get(dbAddress);
-    if (s && --s.refCount <= 0) {
-      groupSessions.delete(dbAddress);
-      db.close().catch(() => {});
-    }
-  };
-
-  if (db.access?.type !== 'ychat-group' || !db.access.write?.[0]) {
-    release();
-    throw new Error('Not a ychat group database');
+function releaseShared(key: string, db: any) {
+  const s = sharedDbs.get(key);
+  if (s && --s.refCount <= 0) {
+    sharedDbs.delete(key);
+    db.close().catch(() => {});
   }
-  const owner: string = db.access.write[0];
+}
 
-  let state = computeGroupState([], owner);
-  let limit = PAGE;
-  let hasMore = false;
-  let disposed = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let lastActTs = 0;
-
-    // Кэш документов: db.all() декодирует весь лог (~0,7 с на 4000 записей), поэтому читаем его целиком
-  // только при открытии и когда в событии виден пропуск; обычные обновления берём из самого события.
+/**
+ * Кэш документов одной БД. db.all() декодирует весь лог, поэтому читаем его целиком только при открытии
+ * и когда в событии виден пропуск; обычные обновления берём из самого события.
+ */
+function createDocCache(db: any, onChange: () => void) {
   const cache = new Map<string, any>();
   const known = new Set<string>();
   let ready = false;
   let dirty = false;
-  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   let lastReloadMs = 0;
 
   const fullReload = async () => {
@@ -124,17 +100,18 @@ export async function joinGroup(
   };
 
   const scheduleReload = () => {
-    if (reloadTimer || disposed) return;
+    if (timer || disposed) return;
     // не чаще раза в 1,5 с и не чаще, чем раз в тройное время самого чтения: нагрузка ограничена ~25%
-    reloadTimer = setTimeout(async () => {
-      reloadTimer = null;
+    timer = setTimeout(async () => {
+      timer = null;
       if (disposed) return;
       try { await fullReload(); } catch (err) { console.error('❌ [Group] Ошибка чтения БД:', err); }
-      schedule();
+      if (!disposed) onChange();
     }, Math.max(1500, lastReloadMs * 3));
   };
 
   const onUpdate = (entry: any) => {
+    if (disposed) return;
     if (!ready) { dirty = true; return; }
     const p = entry?.payload;
     const doc = p?.op === 'PUT' ? p.value : null;
@@ -142,9 +119,119 @@ export async function joinGroup(
       cache.set(doc._id, doc);
       if (typeof entry.hash === 'string') known.add(entry.hash);
     }
-    // записи, которых мы не видели, подбираем полным чтением
+    // записи, которых мы не видели (пачка при синке), подбираем полным чтением
     const gap = !doc || !Array.isArray(entry.next) || entry.next.some((h: string) => !known.has(h));
-    if (gap) scheduleReload(); else schedule();
+    if (gap) scheduleReload();
+    onChange();
+  };
+
+  db.events.on('update', onUpdate);
+
+  return {
+    docs: () => cache.values(),
+    get: (id: string) => cache.get(id),
+    size: () => cache.size,
+    async init() {
+      await fullReload();
+      ready = true;
+      if (dirty) scheduleReload(); // события, пришедшие во время первого чтения
+    },
+    dispose() {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+      db.events.off('update', onUpdate);
+    },
+  };
+}
+type DocCache = ReturnType<typeof createDocCache>;
+
+export async function joinGroup(
+  helia: Helia,
+  target: GroupTarget,
+  onSnapshot: (snap: GroupSnapshot) => void,
+  opts: JoinGroupOptions = {},
+): Promise<GroupActions> {
+  const withMessages = opts.messages !== false;
+  const maxDays = opts.maxDays ?? Infinity;
+    // открытый чат держит БД следующего периода открытой заранее; фоновый синк (maxDays) этого не делает
+  const keepNext = withMessages && opts.maxDays === undefined;
+  const libp2p = (helia as any).libp2p as Libp2p;
+  const orbitdb = await getOrbitDB(helia);
+  const myId: string = orbitdb.identity.id;
+
+  let db: any;
+  if ('address' in target) {
+    db = await acquireShared(target.address, () => orbitdb.open(target.address));
+  } else {
+    db = await orbitdb.open(`group_${Math.random().toString(36).slice(2, 12)}_${Date.now()}`, {
+      type: 'documents',
+      docIndex: '_id',
+      AccessController: GroupAccessController(),
+    });
+    sharedDbs.set(db.address.toString(), { promise: Promise.resolve(db), refCount: 1 });
+  }
+  const dbAddress: string = db.address.toString();
+  const releaseCtrl = () => releaseShared(dbAddress, db);
+
+  if (db.access?.type !== 'ychat-group' || !db.access.write?.[0]) {
+    releaseCtrl();
+    throw new Error('Not a ychat group database');
+  }
+  const owner: string = db.access.write[0];
+  const gid = groupContactId(dbAddress);
+
+  let state = computeGroupState([], owner);
+  let limit = PAGE;
+  let hasMore = false;
+  let disposed = false;
+  let emitTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastActTs = 0;
+  let rollTimer: ReturnType<typeof setInterval> | null = null;
+
+  const scheduleEmit = () => {
+    if (emitTimer || disposed) return;
+    emitTimer = setTimeout(() => { emitTimer = null; void emit(); }, 80);
+  };
+
+  const ctrl = createDocCache(db, scheduleEmit);
+
+  // ---------- периоды (суточные БД сообщений) ----------
+  const addresses = new Set<string>([dbAddress]);
+  const announce = (addr: string) => libp2p.getPeers().forEach((p: PeerId) => notifyArchivist(libp2p, p, addr));
+
+  const periods = new Map<string, { name: string; db: any; cache: DocCache }>();
+  const periodPromises = new Map<string, Promise<{ name: string; db: any; cache: DocCache }>>();
+
+  const ensurePeriod = (day: string) => {
+    let p = periodPromises.get(day);
+    if (!p) {
+      p = (async () => {
+        const name = `${gid}_${day}`;
+        const pdb = await acquireShared(name, () =>
+          orbitdb.open(name, {
+            type: 'documents',
+            docIndex: '_id',
+            AccessController: GroupAccessController({ owner }), // владелец явный: адрес одинаков у всех участников
+          }),
+        );
+        const cache = createDocCache(pdb, scheduleEmit);
+        await cache.init();
+        if (disposed) {
+          cache.dispose();
+          releaseShared(name, pdb);
+          throw new Error('disposed');
+        }
+        const addr = pdb.address.toString();
+        addresses.add(addr);
+        announce(addr);
+        const entry = { name, db: pdb, cache };
+        periods.set(day, entry);
+        return entry;
+      })();
+      periodPromises.set(day, p);
+      p.catch(() => periodPromises.delete(day));
+    }
+    return p;
   };
 
   const toMessage = (d: any): ChatMessage => {
@@ -162,25 +249,76 @@ export async function joinGroup(
     };
   };
 
+  const collectVisible = (): ChatMessage[] => {
+    const out: ChatMessage[] = [];
+    const push = (d: any) => {
+      if (typeof d?._id !== 'string' || !d._id.startsWith('msg_') || !(d.text || d.attachment || d.replyTo)) return;
+      const m = toMessage(d);
+      if (!isVisible(state, m.whoSent, m.ts)) return;
+      out.push(
+        state.deletedMsgIds.has(m.id)
+          ? { ...m, text: CONFIG.MSG.MESSAGE_DELETED, attachment: undefined, replyTo: undefined, forwardedFrom: undefined, hidden: false }
+          : m,
+      );
+    };
+    for (const d of ctrl.docs()) push(d);                                  // старые группы: сообщения лежали в управляющей БД
+    for (const p of periods.values()) for (const d of p.cache.docs()) push(d);
+    return out.sort((a, b) => b.ts - a.ts);
+  };
+
+    const windowDays = () =>
+    [...new Set([dayOf(Date.now()), ...(keepNext ? [nextDayOf(Date.now())] : []), ...state.days])].sort().reverse(); // новые первыми
+
+  // Открывает текущий и следующий периоды всегда, остальные от новых к старым, пока не наберётся страница
+  const ensureWindow = async (): Promise<boolean> => {
+    if (!withMessages) return false;
+    const today = dayOf(Date.now());
+    const next = nextDayOf(Date.now());
+    let loadedAny = false;
+    let opened = 0;
+    for (const d of windowDays()) {
+      if (disposed) break;
+      if (periods.has(d)) continue;
+      const required = d === today || d === next;
+      if (!required && (collectVisible().length >= limit || opened >= maxDays)) break;
+      try {
+        const p = await ensurePeriod(d);
+        loadedAny = true;
+        if (!required) {
+          opened++;
+          if (state.days.has(d)) {
+            // индекс говорит, что день непустой: ждём, пока данные приедут (до 6 с)
+            const t0 = Date.now();
+            while (p.cache.size() === 0 && Date.now() - t0 < 6000 && !disposed) await sleep(300);
+          }
+        }
+      } catch (err) {
+        if (!disposed) console.warn(`[Group] Не удалось открыть период ${d}:`, err);
+        break; // повторим при следующем обновлении или по таймеру
+      }
+    }
+    return loadedAny;
+  };
+
+  let windowRun: Promise<void> | null = null;
+  let windowAgain = false;
+  const runWindow = (): Promise<void> => {
+    if (windowRun) { windowAgain = true; return windowRun; }
+    windowRun = (async () => {
+      do {
+        windowAgain = false;
+        if (await ensureWindow()) scheduleEmit();
+      } while (windowAgain && !disposed);
+    })().finally(() => { windowRun = null; });
+    return windowRun;
+  };
+
   const emit = async () => {
     if (disposed) return;
     try {
-      const docs: any[] = [...cache.values()];
-      state = computeGroupState(docs, owner);
-
-      const visible = docs
-        .filter((d) => typeof d?._id === 'string' && d._id.startsWith('msg_') && (d.text || d.attachment || d.replyTo))
-        .map(toMessage)
-        .filter((m) => isVisible(state, m.whoSent, m.ts))
-        .map((m) =>
-          state.deletedMsgIds.has(m.id)
-            ? { ...m, text: CONFIG.MSG.MESSAGE_DELETED, attachment: undefined, replyTo: undefined, forwardedFrom: undefined, hidden: false }
-            : m,
-        )
-        .sort((a, b) => b.ts - a.ts);
-
-      hasMore = visible.length > limit;
-      if (disposed) return;
+      state = computeGroupState([...ctrl.docs()], owner);
+      const visible = collectVisible();
+      hasMore = visible.length > limit || (withMessages && [...state.days].some((d) => !periods.has(d)));
       onSnapshot({
         messages: visible.slice(0, limit),
         state,
@@ -188,27 +326,21 @@ export async function joinGroup(
         myRole: roleOf(state, myId),
         canWrite: canWrite(state, myId),
       });
+      void runWindow();
     } catch (err) {
       if (!disposed) console.error('❌ [Group] Ошибка сборки снимка:', err);
     }
   };
 
-  const schedule = () => {
-    if (timer || disposed) return;
-    timer = setTimeout(() => { timer = null; void emit(); }, 80);
-  };
-
-  db.events.on('update', onUpdate);
-
   const onConnect = (evt: any) => {
     const peerId = evt.detail as PeerId;
     setTimeout(() => checkAndSyncRelays(helia), 2000);
     if (relayManager.isRelay(peerId.toString())) {
-      setTimeout(() => notifyArchivist(libp2p, peerId, dbAddress), 1500);
+      [...addresses].forEach((addr, i) => setTimeout(() => notifyArchivist(libp2p, peerId, addr), 1500 + i * 150));
     }
   };
   libp2p.addEventListener('peer:connect', onConnect);
-  libp2p.getPeers().forEach((p: PeerId) => notifyArchivist(libp2p, p, dbAddress));
+  announce(dbAddress);
 
   const actions: GroupActions = {
     dbAddress,
@@ -216,18 +348,24 @@ export async function joinGroup(
     myId,
 
     sendMessage: async (text, attachment, hidden, replyTo, forwardedFrom) => {
-      if (!canWrite(state, myId)) return false;
+      if (!withMessages || !canWrite(state, myId)) return false;
+      const ts = Date.now();
+      const day = dayOf(ts);
       const msg: any = {
-        _id: `msg_${myId}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        _id: `msg_${myId}_${ts}_${Math.random().toString(36).slice(2, 9)}`,
         whoSent: myId,
         text,
-        ts: Date.now(),
+        ts,
       };
       if (attachment) msg.attachment = attachment;
       if (hidden) msg.hidden = true;
       if (replyTo) msg.replyTo = replyTo;
       if (forwardedFrom) msg.forwardedFrom = forwardedFrom;
-      await db.put(msg);
+
+      const p = await ensurePeriod(day);
+      await p.db.put(msg);
+      // первое сообщение дня: записываем день в индекс (он же сообщает остальным об открытии новой БД)
+      if (!state.days.has(day)) await actions.act('day', { d: day }).catch(() => {});
       return true;
     },
 
@@ -239,13 +377,19 @@ export async function joinGroup(
     },
 
     deleteMessage: async (msgId) => {
-      const result = await db.get(msgId);
-      const doc = Array.isArray(result) ? result[0] : result;
-      const target = doc?.value || doc;
-      if (!target) return;
-      if (target.whoSent === myId) {
-        await db.put({
-          ...target, _id: msgId, text: CONFIG.MSG.MESSAGE_DELETED,
+      let targetDb: any = null;
+      let doc: any = ctrl.get(msgId);
+      if (doc) targetDb = db;
+      else {
+        for (const p of periods.values()) {
+          const d = p.cache.get(msgId);
+          if (d) { doc = d; targetDb = p.db; break; }
+        }
+      }
+      if (!doc || !targetDb) return;
+      if (doc.whoSent === myId) {
+        await targetDb.put({
+          ...doc, _id: msgId, text: CONFIG.MSG.MESSAGE_DELETED,
           attachment: null, replyTo: null, forwardedFrom: null, hidden: false,
         });
       } else {
@@ -256,19 +400,27 @@ export async function joinGroup(
     loadMoreHistory: async () => {
       if (!hasMore) return;
       limit += PAGE;
+      await runWindow();
       await emit();
     },
     hasMoreHistory: () => hasMore,
 
     leaveRoom: () => {
       disposed = true;
-      if (timer) clearTimeout(timer);
+      if (rollTimer) clearInterval(rollTimer);
+      if (emitTimer) clearTimeout(emitTimer);
       libp2p.removeEventListener('peer:connect', onConnect);
-      db.events.off('update', onUpdate);
-      if (reloadTimer) clearTimeout(reloadTimer);
-      release();
+      ctrl.dispose();
+      for (const p of periods.values()) {
+        p.cache.dispose();
+        releaseShared(p.name, p.db);
+      }
+      periods.clear();
+      releaseCtrl();
     },
   };
+
+  await ctrl.init();
 
   if ('create' in target) {
     const c = target.create;
@@ -282,10 +434,10 @@ export async function joinGroup(
     }
   }
 
-  await fullReload();
-  ready = true;
-  if (dirty) scheduleReload(); // события, пришедшие во время первого чтения
+  // сообщения подгружаются фоном (emit запускает окно периодов): снимок со state приходит сразу
   await emit();
+  // граница периода: окно переключается по таймеру, даже если событий нет
+  if (keepNext && !disposed) rollTimer = setInterval(() => void runWindow(), 30_000);
   return actions;
 }
 
@@ -303,6 +455,9 @@ export async function sendGroupInvites(
     await pubsub.publish(`${CONFIG.TOPICS.PROFILE_MAILBOX_PREFIX}${id}`, data).catch(() => {});
   }
 }
+
+export const groupPingTopic = (groupId: string) =>
+  `${CONFIG.TOPICS.GROUP_PING_PREFIX}${groupId}${CONFIG.TOPICS.GROUP_PING_SUFFIX}`;
 
 export const GROUP_LINK_PARAM = 'join';
 
@@ -322,9 +477,10 @@ export async function joinGroupByLink(helia: Helia, address: string): Promise<Li
   let handle: GroupActions | null = null;
   let keepOpen = false;
   try {
-    const joined = joinGroup(helia, { address }, (s) => { holder.snap = s; });
+    const joined = joinGroup(helia, { address }, (s) => { holder.snap = s; }, { messages: false });
     handle = await Promise.race([joined, sleep(45_000).then(() => null)]);
     if (!handle) {
+      console.warn('⏱️ [Group] joinGroup не завершился за 45 с:', address);
       joined.then((h) => h.leaveRoom()).catch(() => {}); // открылась позже таймаута: сразу отпускаем
       return { ok: false, reason: 'unavailable' };
     }
@@ -332,7 +488,10 @@ export async function joinGroupByLink(helia: Helia, address: string): Promise<Li
     // ждём, пока название приедет с репликацией (до 30 с)
     for (let i = 0; i < 60 && !holder.snap?.state.name; i++) await sleep(500);
     const s = holder.snap;
-    if (!s?.state.name) return { ok: false, reason: 'unavailable' };
+    if (!s?.state.name) {
+      console.warn('⏱️ [Group] имя группы не пришло за 30 с. snap:', !!s, 'members:', s?.state.members.size);
+      return { ok: false, reason: 'unavailable' };
+    }
 
     const me = s.state.members.get(handle.myId);
     if (s.state.closed) return { ok: false, reason: 'closed' };
@@ -343,7 +502,10 @@ export async function joinGroupByLink(helia: Helia, address: string): Promise<Li
       await handle.act('join');
       // проверяем, что группа приняла вступление при пересчёте состояния
       for (let i = 0; i < 20 && holder.snap?.state.members.get(handle.myId)?.status !== 'active'; i++) await sleep(250);
-      if (holder.snap?.state.members.get(handle.myId)?.status !== 'active') return { ok: false, reason: 'rejected' };
+      if (holder.snap?.state.members.get(handle.myId)?.status !== 'active') {
+        console.warn('⏱️ [Group] join записан, но не принят. members:', holder.snap?.state.members.size);
+        return { ok: false, reason: 'rejected' };
+      }
     }
     keepOpen = true;
     return { ok: true, name: s.state.name };
@@ -359,6 +521,3 @@ export async function joinGroupByLink(helia: Helia, address: string): Promise<Li
     }
   }
 }
-
-export const groupPingTopic = (groupId: string) =>
-  `${CONFIG.TOPICS.GROUP_PING_PREFIX}${groupId}${CONFIG.TOPICS.GROUP_PING_SUFFIX}`;

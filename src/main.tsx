@@ -6,7 +6,7 @@ import './i18n/config';
 import './styles/global.scss'
 import App from './App.tsx'
 
-// import { enablePush, disablePush } from './lib/push/pushService.ts'
+// import { enablePush, disablePush } from './lib/push/pushService.ts' это тест
 // ;(window as any).enablePush = enablePush
 // ;(window as any).disablePush = disablePush
 

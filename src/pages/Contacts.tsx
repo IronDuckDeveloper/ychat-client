@@ -5,6 +5,7 @@ import {
   Plus,
   X,
   Bell,
+  BellOff,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -236,7 +237,7 @@ const ContactList = () => {
               e.stopPropagation();
               togglePush();
             }}
-            icon={<Bell size={22} color={isPushEnabled ? '#ffffff' : '#94a3b8'} />}
+            icon={isPushEnabled ? <Bell size={22} color="#ffffff" /> : <BellOff size={22} color="#94a3b8" />}
             title={t(isPushEnabled ? 'contactsPage.pushOn' : 'contactsPage.pushOff')}
             disabled={isLoading}
           />

@@ -276,9 +276,6 @@ export const forceSyncContactProfile = async (contactsDb: any, contact: ContactI
       let freshServerCid = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_SERVER_CID || 'avatar_server_cid');
       let freshEncryptionKey = await remoteDb.get(CONFIG.PROFILE.KEY_AVATAR_ENCRYPTION_KEY);
       let freshServerRelays = await remoteDb.get(CONFIG.PROFILE.KEY_SERVER_RELAYS);
-      
-      // ДЕБАГ: проверим, что именно прилетает из базы
-      console.log(`🔍 [ProfileSync] DEBUG: Для ${contact.nickname} ключ из БД:`, freshEncryptionKey);
 
       if (!freshName) {
         console.log('⏳ [ProfileSync] Данные профиля еще не среплицировались, ждем сеть (5 сек)...');

@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
+  Bell,
+  BellOff,
   Send,
   Paperclip,
   Image as ImageIcon,
@@ -23,7 +25,9 @@ import {
 import '../styles/chat.scss';
 import { useChatLogic } from '../hooks/useChatLogic.ts';
 import { globalContactsDb } from '../lib/p2p/services/authService.ts';
-import { getPeerRestrictionStatus } from '../lib/p2p/services/contactsService';
+import { getPeerRestrictionStatus, getContact } from '../lib/p2p/services/contactsService';
+import HeaderActionButton from '../components/HeaderActionButton.tsx';
+import { setChatMuted } from '../lib/push/pushService.ts';
 import ContactProfileDrawer from '../components/ContactProfileDrawer.tsx';
 import Avatar from '../components/Avatar.tsx';
 import MessageAttachment from '../components/MessageAttachment.tsx';
@@ -74,6 +78,20 @@ const Chat = () => {
   const [openTextMenuId, setOpenTextMenuId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const [pushMuted, setPushMuted] = useState(false);
+
+  useEffect(() => {
+    if (!id || !globalContactsDb) return;
+    getContact(globalContactsDb, id).then((c) => setPushMuted(!!c?.pushMuted));
+  }, [id]);
+
+  const toggleChatMute = async () => {
+    if (!id) return;
+    const next = !pushMuted;
+    setPushMuted(next);
+    await setChatMuted(id, next);
+  };
 
   useEffect(() => {
     if (!openTextMenuId) return;
@@ -283,11 +301,18 @@ const Chat = () => {
           </span>
         </div>
 
-        <Avatar
-          url={avatarUrl}
-          size={32}
-          onClick={() => setIsContactProfileOpen(true)}
-        />
+        <div className="header-actions">
+          <HeaderActionButton
+            onClick={toggleChatMute}
+            icon={pushMuted ? <BellOff size={22} color="#94a3b8" /> : <Bell size={22} color="#ffffff" />}
+            title={t(pushMuted ? 'chat.pushMuted' : 'chat.pushUnmuted', { defaultValue: pushMuted ? 'Уведомления выключены' : 'Уведомления включены' })}
+          />
+          <Avatar
+            url={avatarUrl}
+            size={32}
+            onClick={() => setIsContactProfileOpen(true)}
+          />
+        </div>
       </header>
 
       {isBlocked || groupAccessDenied ? (
