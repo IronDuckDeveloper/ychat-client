@@ -1,10 +1,12 @@
 import { IPFSAccessController } from '@orbitdb/core';
 import { CONFIG } from '../config.ts';
 import { getOrOpenDb, globalHelia, activeDbs } from './authService.ts';
-import { getDeterministicRoomName } from './roomService.ts';
+import { getDeterministicRoomName, isRoomInUse, isMonthIndexDoc, readRecentFromPeriods } from './roomService.ts';
+import { trackClose, waitClosed } from './periodDb.ts';
 import { notifyArchivist } from '../networking/connectionManager.ts';
 import i18n from '../../../i18n/config.ts';
 import type { GroupActions, GroupSnapshot } from './groupService.ts';
+import { groupContactId } from './groupState.ts';
 
 const GROUP_SYNC_TIMEOUT_MS = 12_000; // дольше не ждём открытия БД группы: холодный
 
@@ -53,6 +55,7 @@ export function isAvatarBundleStale(prev: AvatarBundle, next: AvatarBundle): boo
 
 // Глобальный кэш для защиты от двойной синхронизации 
 const syncCooldowns = new Map<string, number>();
+export const resetSyncCooldowns = () => syncCooldowns.clear();
 
 // 🧠 Локальный кэш контактов для мгновенного UI и дедупликатор запросов
 let cachedContacts: ContactItem[] = [];
@@ -274,7 +277,23 @@ export const deleteContact = async (contactsDb: any, contactId: string): Promise
   }
 };
 
-export const updateLastMessage = async (
+const updateLastMessageLocks = new Map<string, Promise<void>>();
+
+export const updateLastMessage = (
+  db: any,
+  peerId: string,
+  text: string,
+  timestamp: number,
+  incrementUnread: boolean = false,
+  isHidden: boolean = false
+): Promise<void> => {
+  const prev = updateLastMessageLocks.get(peerId) || Promise.resolve();
+  const next = prev.then(() => updateLastMessageImpl(db, peerId, text, timestamp, incrementUnread, isHidden));
+  updateLastMessageLocks.set(peerId, next.catch(() => {}));
+  return next;
+};
+
+const updateLastMessageImpl = async (
   db: any, 
   peerId: string, 
   text: string, 
@@ -478,15 +497,25 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
         chatDb.events.off('update', onUpdate);
 
         try {
-          const records: any[] = [];
-          for await (const entry of chatDb.iterator({ amount: 10 })) {
-            records.push(entry.value ?? entry);
+          // Базовая БД: индекс месяцев + старые сообщения (до перехода на периоды)
+          const baseDocs: any[] = [];
+          for await (const entry of chatDb.iterator({ amount: 30 })) {
+            baseDocs.push(entry.value ?? entry);
           }
-          records.reverse(); // iterator отдаёт от новых к старым, код ниже ждёт по возрастанию ts
+          const indexMonths = baseDocs.filter(isMonthIndexDoc).map((d) => d.month as string);
+          const legacy = baseDocs.filter((d) => !isMonthIndexDoc(d)).slice(0, 10);
+          // Свежие сообщения лежат в месячных периодах
+          const fromPeriods = globalHelia
+            ? await readRecentFromPeriods(globalHelia, roomName as string, indexMonths, 10).catch(() => [] as any[])
+            : [];
+          const records = [...legacy, ...fromPeriods]
+            .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+            .slice(0, 10)
+            .reverse(); // по возрастанию ts, как ждёт код ниже
 
           if (records.length > 0) {
             const latestMsg = records[records.length - 1];
-            const contactLastTime = contact.lastMessageTime || 0;
+            const contactLastTime = ((await getContact(contactsDb, contact.id)) || contact).lastMessageTime || 0;
 
             const newMessages = records.filter((msg: any) => msg.ts > contactLastTime);
 
@@ -530,11 +559,12 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
             const isCurrentlyInThisChat = currentUrl.includes(contact.id) || 
               (contact.room && currentUrl.includes(contact.room));
 
-            if (isCurrentlyInThisChat) {
+            if (isCurrentlyInThisChat || (roomName && isRoomInUse(roomName))) {
               console.log(`👀 [Sync] Чат ${contact.nickname} [${contact.chatDbAddress?.slice(-8)}] сейчас открыт на экране. Оставляем БД открытой.`);
             } else {
               // Закрываем БД
-              await chatDb.close();
+              trackClose(roomName as string, chatDb);
+              await waitClosed(roomName as string);
               
               // 🧹 Очищаем мертвые ссылки из кэша
               if (roomName) activeDbs.delete(roomName);
@@ -572,6 +602,15 @@ export async function syncContactHistory(contact: ContactItem, contactsDb: any) 
  * БД открывается через joinGroup (общая сессия с открытым чатом, закрывается по refCount).
  */
 async function syncGroupContact(contact: ContactItem, contactsDb: any) {
+  // у группы адрес БД зашит в id: grp_<адрес без /orbitdb/>; если в записи другой адрес, берём из id
+  if (contact.id.startsWith('grp_')) {
+    const fromId = `/orbitdb/${contact.id.slice(4)}`;
+    if (fromId !== contact.chatDbAddress && groupContactId(fromId) === contact.id) {
+      console.warn('[GroupSync] исправлен chatDbAddress:', contact.chatDbAddress, '→', fromId);
+      contact = { ...contact, chatDbAddress: fromId };
+      await saveContact(contactsDb, contact);
+    }
+  }
   if (contact.isPending || contact.isDeleted || !contact.chatDbAddress || !globalHelia) return;
 
   const lockKey = contact.chatDbAddress;

@@ -13,6 +13,7 @@ export async function notifyArchivist(
   libp2p: Libp2p,
   peerId: PeerId,
   dbAddress: string,
+  force = false, // повторный анонс в обход cooldown
 ): Promise<void> {
   if (!libp2p || !peerId) return;
 
@@ -29,7 +30,7 @@ export async function notifyArchivist(
   const now = Date.now();
   const lastSent = recentAnnouncements.get(cacheKey);
 
-  if (lastSent && now - lastSent < ANNOUNCE_COOLDOWN_MS) {
+  if (!force && lastSent && now - lastSent < ANNOUNCE_COOLDOWN_MS) {
     // Пропускаем дублирующий анонс
     return;
   }

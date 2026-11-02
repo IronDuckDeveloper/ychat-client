@@ -262,11 +262,10 @@ export function buildAct(
 }
 
 export const groupContactId = (address: string) => `grp_${address.replace('/orbitdb/', '')}`;
-/** Суточный период по UTC: 'YYYYMMDD'. Сообщения группы лежат в БД своего дня. */
-// export const dayOf = (ts: number): string => new Date(ts).toISOString().slice(0, 10).replace(/-/g, '');
 export const groupAddressOf = (id: string) => `/orbitdb/${id.slice(4)}`;
 
-
 export const PERIOD_MS = 86_400_000;
+
+/** Суточный период по UTC: 'YYYYMMDD'. Сообщения группы лежат в БД своего дня. */
 export const dayOf = (ts: number): string => new Date(ts).toISOString().slice(0, 10).replace(/-/g, '');
 export const nextDayOf = (ts: number): string => dayOf(ts + PERIOD_MS);

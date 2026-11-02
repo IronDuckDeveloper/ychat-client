@@ -11,7 +11,7 @@ import { initializeApp, globalHelia, globalRelayManager, pushProfileUpdateToCont
 import { clearAuthData } from './lib/p2p/crypto/crypto.ts';
 import { NetworkOverlay } from './components/NetworkOverlay.tsx';
 import { initNetworkStateMachine } from '../src/lib/p2p/networking/NetworkStateMachine.ts';
-import { syncTopContactsHistory } from './lib/p2p/services/contactsService.ts';
+import { syncTopContactsHistory, resetSyncCooldowns } from './lib/p2p/services/contactsService.ts';
 import { startBackgroundProfileWatcher } from './lib/p2p/services/backgroundServices.ts';
 import { checkAndSyncRelays } from './lib/p2p/networking/connectionManager.ts';
 import { useUploadEvents } from './hooks/useUploadEvents'
@@ -80,6 +80,15 @@ function App() {
             });
 
         stateMachine.start();
+        let sleepStartedAt = 0;
+        let prevNetState: string = stateMachine.state;
+        stateMachine.subscribe((s) => {
+          if (s === 'SLEEPING') sleepStartedAt = Date.now();
+          if (s === 'CONNECTED' && prevNetState === 'RECOVERING' && Date.now() - sleepStartedAt > 10_000) {
+            resetSyncCooldowns();
+          }
+          prevNetState = s;
+        });
         console.log('🛡️ [App] Network State Machine успешно запущена.');
 
         Promise.all([

@@ -16,7 +16,7 @@ import { enablePush, disablePush } from '../lib/push/pushService.ts';
 import type { RootState } from '../store';
 import { contactsReplaced } from '../store/contactsSlice.ts';
 import { profileUpdated } from '../store/profileSlice.ts';
-import { joinGroup, sendGroupInvites, joinGroupByLink, parseGroupHash } from '../lib/p2p/services/groupService.ts';
+import { joinGroup, sendGroupInvites, joinGroupByLink, parseGroupHash, ensureGroupPinned } from '../lib/p2p/services/groupService.ts';
 import { groupContactId } from '../lib/p2p/services/groupState.ts';
 
 const JOIN_ERRORS = {
@@ -840,6 +840,7 @@ const handleSaveProfile = async (newNickname: string, newBio: string, newAvatarB
       await sendGroupInvites(globalHelia, { dbAddress: g.dbAddress, name }, memberIds);
       setContacts(await getAllContacts(globalContactsDb));
       await syncGroupPingSubscriptions();
+      void ensureGroupPinned(globalHelia, g.dbAddress); // фоном: повторяем анонс, пока релей не откроет группу
       showToast(t('contactsLogic.groupCreated', { defaultValue: 'Группа создана' }));
       return true;
     } catch (err) {

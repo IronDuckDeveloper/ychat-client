@@ -116,6 +116,21 @@ const ContactList = () => {
   const observer = useRef<IntersectionObserver | null>(null);
   const elementsMap = useRef(new Map<Element, string>()); // node -> contact.id
   const scrollTimers = useRef(new Map<Element, ReturnType<typeof setTimeout>>());
+  const visibleNodes = useRef(new Set<Element>()); // строки, сейчас видимые на экране
+
+
+  // Взводит 2-секундный таймер Smart Render для строки (повторно не взводит)
+  const armSync = useCallback((target: Element) => {
+    const id = elementsMap.current.get(target);
+    if (!id || scrollTimers.current.has(target)) return;
+    const timer = setTimeout(() => {
+      scrollTimers.current.delete(target);
+      const contact = latest.current.contacts.find((c) => c.id === id);
+      if (!contact) return;
+      latest.current.syncContactInQueue(contact);
+    }, 2000);
+    scrollTimers.current.set(target, timer);
+  }, []);
 
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
@@ -124,20 +139,12 @@ const ContactList = () => {
       (entries) => {
         entries.forEach((entry) => {
           const target = entry.target;
-          const id = elementsMap.current.get(target);
 
           if (entry.isIntersecting) {
-            if (id && !scrollTimers.current.has(target)) {
-              const timer = setTimeout(() => {
-                scrollTimers.current.delete(target);
-                const contact = latest.current.contacts.find((c) => c.id === id);
-                if (!contact) return;
-                latest.current.syncContactInQueue(contact);
-              }, 2000);
-
-              scrollTimers.current.set(target, timer);
-            }
+            visibleNodes.current.add(target);
+            armSync(target);
           } else {
+            visibleNodes.current.delete(target);
             const timer = scrollTimers.current.get(target);
             if (timer) {
               clearTimeout(timer);
@@ -157,15 +164,17 @@ const ContactList = () => {
       observer.current = null;
       scrollTimers.current.forEach((timer) => clearTimeout(timer));
       scrollTimers.current.clear();
+      visibleNodes.current.clear();
       elementsMap.current.clear();
     };
-  }, []);
+  }, [armSync]);
 
   const observe = useCallback((node: Element, id: string) => {
     elementsMap.current.set(node, id);
     observer.current?.observe(node);
     return () => {
       observer.current?.unobserve(node);
+      visibleNodes.current.delete(node);
       elementsMap.current.delete(node);
       const timer = scrollTimers.current.get(node);
       if (timer) {
@@ -174,6 +183,16 @@ const ContactList = () => {
       }
     };
   }, []);
+
+  // Сеть вернулась (сон/офлайн → CONNECTED): IntersectionObserver молчит, поэтому
+  // заново взводим Smart Render для строк, которые сейчас на экране
+  const wasNetworkReady = useRef(isNetworkReady);
+  useEffect(() => {
+    if (isNetworkReady && !wasNetworkReady.current) {
+      visibleNodes.current.forEach((node) => armSync(node));
+    }
+    wasNetworkReady.current = isNetworkReady;
+  }, [isNetworkReady, armSync]);
 
   const actions = useMemo<ContactRowActions>(
     () => ({

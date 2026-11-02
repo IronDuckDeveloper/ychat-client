@@ -4,10 +4,12 @@ import { getOrbitDB } from '../orbit/client.ts';
 import { GroupAccessController } from '../orbit/groupAccessController.ts';
 import { notifyArchivist, checkAndSyncRelays } from '../networking/connectionManager.ts';
 import { relayManager } from '../networking/heliaClient.ts';
+import { globalNetworkState } from '../networking/NetworkStateMachine.ts';
 import { CONFIG } from '../config.ts';
 import { isHiddenLocally } from './hiddenMessagesService.ts';
 import type { ChatMessage, ReplyInfo, ForwardedFrom } from './roomService.ts';
 import type { FileAttachment } from './fileService.ts';
+import { sharedDbs, acquireShared, releaseShared, createDocCache, type DocCache } from './periodDb.ts';
 import {
   computeGroupState, isVisible, canWrite, roleOf, buildAct, writerSlots, MAX_WRITERS, groupContactId, dayOf, nextDayOf,
   type GroupState, type GroupRole, type GroupActType, type GroupActField,
@@ -47,103 +49,6 @@ export interface JoinGroupOptions {
 
 const PAGE = CONFIG.CHUNK_SIZE || 15;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// Общий пул БД с подсчётом ссылок: управляющая БД (ключ — адрес) и периоды (ключ — имя)
-const sharedDbs = new Map<string, { promise: Promise<any>; refCount: number }>();
-
-async function acquireShared(key: string, open: () => Promise<any>): Promise<any> {
-  let s = sharedDbs.get(key);
-  if (!s) {
-    s = { promise: open(), refCount: 0 };
-    sharedDbs.set(key, s);
-  }
-  s.refCount++;
-  try {
-    return await s.promise;
-  } catch (err) {
-    s.refCount--;
-    if (s.refCount <= 0) sharedDbs.delete(key);
-    throw err;
-  }
-}
-
-function releaseShared(key: string, db: any) {
-  const s = sharedDbs.get(key);
-  if (s && --s.refCount <= 0) {
-    sharedDbs.delete(key);
-    db.close().catch(() => {});
-  }
-}
-
-/**
- * Кэш документов одной БД. db.all() декодирует весь лог, поэтому читаем его целиком только при открытии
- * и когда в событии виден пропуск; обычные обновления берём из самого события.
- */
-function createDocCache(db: any, onChange: () => void) {
-  const cache = new Map<string, any>();
-  const known = new Set<string>();
-  let ready = false;
-  let dirty = false;
-  let disposed = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let lastReloadMs = 0;
-
-  const fullReload = async () => {
-    const t0 = performance.now();
-    const rows: any[] = await db.all();
-    for (const r of rows) {
-      const d = r?.value ?? r;
-      if (d && typeof d._id === 'string') cache.set(d._id, d);
-      if (typeof r?.hash === 'string') known.add(r.hash);
-    }
-    lastReloadMs = performance.now() - t0;
-  };
-
-  const scheduleReload = () => {
-    if (timer || disposed) return;
-    // не чаще раза в 1,5 с и не чаще, чем раз в тройное время самого чтения: нагрузка ограничена ~25%
-    timer = setTimeout(async () => {
-      timer = null;
-      if (disposed) return;
-      try { await fullReload(); } catch (err) { console.error('❌ [Group] Ошибка чтения БД:', err); }
-      if (!disposed) onChange();
-    }, Math.max(1500, lastReloadMs * 3));
-  };
-
-  const onUpdate = (entry: any) => {
-    if (disposed) return;
-    if (!ready) { dirty = true; return; }
-    const p = entry?.payload;
-    const doc = p?.op === 'PUT' ? p.value : null;
-    if (doc && typeof doc._id === 'string') {
-      cache.set(doc._id, doc);
-      if (typeof entry.hash === 'string') known.add(entry.hash);
-    }
-    // записи, которых мы не видели (пачка при синке), подбираем полным чтением
-    const gap = !doc || !Array.isArray(entry.next) || entry.next.some((h: string) => !known.has(h));
-    if (gap) scheduleReload();
-    onChange();
-  };
-
-  db.events.on('update', onUpdate);
-
-  return {
-    docs: () => cache.values(),
-    get: (id: string) => cache.get(id),
-    size: () => cache.size,
-    async init() {
-      await fullReload();
-      ready = true;
-      if (dirty) scheduleReload(); // события, пришедшие во время первого чтения
-    },
-    dispose() {
-      disposed = true;
-      if (timer) clearTimeout(timer);
-      db.events.off('update', onUpdate);
-    },
-  };
-}
-type DocCache = ReturnType<typeof createDocCache>;
 
 export async function joinGroup(
   helia: Helia,
@@ -456,6 +361,23 @@ export async function sendGroupInvites(
   }
 }
 
+/** Анонс мог потеряться (стрим без подтверждения). Пока релей не подписан на топик БД группы, повторяем анонс. */
+export async function ensureGroupPinned(helia: Helia, address: string, timeoutMs = 60_000): Promise<boolean> {
+  const libp2p = (helia as any).libp2p;
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    const subs: PeerId[] = libp2p.services.pubsub.getSubscribers(address);
+    if (subs.some((p) => relayManager.isRelay(p.toString()))) {
+      console.log(`📌 [Group] релей подписан на ${address.slice(-12)} через ${Date.now() - t0} мс`);
+      return true;
+    }
+    libp2p.getPeers().forEach((p: PeerId) => void notifyArchivist(libp2p, p, address, true));
+    await sleep(4000);
+  }
+  console.warn(`⚠️ [Group] релей так и не подписался на ${address.slice(-12)} за ${timeoutMs / 1000} с`);
+  return false;
+}
+
 export const groupPingTopic = (groupId: string) =>
   `${CONFIG.TOPICS.GROUP_PING_PREFIX}${groupId}${CONFIG.TOPICS.GROUP_PING_SUFFIX}`;
 
@@ -472,25 +394,37 @@ export type LinkJoinResult =
   | { ok: true; name: string }
   | { ok: false; reason: 'unavailable' | 'disabled' | 'banned' | 'full' | 'closed' | 'rejected' };
 
-export async function joinGroupByLink(helia: Helia, address: string): Promise<LinkJoinResult> {
+const JOIN_OPEN_TIMEOUT_MS = 30_000;
+const JOIN_NAME_WAIT_MS = 10_000;
+const JOIN_MAX_ATTEMPTS = 3;
+const JOIN_DEADLINE_MS = 90_000;
+
+// null = группа пока не отдала данные, стоит повторить
+async function joinGroupByLinkOnce(helia: Helia, address: string, attempt: number): Promise<LinkJoinResult | null> {
   const holder: { snap: GroupSnapshot | null } = { snap: null };
   let handle: GroupActions | null = null;
   let keepOpen = false;
+  const t0 = Date.now();
+  const libp2p = (helia as any).libp2p;
   try {
     const joined = joinGroup(helia, { address }, (s) => { holder.snap = s; }, { messages: false });
-    handle = await Promise.race([joined, sleep(45_000).then(() => null)]);
+    handle = await Promise.race([joined, sleep(JOIN_OPEN_TIMEOUT_MS).then(() => null)]);
     if (!handle) {
-      console.warn('⏱️ [Group] joinGroup не завершился за 45 с:', address);
+      console.warn(`⏱️ [Group] #${attempt}: joinGroup не завершился за ${JOIN_OPEN_TIMEOUT_MS / 1000} с:`, address.slice(-12));
       joined.then((h) => h.leaveRoom()).catch(() => {}); // открылась позже таймаута: сразу отпускаем
-      return { ok: false, reason: 'unavailable' };
+      return null;
     }
 
-    // ждём, пока название приедет с репликацией (до 30 с)
-    for (let i = 0; i < 60 && !holder.snap?.state.name; i++) await sleep(500);
+    // ждём, пока название приедет с репликацией
+    for (let i = 0; i < JOIN_NAME_WAIT_MS / 500 && !holder.snap?.state.name; i++) await sleep(500);
     const s = holder.snap;
     if (!s?.state.name) {
-      console.warn('⏱️ [Group] имя группы не пришло за 30 с. snap:', !!s, 'members:', s?.state.members.size);
-      return { ok: false, reason: 'unavailable' };
+      const subs = libp2p.services.pubsub.getSubscribers(address).map((p: PeerId) => p.toString().slice(-6));
+      console.warn(
+        `⏱️ [Group] #${attempt}: имя не пришло за ${JOIN_NAME_WAIT_MS / 1000} с | snap:`, !!s,
+        '| members:', s?.state.members.size, '| подписчики топика:', subs, '| пиров:', libp2p.getPeers().length,
+      );
+      return null;
     }
 
     const me = s.state.members.get(handle.myId);
@@ -510,8 +444,12 @@ export async function joinGroupByLink(helia: Helia, address: string): Promise<Li
     keepOpen = true;
     return { ok: true, name: s.state.name };
   } catch (err) {
-    console.error('❌ [Group] Вступление по ссылке не удалось:', err);
-    return { ok: false, reason: 'unavailable' };
+    console.error(
+      `❌ [Group] #${attempt}: вступление по ссылке не удалось:`, err,
+      '| через', Date.now() - t0, 'мс | сеть =', globalNetworkState?.state, '| пиров =', libp2p.getPeers().length,
+      '| причины:', (err as any)?.errors?.map((e: any) => `${e?.name}: ${e?.message}`),
+    );
+    return null;
   } finally {
     if (handle) {
       const h = handle;
@@ -520,4 +458,15 @@ export async function joinGroupByLink(helia: Helia, address: string): Promise<Li
       else h.leaveRoom();
     }
   }
+}
+
+export async function joinGroupByLink(helia: Helia, address: string): Promise<LinkJoinResult> {
+  const deadline = Date.now() + JOIN_DEADLINE_MS;
+  for (let attempt = 1; attempt <= JOIN_MAX_ATTEMPTS; attempt++) {
+    const res = await joinGroupByLinkOnce(helia, address, attempt);
+    if (res) return res;
+    if (attempt === JOIN_MAX_ATTEMPTS || Date.now() > deadline) break;
+    await sleep(2000); // даём релею время подхватить группу, БД к этому моменту уже закрыта
+  }
+  return { ok: false, reason: 'unavailable' };
 }
