@@ -123,14 +123,6 @@
           }
         }
 
-        .message-sender {
-          font-size: 0.75rem;
-          font-weight: 600;
-          color: $accent-prime;
-          padding-right: 28px;
-          line-height: 1.2;
-        }
-
         .text-content .chat-message-link {
           color: $secondary;
         }
@@ -206,6 +198,23 @@
       line-height: 1;
       margin-top: 3px;
       padding: 0 4px;
+
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+
+    .message-sender-name {
+      font-size: 0.68rem;
+      color: $hint;
+      line-height: 1;
+      margin-bottom: 3px;
+      padding: 0 4px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
 
       -webkit-user-select: none;
       -moz-user-select: none;

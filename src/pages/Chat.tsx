@@ -359,6 +359,16 @@ const Chat = () => {
                           : 'system'
                     } ${highlightedId === message.id ? 'highlighted' : ''}`}
                   >
+                    {isGroup &&
+                      message.type === 'received' &&
+                      message.text !== CONFIG.MSG.MESSAGE_DELETED
+                      && !(message.hidden && !expandedHiddenIds.has(message.id))
+                      && (
+                        <span className="message-sender-name">
+                          {memberNames[message.whoSent] ||
+                            `${message.whoSent.slice(0, 6)}...${message.whoSent.slice(-4)}`}
+                        </span>
+                      )}
                     <div className="message">
                       {(() => {
                         const isDeleted =
@@ -433,13 +443,6 @@ const Chat = () => {
                               </>
                             ) : (
                               <>
-                                  {isGroup && message.type === 'received' && !isDeleted && (
-                                    <div className="message-sender">
-                                      {memberNames[message.whoSent] ||
-                                        `${message.whoSent.slice(0, 6)}...${message.whoSent.slice(-4)}`}
-                                    </div>
-                                  )}
-
                                   {message.replyTo && !isDeleted && (
                                     <div className="reply-message-indicator">
                                       <span>{t('chat.replyingToLabel')}</span>
